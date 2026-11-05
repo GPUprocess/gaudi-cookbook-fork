@@ -119,6 +119,10 @@ def test_cache_group_idx_logic(fake_root):
     assert "'.self_attn'" in src and "parts[-2].isdigit()" in src
 
 
+# The MTP patches are recorded from the verified deployment (large anchor sets); they are
+# exercised against real release sources rather than fake stand-ins.
+MTP_NAMES = ["mtp_attn", "mtp_eagle", "mtp_runner", "mtp_sampler"]
+
 REAL = os.environ.get("GAUDI_FIXES_ROOT")
 
 
@@ -132,3 +136,18 @@ def test_real_sources(tmp_path):
         assert r.returncode == 0, r.stderr
         assert run(name, tmp_path, "--check").returncode == 0, name
         assert run(name, tmp_path).returncode == 0, name
+
+
+@pytest.mark.skipif(not REAL, reason="set GAUDI_FIXES_ROOT to a release's site-packages to run on real sources")
+@pytest.mark.parametrize("name", MTP_NAMES)
+def test_mtp_real_sources(tmp_path, name):
+    for rel in ("v1/attention/backends/hpu_attn.py", "v1/spec_decode/hpu_eagle.py",
+                "v1/worker/hpu_model_runner.py", "v1/sample/hpu_rejection_sampler.py"):
+        dst = tmp_path / "vllm_gaudi" / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(Path(REAL) / "vllm_gaudi" / rel, dst)
+    assert run(name, tmp_path, "--check").returncode == 1, name
+    r = run(name, tmp_path)
+    assert r.returncode == 0, r.stderr
+    assert run(name, tmp_path, "--check").returncode == 0, name
+    assert run(name, tmp_path).returncode == 0, name
