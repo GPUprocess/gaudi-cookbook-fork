@@ -66,11 +66,10 @@ the eager draft head; the draft HPU graph is the follow-up lever).
    `ports/glm-5-3-flash/README.md` (`ports/glm-5-3-flash/Dockerfile` runs `install.sh`, which
    checks the release commits, applies the port patches, builds the mHC Sinkhorn kernel and
    installs the plugin with the MTP module; fails closed).
-3. **Apply the spec patches** to the release sources inside the image, in this order (each supports
-   `--check` and exits 2 on anchor drift):
-   `mtp_tuple`, `mtp_residual_shape`, `spec_sampling`, `spec_penalties`, `spec_logprobs`,
-   `spec_structured_output`, `spec_draft_prefill`, `spec_verify_blocks` — from
-   `ports/glm-5-mxfp4/patches/`.
+3. **Apply the MTP patches** to the release sources inside the image, in this order (each supports
+   `--check` and exits 2 on anchor drift): `mtp_attn`, `mtp_eagle`, `mtp_runner`, `mtp_sampler` —
+   from `ports/glm-5-3-flash/patches/`. They were verified to reproduce the verified deployment
+   byte-for-byte from a pristine post-`install.sh`, post-fix-profile tree.
 4. **Download the checkpoint**: `zai-org/GLM-5.3-Flash` (block FP8 as published, ~328 GB).
 5. **Launch**: `ports/glm-5-3-flash/serving/serve_mtp.sh` (set `COOKBOOK` and `GLM53_MODEL_PATH`).
    The deltas from the stock port launch: `--speculative-config '{"method": "mtp",

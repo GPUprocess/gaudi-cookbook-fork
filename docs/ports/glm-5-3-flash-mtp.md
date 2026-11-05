@@ -39,13 +39,13 @@ matches the number of accepted tokens. The column algebra is shared with vllm-ga
 state layout (`base*(groups*S) + g*S + col + 1`) and is unit-tested against request churn (finish +
 slot reuse, per-group disjointness, column uniqueness).
 
-**The stock speculative path assumes GPU verify layouts.** The vllm-gaudi side needed the
-[glm-5-mxfp4 port's spec patches](glm-5-mxfp4.md) (`mtp_tuple`, `mtp_residual_shape`,
-`spec_sampling`, `spec_penalties`, `spec_logprobs`, `spec_structured_output`,
-`spec_draft_prefill`, `spec_verify_blocks`); all eight were drift-checked against the `v0.26.0`
-sources and apply cleanly. They cover the padded verify layout for sampling, penalties and logprobs,
-grammar-constrained decoding, the partial-chunk draft-KV fill during chunked prefill, and
-per-verify-row KV block lists.
+**The stock speculative path assumes GPU verify layouts.** The vllm-gaudi side carries four
+recorded patches in `ports/glm-5-3-flash/patches/` (`mtp_attn`, `mtp_eagle`, `mtp_runner`,
+`mtp_sampler`), generated from the verified deployment and checked to reproduce it byte-for-byte
+from a pristine post-`install.sh`, post-fix-profile tree of the `v0.26.0` release. They cover the
+padded verify layout for sampling, penalties and logprobs, grammar-constrained decoding, the
+partial-chunk draft-KV fill during chunked prefill, per-verify-row KV block lists, and the
+KDA spec-state resume fields on the attention metadata.
 
 ## The design in one paragraph
 
@@ -106,16 +106,19 @@ for batch.
 
 `serving/serve_mtp.sh` in the port is the full verified command; the deltas from the stock port
 launch are the `--speculative-config`, `--max-num-seqs 8` (verify rows = seqs x (k+1)) and the
-window flags. Run the port's `install.sh` first (it applies the port patches and installs the
-plugin with the MTP module), then apply the eight spec patches from
-`ports/glm-5-mxfp4/patches/` to the release sources in this order — each supports `--check`:
+window flags. Build the port image (`install.sh` applies the port patches, builds the mHC kernel
+and installs the plugin with the MTP module), run the release fix profile, then apply the four MTP
+patches in `ports/glm-5-3-flash/patches/` to the release sources — each supports `--check` and
+fails closed on anchor drift:
 
 ```bash
-for p in mtp_tuple mtp_residual_shape spec_sampling spec_penalties spec_logprobs \
-         spec_structured_output spec_draft_prefill spec_verify_blocks; do
-    python3 ports/glm-5-mxfp4/patches/$p.py --root <site-packages> || exit 1
+for p in mtp_attn mtp_eagle mtp_runner mtp_sampler; do
+    python3 ports/glm-5-3-flash/patches/$p.py --root <dir with vllm/ and vllm_gaudi/> || exit 1
 done
 ```
+
+The four patches were verified to reproduce the verified deployment byte-for-byte from a pristine
+post-`install.sh`, post-fix-profile tree.
 
 Then run the harness: `python3 ports/glm-5-3-flash/tests/hpu/mtp/mtp_validate.py --base
 http://127.0.0.1:8000`.
