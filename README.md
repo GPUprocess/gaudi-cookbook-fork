@@ -15,6 +15,92 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
 </p>
 
+## Fork: GLM-5.3-Flash native MTP speculative decoding on Gaudi 2
+
+This fork of [thediymaker/gaudi-cookbook](https://github.com/thediymaker/gaudi-cookbook) adds one
+verified extension, on the branch `glm53-flash`: **native MTP speculative decoding for the
+GLM-5.3-Flash port**. The Apache-2.0 licence and the upstream content are untouched; all additions
+live under `ports/glm-5-3-flash/` and `docs/ports/glm-5-3-flash-mtp.md`.
+
+### What was done
+
+The GLM-5.3-Flash checkpoint ships its own MTP draft head (layer 45 plus an `eh_proj` and a shared
+head). This work binds that head to vllm-gaudi's speculative-decode machinery on one 8-card Gaudi 2
+node:
+
+- **Draft wrapper with no weight cost** (`ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu/mtp.py`):
+  the draft model is the target's already-loaded layer-45 modules held by reference — zero duplicate
+  weight memory, one extra MLA latent cache and KDA candidate-state columns (~1.1 GiB/rank total).
+  Checkpoint names are normalised on load, and startup refuses to proceed if speculative decoding is
+  on and the MTP block did not fully load.
+- **KDA candidate-slot state** (`kda_layer.py`, `kda.py`): the Kimi Delta Attention layers keep S+1
+  recurrent-state columns per request, the verify forward scatters one state per row, and the
+  post-verify load selects the column matching the accepted prefix. The slot algebra is shared with
+  vllm-gaudi's compact Mamba state layout and unit-tested against request churn.
+- **GPU-layout spec patches reused**: the eight speculative-decoding patches from
+  `ports/glm-5-mxfp4/patches/` (already in this repository) were drift-checked against the
+  `v0.26.0` release sources and apply cleanly; they cover padded-verify sampling, penalties,
+  logprobs, structured output, chunked-prefill draft KV and per-verify-row KV block lists.
+
+### Measured results (8-card Gaudi 2 node, block-FP8 checkpoint, greedy, natural prompts)
+
+| Metric | k=1 MTP | baseline (no MTP) |
+| --- | --- | --- |
+| Decode, bs=1 | **36.8 tok/s** | 30.3 tok/s (+21%) |
+| Decode after a 4K prompt | 37.6 tok/s | — |
+| Acceptance length | 1.73 – 1.98 of 2.0 | 1.0 |
+| HBM under load | 64.1 GiB / 96 GiB per card | ≈ 62 GiB |
+| 16-stream aggregate | 42.7 tok/s | 59.4 tok/s (same window config) |
+
+k=2 was swept and is correct (acceptance 2.04 – 2.52 of 3.0) but net-neutral on speed: the second
+eager draft step costs more than the extra accepted tokens buy. **Enable MTP for single-stream /
+interactive workloads; leave it off at high concurrency** (crossover measured at 16 streams with
+the eager draft head; the draft HPU graph is the follow-up lever).
+
+### How to replicate
+
+1. **Hardware/software**: one 8-card Intel Gaudi 2 node (96 GB HBM per card), Gaudi software 1.24.1
+   on the host, the base image
+   `vault.habana.ai/gaudi-docker/1.24.1/ubuntu24.04/habanalabs/pytorch-installer-2.11.0`.
+2. **Build the port image** from this checkout as in `docs/getting-started.md` and
+   `ports/glm-5-3-flash/README.md` (`ports/glm-5-3-flash/Dockerfile` runs `install.sh`, which
+   checks the release commits, applies the port patches, builds the mHC Sinkhorn kernel and
+   installs the plugin with the MTP module; fails closed).
+3. **Apply the spec patches** to the release sources inside the image, in this order (each supports
+   `--check` and exits 2 on anchor drift):
+   `mtp_tuple`, `mtp_residual_shape`, `spec_sampling`, `spec_penalties`, `spec_logprobs`,
+   `spec_structured_output`, `spec_draft_prefill`, `spec_verify_blocks` — from
+   `ports/glm-5-mxfp4/patches/`.
+4. **Download the checkpoint**: `zai-org/GLM-5.3-Flash` (block FP8 as published, ~328 GB).
+5. **Launch**: `ports/glm-5-3-flash/serving/serve_mtp.sh` (set `COOKBOOK` and `GLM53_MODEL_PATH`).
+   The deltas from the stock port launch: `--speculative-config '{"method": "mtp",
+   "num_speculative_tokens": 1}'`, `--max-num-seqs 8` (verify rows = seqs x (k+1)), reduced
+   context window and KV override for the validated shape.
+6. **Validate**: `python3 ports/glm-5-3-flash/tests/hpu/mtp/mtp_validate.py --base
+   http://127.0.0.1:8000` against the running server; run the port gates
+   (`ports/glm-5-3-flash/tests/hpu/run_gates.sh`); run the CPU unit checks in
+   `ports/glm-5-3-flash/tests/cpu/` on any torch-capable machine.
+
+Expected behaviour: first boot compiles all graph shapes (slow; warmup graphs are pre-compiled with
+`VLLM_SKIP_WARMUP=false` on production launches — the validation script keeps skip-warmup for
+faster windows). Acceptance length ≈ 1.8 of 2.0 on natural prompts; single-stream decode ≈ 36–37
+tok/s at bs=1.
+
+### Known limitations and TODOs
+
+- k=1 only is recommended; k=2 is correct but net-neutral with the eager draft.
+- The draft head runs eagerly (shared storage cannot be captured in a second HPU graph); the
+  documented levers to flip k>1 and high concurrency positive are the draft HPU graph and a
+  vocab-parallel argmax in `get_top_tokens`.
+- Verified in a 32K-context window at `--max-num-seqs 8`; the production 262K shape was not re-run
+  under MTP.
+- Golden parity under MTP is 2/12 token-identical (k=0 on the same window: 6/6); every divergence
+  is a measured near-tie flip from the verify-shape FP shift, and the content is semantically
+  equivalent.
+- Prefix caching must stay off (KDA layer constraint, inherited from the base port).
+
+---
+
 Everything here was run on a large Gaudi 2 fleet serving real traffic. Everything uses public
 container images and public checkpoints. Nothing depends on a private build.
 
