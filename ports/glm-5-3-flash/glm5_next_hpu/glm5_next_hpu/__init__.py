@@ -44,4 +44,8 @@ def register() -> None:
     ModelRegistry.register_model(
         "Glm5NextForConditionalGeneration", "glm5_next_hpu.model:Glm5NextForConditionalGeneration"
     )
+    # Draft architecture for MTP speculative decoding. The proposer binds the
+    # target's already-loaded layer-45 modules, so this class is resolved for
+    # config purposes only -- it is never constructed through the registry.
+    ModelRegistry.register_model("Glm5NextMTPModel", "glm5_next_hpu.mtp:Glm5NextMTPModel")
     _DONE = True

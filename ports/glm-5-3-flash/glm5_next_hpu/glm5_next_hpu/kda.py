@@ -311,9 +311,16 @@ def hpu_chunk_kda_scan(
 
 
 def hpu_recurrent_kda(
-    query, key, value, g, beta, initial_state=None, output_final_state: bool = True, use_qk_l2norm_in_kernel=True
+    query, key, value, g, beta, initial_state=None, output_final_state: bool = True, use_qk_l2norm_in_kernel=True,
+    return_all_states: bool = False,
 ):
-    """Decode KDA. q, k, v, g: [B, T, H, D], beta: [B, T, H]. The per-channel decay scales the state's key axis."""
+    """Decode KDA. q, k, v, g: [B, T, H, D], beta: [B, T, H]. The per-channel decay scales the state's key axis.
+
+    With ``return_all_states`` the state after every token is also returned
+    ([B, T, H, K, V]) — MTP speculative verify needs each candidate position's
+    state, because acceptance is only known after sampling and a contracted
+    recurrent state cannot be rewound.
+    """
     initial_dtype = query.dtype
     query, key, value, g, beta = [x.to(torch.float32) for x in (query, key, value, g, beta)]
     if use_qk_l2norm_in_kernel:
@@ -325,6 +332,7 @@ def hpu_recurrent_kda(
     query = query * (k_dim**-0.5)
     state = _initial_state(initial_state, b_sz, h, k_dim, v_dim, query.device)
     outs = []
+    all_states = [] if return_all_states else None
     for i in range(t):
         k_i = key[:, i]
         state = state * g[:, i].unsqueeze(-1).exp()
@@ -332,7 +340,15 @@ def hpu_recurrent_kda(
         delta = (value[:, i] - kv_mem) * beta[:, i].unsqueeze(-1)
         state = state + k_i.unsqueeze(-1) * delta.unsqueeze(-2)
         outs.append((state * query[:, i].unsqueeze(-1)).sum(dim=-2))
+        if return_all_states:
+            all_states.append(state)
 
+    if return_all_states:
+        return (
+            torch.stack(outs, dim=1).to(initial_dtype),
+            (state if output_final_state else None),
+            torch.stack(all_states, dim=1).to(initial_dtype),
+        )
     return torch.stack(outs, dim=1).to(initial_dtype), (state if output_final_state else None)
 
 

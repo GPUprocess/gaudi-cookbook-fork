@@ -411,6 +411,25 @@ class Glm5NextForConditionalGeneration(nn.Module, HasInnerState, SupportsPP, IsH
             self.lm_head = PPMissingLayer()
         self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 
+        # MTP draft head: load the checkpoint's layer-45 weights into `self.mtp`
+        # only when speculative decoding is on (the proposer binds these modules;
+        # see mtp.py). Without spec decode the tensors are skipped as before.
+        self.mtp = None
+        self.mtp_prefix = None
+        spec_cfg = vllm_config.speculative_config
+        if spec_cfg is not None and spec_cfg.method == "mtp" and get_pp_group().is_last_rank:
+            from .mtp import Glm5NextMTPDecoderLayer
+
+            # Construction prefix = the checkpoint name of the MTP layer, so the quant config's
+            # modules_to_not_convert entries (e.g. model.layers.45.self_attn.kv_b_proj, which is BF16 in the
+            # checkpoint) match and unquantized modules are built without weight_scale_inv params. Parameter
+            # NAMES follow the attribute path ("mtp.*") — the loader maps checkpoint tensors accordingly.
+            ckpt_prefix = f"model.layers.{config.num_hidden_layers}"
+            self.mtp = Glm5NextMTPDecoderLayer(
+                config, self.quant_config, vllm_config.cache_config, vllm_config.parallel_config, prefix=ckpt_prefix
+            )
+            self.mtp_prefix = ckpt_prefix
+
     @classmethod
     def get_mamba_state_shape_from_config(cls, vllm_config: VllmConfig):
         """KDA conv and recurrent state shapes: Kimi Linear's calculator, reading the nested text config."""
@@ -511,6 +530,10 @@ class Glm5NextForConditionalGeneration(nn.Module, HasInnerState, SupportsPP, IsH
             num_experts=self.text_config.n_routed_experts,
         )
         params_dict = dict(self.named_parameters())
+        if self.mtp is not None:
+            _mtp_keys = [k for k in params_dict if k.startswith("mtp.")]
+            logger.info("glm5_next_hpu MTP debug: mtp module=%s, %d mtp params, first: %s",
+                        type(self.mtp).__name__, len(_mtp_keys), _mtp_keys[:3])
         vision_params = dict(self.visual.named_parameters()) if self.visual is not None else {}
         loaded: set[str] = set()
         skipped = {"vision": 0, "mtp": 0, "indexer": 0}
@@ -529,8 +552,15 @@ class Glm5NextForConditionalGeneration(nn.Module, HasInnerState, SupportsPP, IsH
                 loaded.add("visual." + vname)
                 continue
             if name.startswith(mtp_prefix):
-                skipped["mtp"] += 1
-                continue
+                if self.mtp is None:
+                    skipped["mtp"] += 1
+                    continue
+                # Speculative decoding is on: layers.45.* -> mtp.* (the attribute path of the draft module; the
+                # stacked/expert mappings below then apply unchanged, and the completeness check at the end
+                # enforces a full load).
+                name = "mtp." + name[len(mtp_prefix):]
+                if name == "mtp.shared_head.norm.weight":
+                    name = "mtp.shared_head_norm.weight"
             if ".indexer." in name:
                 skipped["indexer"] += 1  # DSA layers run as dense MLA: no indexer is built
                 continue
