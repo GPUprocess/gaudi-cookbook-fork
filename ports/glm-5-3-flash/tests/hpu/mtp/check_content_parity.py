@@ -4,7 +4,7 @@ import urllib.request
 from transformers import AutoTokenizer
 
 tok = AutoTokenizer.from_pretrained(__import__("os").environ.get("GLM53_MODEL_PATH", "zai-org/GLM-5.3-Flash"), trust_remote_code=True)
-g = json.load(open(__import__("pathlib").Path(__file__).resolve().parents[0] / "golden_reference.json"))
+g = json.load(open(__import__("pathlib").Path(__file__).resolve().parents[1] / "golden_reference.json"))
 BASE = "http://127.0.0.1:8000"
 THINK = "</think>"
 

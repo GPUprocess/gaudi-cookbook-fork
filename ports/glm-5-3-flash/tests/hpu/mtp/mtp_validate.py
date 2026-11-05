@@ -19,7 +19,7 @@ import sys
 import time
 import urllib.request
 
-GOLDEN = str(__import__("pathlib").Path(__file__).resolve().parent / "golden_reference.json")
+GOLDEN = str(__import__("pathlib").Path(__file__).resolve().parents[1] / "golden_reference.json")
 CHAT_KWARGS = {"reasoning_effort": "low"}
 
 
