@@ -21,7 +21,6 @@ def main():
     win0 = torch.randn(bs, W - 1, C) * 0.5
     x_seq = torch.randn(bs, L, C)
     idx = torch.arange(bs, dtype=torch.int32)
-    qsl = torch.arange(0, bs * L + 1, L, dtype=torch.int32)  # spans of L tokens
 
     # --- reference: production kernel, one token at a time, chaining the in-place window
     pool = torch.zeros(slots, W - 1, C)
@@ -46,7 +45,6 @@ def main():
     ref_win = torch.stack(wins, dim=1)
 
     # --- mine: closed-form chain (the kda_layer spec branch formulation)
-    inp = torch.cat([win0, x_seq], dim=1).contiguous()  # [bs, W-1+L, C]
     w_t = conv_w.view(C, W).t().contiguous()  # [W, C]
     cur_win = win0.contiguous()
     outs2, wins2 = [], []

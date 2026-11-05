@@ -63,7 +63,8 @@ total_tokens = sum(v[0] for v in results.values())
 aggregate = total_tokens / wall if wall > 0 else 0
 per_stream = [v[0] / v[1] if v[1] > 0 else 0 for v in results.values()]
 print(f"concurrent 16-stream: {aggregate:.1f} tok/s aggregate over {total_tokens} tokens in {wall:.1f}s")
-print(f"  per-stream mean: {sum(per_stream)/len(per_stream):.1f} tok/s  min: {min(per_stream):.1f}  max: {max(per_stream):.1f}")
+mean = sum(per_stream) / len(per_stream)
+print(f"  per-stream mean: {mean:.1f} tok/s  min: {min(per_stream):.1f}  max: {max(per_stream):.1f}")
 print(f"  errors: {len(errors)}")
 if aggregate > 150:
     print(f"  vs production k=0 baseline 217.2 tok/s: {aggregate/217.2*100:.0f}%")

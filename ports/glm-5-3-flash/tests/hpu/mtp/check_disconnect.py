@@ -1,5 +1,6 @@
 import json
 import socket
+import time
 import urllib.request
 BASE = "http://127.0.0.1:8000"
 
@@ -25,7 +26,6 @@ sock.close()
 print("client disconnected mid-generation")
 
 # 2) immediately send normal requests — the engine should handle the orphaned request
-import time
 time.sleep(2)
 for i in range(3):
     body2 = {

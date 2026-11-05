@@ -7,8 +7,11 @@ BASE = "http://127.0.0.1:8000"
 
 def ttft(prompt_tokens, seed):
     import random
-    words = ("harbor lantern engine meadow signal granite orbit willow cipher tide ember quarry "
-             "beacon thicket prism delta cascade marlin zenith cobalt fathom bramble kestrel").split()
+    words = [
+    "harbor", "lantern", "engine", "meadow", "signal", "granite", "orbit", "willow", "cipher",
+    "tide", "ember", "quarry", "beacon", "thicket", "prism", "delta", "cascade", "marlin",
+    "zenith", "cobalt", "fathom", "bramble", "kestrel",
+]
     rng = random.Random(seed)
     parts, n = [], 0
     while n < prompt_tokens:

@@ -1,13 +1,17 @@
 import json
 import random
+import time
 import urllib.request
 
 BASE = "http://127.0.0.1:8000"
 
 # build a ~16K-token document with a unique access code buried at ~50% depth
-words = ("harbor lantern engine meadow signal granite orbit willow cipher tide ember quarry "
-         "beacon thicket prism delta cascade marlin zenith cobalt fathom bramble kestrel "
-         "anvil saffron meridian basalt orbit ledger compass drift anchor pivot").split()
+words = [
+    "harbor", "lantern", "engine", "meadow", "signal", "granite", "orbit", "willow", "cipher",
+    "tide", "ember", "quarry", "beacon", "thicket", "prism", "delta", "cascade", "marlin",
+    "zenith", "cobalt", "fathom", "bramble", "kestrel", "anvil", "saffron", "meridian", "basalt",
+    "orbit", "ledger", "compass", "drift", "anchor", "pivot",
+]
 rng = random.Random(42)
 parts, n = [], 0
 code = "AXIOM-7K3N"
@@ -24,7 +28,8 @@ while n < target:
 doc = "\n".join(parts)
 body = {
     "model": "zai-org/GLM-5.3-Flash",
-    "messages": [{"role": "user", "content": doc + "\n\nWhat is the access code mentioned in the log? Answer with the code only."}],
+    "messages": [{"role": "user", "content": doc + "\n\nWhat is the access code mentioned in the log? "
+                                                 "Answer with the code only."}],
     "max_tokens": 64,
     "temperature": 0,
     "chat_template_kwargs": {"reasoning_effort": "low"},

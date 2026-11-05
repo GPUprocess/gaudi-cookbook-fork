@@ -74,7 +74,7 @@ def main():
     # determinism: identical prompts must produce identical outputs
     by_prompt = {}
     drift = 0
-    for i, (p, txt, w) in sorted(results.items()):
+    for _, (p, txt, _) in sorted(results.items()):
         by_prompt.setdefault(p, []).append(txt)
     for p, txts in by_prompt.items():
         if len(txts) > 1 and len(set(txts)) > 1:

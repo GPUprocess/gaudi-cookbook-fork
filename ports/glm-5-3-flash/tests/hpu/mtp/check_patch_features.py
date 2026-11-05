@@ -1,5 +1,8 @@
 import json
 import urllib.request
+import base64
+import io
+from PIL import Image
 
 BASE = "http://127.0.0.1:8000"
 
@@ -22,10 +25,9 @@ except urllib.error.HTTPError as e:
     print(f"penalty HTTP {e.code}: {e.read()[:200]}")
 
 # 2) image limit: 5 images should be rejected
-import base64, io
-from PIL import Image
 img = Image.new("RGB", (64, 64), (200, 200, 200))
-buf = io.BytesIO(); img.save(buf, format="PNG")
+buf = io.BytesIO()
+img.save(buf, format="PNG")
 b64 = base64.b64encode(buf.getvalue()).decode()
 content = [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}] * 5
 body2 = {

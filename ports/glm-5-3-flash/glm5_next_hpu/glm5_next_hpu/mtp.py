@@ -144,10 +144,7 @@ class Glm5NextMTPModel(nn.Module):
         ids = input_ids.reshape(-1)[:n_tokens]
         pos = positions.reshape(-1)[:n_tokens]
 
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(ids)
-        else:
-            inputs_embeds = inputs_embeds.reshape(n_tokens, -1)
+        inputs_embeds = self.embed_tokens(ids) if inputs_embeds is None else inputs_embeds.reshape(n_tokens, -1)
         # Position 0 has no predecessor to predict from; zero it rather than
         # feed the raw embedding (matches glm4_moe_mtp.py).
         inputs_embeds = torch.where(pos.unsqueeze(-1) == 0, 0, inputs_embeds)

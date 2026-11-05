@@ -56,14 +56,16 @@ def chat(base, messages, max_tokens=256, temperature=0.0, max_retries=3, golden=
 
 def sized_document(target_tokens, seed):
     """Repetition-free natural-prose filler of approximately target_tokens tokens."""
-    words = (
-        "harbor lantern engine meadow signal granite orbit willow cipher tide ember quarry beacon thicket "
-        "prism delta cascade marlin zenith cobalt fathom bramble kestrel anvil saffron meridian basalt"
-    ).split()
+    words = [
+    "harbor", "lantern", "engine", "meadow", "signal", "granite", "orbit", "willow", "cipher",
+    "tide", "ember", "quarry", "beacon", "thicket", "prism", "delta", "cascade", "marlin",
+    "zenith", "cobalt", "fathom", "bramble", "kestrel", "anvil", "saffron", "meridian", "basalt",
+]
     rng = random.Random(seed)
     parts, n = [], 0
     while n < target_tokens:
-        s = " ".join(rng.choice(words) for _ in range(rng.randint(12, 20))) + f". The ledger entry {n} records the season."
+        s = " ".join(rng.choice(words) for _ in range(rng.randint(12, 20)))
+        s += f". The ledger entry {n} records the season."
         parts.append(s)
         n += len(s) // 4
     return "\n".join(parts)
@@ -98,7 +100,8 @@ def stage_smoke(base):
 
 
 def stage_golden(base, max_tokens=256):
-    ref = json.load(open(GOLDEN))
+    with open(GOLDEN) as f:
+        ref = json.load(f)
     failures = 0
     for i, case in enumerate(ref["cases"]):
         try:
@@ -122,9 +125,11 @@ def stage_golden(base, max_tokens=256):
             # 0.625 were verified to be word-choice equivalents (e.g. "recursive approach"
             # vs "recursive version", "2" vs "1+0+1=2"); see the docs page, "Golden parity".
             if gap is not None and gap <= 0.25:
-                print(f"NEAR-TIE golden[{i}] diverges at token {div} (reference top-2 gap {gap}; expected under MTP; got {len(ids)} tokens, want {len(exp)})")
+                print(f"NEAR-TIE golden[{i}] diverges at token {div} (reference top-2 gap {gap}; "
+                      f"expected under MTP; got {len(ids)} tokens, want {len(exp)})")
             else:
-                print(f"FAIL golden[{i}] diverges at token {div} (reference top-2 gap {gap}; got {len(ids)} tokens, want {len(exp)})")
+                print(f"FAIL golden[{i}] diverges at token {div} (reference top-2 gap {gap}; "
+                      f"got {len(ids)} tokens, want {len(exp)})")
                 failures += 1
     return failures
 
@@ -147,8 +152,6 @@ def stage_decode(base, gen_tokens=512):
             n = sum(r["usage"]["completion_tokens"] for r in results)
             total_tokens += n
             total_time += wall
-            if bs == 1:
-                per = [r["usage"]["completion_tokens"] / max((time.time() - t0) / len(prompts), 1e-6) for r in results]
         rate = total_tokens / total_time
         print(f"{'PASS' if rate > 1 else 'FAIL'} decode bs{bs}: {rate:.1f} tok/s aggregate over {total_tokens} tokens")
         if bs == 1:
@@ -187,7 +190,8 @@ def stage_soak(base):
     doc = sized_document(4000, seed=17)
     r, wall = chat(
         base,
-        [{"role": "user", "content": f"{doc}\n\nHow many ledger entries are numbered above? Answer with the count only."}],
+        [{"role": "user", "content": f"{doc}\n\nHow many ledger entries are numbered above? "
+                                     f"Answer with the count only."}],
         max_tokens=512,
     )
     t = (r["choices"][0]["message"].get("content") or "").strip()

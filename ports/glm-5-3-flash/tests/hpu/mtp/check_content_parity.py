@@ -1,10 +1,13 @@
 import json
+import pathlib
 import urllib.request
 
 from transformers import AutoTokenizer
 
-tok = AutoTokenizer.from_pretrained(__import__("os").environ.get("GLM53_MODEL_PATH", "zai-org/GLM-5.3-Flash"), trust_remote_code=True)
-g = json.load(open(__import__("pathlib").Path(__file__).resolve().parents[1] / "golden_reference.json"))
+tok = AutoTokenizer.from_pretrained(
+    __import__("os").environ.get("GLM53_MODEL_PATH", "zai-org/GLM-5.3-Flash"), trust_remote_code=True)
+with open(pathlib.Path(__file__).resolve().parents[1] / "golden_reference.json") as f:
+    g = json.load(f)
 BASE = "http://127.0.0.1:8000"
 THINK = "</think>"
 
@@ -51,7 +54,8 @@ for ci in range(len(g["cases"])):
         if mtp_content[:div] == ref_content[:div] and div == min_len:
             # one is a prefix of the other — same content, different length
             longer = "MTP" if len(mtp_content) > len(ref_content) else "REF"
-            print(f"golden[{ci}]: CONTENT IDENTICAL (prefix match, {longer} has {abs(len(mtp_content)-len(ref_content))} extra chars)")
+            extra = abs(len(mtp_content) - len(ref_content))
+            print(f"golden[{ci}]: CONTENT IDENTICAL (prefix match, {longer} has {extra} extra chars)")
             identical += 1
         else:
             print(f"golden[{ci}]: CONTENT diverges at char {div}")

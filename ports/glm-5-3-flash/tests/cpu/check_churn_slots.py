@@ -6,7 +6,6 @@ for: fresh alloc, finish + slot reuse, per-group disjointness, and column unique
 No HPU, no engine: the slot algebra is pure torch/numpy.
 """
 
-import types
 
 import torch
 
@@ -24,7 +23,8 @@ def make_state_fn(num_groups, spec_slots, req_ids, base_of, req_indices, target_
     span = num_groups * spec_slots
     rows = []
     for g in range(num_groups):
-        base = torch.tensor([base_of.get(req_ids[i], 0) if i < len(req_ids) else 0 for i in req_indices], dtype=torch.int64)
+        base = torch.tensor(
+            [base_of.get(req_ids[i], 0) if i < len(req_ids) else 0 for i in req_indices], dtype=torch.int64)
         if columns == 1:
             rows.append((base * span + g * spec_slots + 1).to(torch.int32))
         else:

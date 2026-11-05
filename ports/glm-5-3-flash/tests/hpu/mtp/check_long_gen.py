@@ -26,7 +26,6 @@ n = r["usage"]["completion_tokens"]
 txt = r["choices"][0]["message"].get("content") or ""
 print(f"2048-max: {n} tokens in {w:.1f}s = {n/w:.1f} tok/s")
 # degeneration check: repetition of long loops
-import re
 words = txt.split()
 rep = 0
 for size in (8, 16, 32):

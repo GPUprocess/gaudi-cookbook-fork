@@ -176,7 +176,6 @@ class Glm5NextHPUKDAAttention(KimiGatedDeltaNetAttention):
         if store_indices is None:
             store_indices = state_indices
         num_accepted_tokens = getattr(md, "num_accepted_tokens", None)
-        num_gdn_decodes = int(getattr(md, "num_gdn_decodes", 0) or 0)
         query_start_loc = getattr(md, "query_start_loc_p", None)
         if query_start_loc is None:
             query_start_loc = getattr(md, "query_start_loc", None)
@@ -257,7 +256,8 @@ class Glm5NextHPUKDAAttention(KimiGatedDeltaNetAttention):
                     "qconv_w=%s qconv_b=%s",
                     tuple(conv_state.shape), dim3, tuple(q_proj_states.shape), tuple(k_proj_states.shape),
                     tuple(v_proj_states.shape), tuple(spec_cols.shape), tuple(store_cols.shape),
-                    tuple(self.q_conv1d.weight.shape), tuple(self.q_conv1d.bias.shape) if self.q_conv1d.bias is not None else None,
+                    tuple(self.q_conv1d.weight.shape),
+                    tuple(self.q_conv1d.bias.shape) if self.q_conv1d.bias is not None else None,
                 )
             load_slots = _kda_load_slots(spec_cols, num_accepted_tokens, bs_rows)
             win = conv_state.index_select(0, torch.remainder(load_slots, pool).long())  # [bs, W-1, 3*dim3]
@@ -293,7 +293,8 @@ class Glm5NextHPUKDAAttention(KimiGatedDeltaNetAttention):
             out_chain = torch.stack(outs, dim=1)  # [bs, L, C]
             new_win = torch.stack(new_wins, dim=1)  # [bs, L, W-1, C]
             tgt = torch.cat([store_cols[:bs_rows, 0:1], store_cols[:bs_rows, 1 : 1 + spec_len]], dim=1).reshape(-1)
-            rows = torch.cat([win.unsqueeze(1), new_win], dim=1).reshape(bs_rows * (spec_len + 1), win.shape[1], win.shape[2])
+            rows = torch.cat([win.unsqueeze(1), new_win], dim=1).reshape(
+                bs_rows * (spec_len + 1), win.shape[1], win.shape[2])
             _scatter_candidate_states(conv_state, tgt, rows)
             q, k, v = (t.reshape(bs_rows * spec_len, -1) for t in out_chain.split(dim3, dim=-1))
         else:
