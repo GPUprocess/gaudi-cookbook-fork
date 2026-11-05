@@ -141,6 +141,7 @@ nav:
       - ports/index.md
       - Muse Spark Open: ports/muse-spark-open.md
       - GLM-5.3-Flash: ports/glm-5-3-flash.md
+      - GLM-5.3-Flash MTP speculative decoding: ports/glm-5-3-flash-mtp.md
       - DeepSeek-V4.1-Flash: ports/deepseek-v4-1-flash.md
       - GLM-5.2 and GLM-5.3 MXFP4: ports/glm-5-mxfp4.md
       - Beam-1.0: ports/beam-1-0.md

@@ -5,7 +5,8 @@ and images, for the vllm-gaudi `v0.26.0` release (`b059f9c`, vLLM `568afb3a`). T
 model and its `transformers` 5.14.1 has no `glm5_next` config, so this port supplies both and runs the published
 block-FP8 checkpoint, unconverted, on one 8-card node at 256K tokens per request. Design and evidence:
 [docs/ports/glm-5-3-flash.md](../../docs/ports/glm-5-3-flash.md). Recipe:
-[recipes/zai-org/GLM-5.3-Flash](../../recipes/zai-org/GLM-5.3-Flash/recipe.yaml).
+[recipes/zai-org/GLM-5.3-Flash](../../recipes/zai-org/GLM-5.3-Flash/recipe.yaml). An MTP speculative-decoding extension is documented in
+[docs/ports/glm-5-3-flash-mtp.md](../../docs/ports/glm-5-3-flash-mtp.md).
 
 ## Contents
 
@@ -19,11 +20,15 @@ block-FP8 checkpoint, unconverted, on one 8-card node at 256K tokens per request
 | `glm5_next_hpu/glm5_next_hpu/kda.py`, `kda_layer.py` | Kimi Delta Attention in PyTorch: chunked prefill (loop or scan), recurrent decode, GLM's bounded-sigmoid gate, and the layer on top of vLLM's Kimi KDA layer. |
 | `glm5_next_hpu/glm5_next_hpu/model.py` | The model: NoPE MLA attention (DSA indexer skipped, see below), mHC streams, vLLM's DeepSeek-V2 MoE, the hybrid-state plumbing. |
 | `glm5_next_hpu/glm5_next_hpu/vision.py`, `multimodal.py` | The vision tower (SDPA, eager) and vLLM's multimodal processor for images. |
+| `glm5_next_hpu/glm5_next_hpu/mtp.py` | The MTP draft wrapper: binds the checkpoint's layer-45 MTP block to vllm-gaudi's speculative decoder by reference (no second weight load); see [docs/ports/glm-5-3-flash-mtp.md](../../docs/ports/glm-5-3-flash-mtp.md). |
 | `glm5_next_hpu/glm5_next_hpu/mhc.py` | The switch for the Sinkhorn kernel: registers the library and rebinds vLLM's `mhc_pre_torch`. |
 | `patches/` | Four source patches (fix contract: anchors, `--check`, `--root`, exit 2 on drift, idempotent). |
 | `kernels/` | The mHC Sinkhorn TPC kernel (`glm_mhc_sinkhorn/`) and `build.sh`, which builds it with `kernels/mxfp4-moe/build.sh`. |
+| `serving/serve_mtp.sh` | Launch script for the MTP configuration (speculative config, verify-row batch, window flags). |
 | `serving/chat_template.jinja` | The checkpoint's chat template with image placeholders (one change, noted in its header). |
 | `tests/` | CPU tests (pytest): patches (stdlib only), KDA kernels and the mHC wrapper (torch; the wrapper also needs vLLM), config. |
+| `tests/cpu/check_*.py` | MTP unit checks run directly (no pytest): the draft wrapper contract, KDA candidate-slot chaining, churn slot algebra, chain-conv parity. |
+| `tests/hpu/mtp/` | MTP validation harness and functional checks against a running MTP server. |
 | `tests/hpu/` | Device gates: `run_gates.sh` against a running server, and the Sinkhorn kernel parity gate on a free card. |
 
 ### Patches
