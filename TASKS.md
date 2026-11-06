@@ -364,9 +364,11 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   decode path is unchanged). Empirically confirmed under our window:
   lin+tamed prompt cfgs (bs 1-8 step 1, query 128 step 2048, ctx 0 step 64) and
   decode (bs pinned 8, blocks 32..2048 step 128) -> 8x4x4 = 128 prompt graphs +
-  1x16 = 16 decode graphs, matching the analytic estimate. Warmup projection:
-  exp 593 total graphs ~31.5 min -> lin+tamed 144 total graphs ~8-9 min
-  (the graph count ratio 4.1x, assuming the per-graph compile time is uniform).
+  1x16 = 16 decode graphs, matching the analytic estimate. Warmup projection (corrected): the 31.5 min boot includes ~13.3 min of graph
+  compilation (593 graphs at ~1.35 s/graph avg) plus ~18 min of weight loading,
+  model init, and non-graph setup (which dont change). Lin+tamed: 144 graphs at
+  the same per-graph rate = ~3.2 min of compilation, total boot ~21 min
+  (a ~10 min saving, not 22 min - only the graph compilation scales).
 - **NEW H013 Port the fused clamp TPC kernel from the reference fork** - `READY`.
   Our vLLM's fp8 quantization config already carries the clamped-SwiGLU contract
   (swiglu_limit / swiglu_alpha / swiglu_beta); the reference's TPC kernel and loader
