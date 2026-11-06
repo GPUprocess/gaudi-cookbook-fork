@@ -340,3 +340,18 @@ changes touch, and the maintenance windows to exercise them already exist then.
   device. Our `hpu_fp8.py` uses them only in the weight-dequant path (not the forward
   all-reduce), so the exact fix does not apply; verify our forward all-reduce tensor handling
   during the Phase-10 profiling pass (unverified check).
+
+
+## I015 integration-complexity finding (scope refined)
+
+Our v0.26.0 runner restructures execute_model relative to the reference base: per-request
+prefill tuples (req_id, prompt_len, token_ids, position_ids, attn_metadata, logits_indices)
+processed in separate loops, plus separate decode and spec-decode forward paths — the
+reference single `prepare()` integration point does not exist here. The realistic port hooks
+the unified decode forward (the near-tie evidence lives in decode parity anyway) and treats
+per-request prefill capture as out of scope. Estimated effort: ~1 day of careful runner
+work + HPU validation in a window — its own session, sequenced after Stage-1 and A014 (the
+diagnostics attach to the same forward paths those changes touch).
+
+I015 remains READY with the refined scope; the reference modules and the dependency mapping
+are preserved in the operator workspace.

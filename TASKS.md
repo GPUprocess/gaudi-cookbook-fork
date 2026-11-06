@@ -342,9 +342,10 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   Porting scope confirmed GREEN: the reference modules (`layer_diagnostic.py` 427 lines
   + `kda_state_diagnostic.py` 199 lines) depend only on `runner.use_merged_prefill` and
   `runner.input_batch` - both exist in our runner - plus their own state set by
-  `prepare()`; one env var (`VLLM_DIAG_LAYER_POSITIONS`); no special HPU APIs. The port:
-  bring the two modules (attribution), call `prepare()` at our runner boot, attach the
-  boundary hooks at our MTP verify forward + sampler, env-gated OFF by default.
+  `prepare()`; one env var (`VLLM_DIAG_LAYER_POSITIONS`); no special HPU APIs. The port: bring the two modules (attribution) and hook the unified decode forward
+  (our v0.26.0 execute_model splits prefill/decode; the reference single integration
+  point does not exist). ~1 day careful runner work + window validation - own session,
+  sequenced after Stage-1/A014. Env-gated OFF by default.
   Evidence: RESEARCH-001 addendum 6 + the I015 porting assessment.
 - **A024 update (via RESEARCH-001 addendum 6)**: MTP at the production 262K window is
   likely NET-NEGATIVE without the block-table-sharing lever (their 262K MTP-4 trial:
