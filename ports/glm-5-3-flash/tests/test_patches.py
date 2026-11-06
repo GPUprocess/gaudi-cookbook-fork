@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 PATCHES = Path(__file__).resolve().parents[1] / "patches"
-NAMES = ["nope_mla", "mla_model_type", "cache_group_idx", "mhc_kernel_env"]
+NAMES = ["nope_mla", "mla_model_type", "cache_group_idx", "mhc_kernel_env", "skip_layer_markstep"]
 
 # Minimal stand-ins for the target files: the anchors each patch needs, in valid Python.
 FAKE = {
@@ -50,6 +50,18 @@ FAKE = {
         '                if layer is not None and hasattr(layer, "linear_attn"):\n'
         '                    layer.linear_attn.cache_group_idx = torch.tensor(group_idx, dtype=torch.long, device="hpu")\n'  # noqa: E501
         "\n\n"
+        "\n\n"
+        "class _AnchorHolder:\n"
+        "    def prepare_hook_anchor(self):\n"
+        "        try:\n"
+        "            hidden_layer_markstep_interval = int(os.getenv('VLLM_CONFIG_HIDDEN_LAYERS', '1'))\n"
+        "        except ValueError:\n"
+        "            logger.warning(\"Invalid VLLM_CONFIG_HIDDEN_LAYERS value, using default 1\")\n"
+        "            hidden_layer_markstep_interval = 1\n"
+        "        model_config = getattr(self.model, \"config\", None)\n"
+        "        modify_model_layers(self.model,\n"
+        "                            get_target_layer_suffix_list(model_config.model_type if model_config is not None else None),\n"  # noqa: E501
+        "                            hidden_layer_markstep_interval)\n"
         "def other():\n"
         "    pass\n"
     ),
@@ -100,6 +112,7 @@ def test_drift_writes_nothing(name, fake_root):
             .replace('"glm_moe_dsa"', '"glm_moe_dsax"')
             .replace("mamba_like_layer =", "mamba_layers =")
             .replace("def register():", "def register(x):")
+            .replace("modify_model_layers(self.model,", "modify_model_layers_disabled(self.model,")
         )
     before = {rel: (fake_root / rel).read_text() for rel in FAKE}
     r = run(name, fake_root)

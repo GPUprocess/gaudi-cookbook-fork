@@ -131,11 +131,13 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   in our tree; abotsis measured warmup 13 → ~2 min and 12/12 serial-vs-concurrent parity
   with decode pinned to one bucket, decode within noise. Free determinism + boot-time win;
   needs a server restart (approval). Evidence: RESEARCH-001 addendum 2.
-- **NEW B023 Backport skip_layer_markstep for glm5_next** — `READY`. Our v0.26.0 runner
-  mark_steps after EVERY decoder layer under HPU-graph replay (45 of 176 launches per
-  decode step are recipe boundaries); abotsis measured skipping it as bit-identical
-  (greedy parity 8/8) and +10% single-stream decode. Small fail-closed patch; needs a
-  server restart (approval). Evidence: RESEARCH-001 addendum 3.
+- **NEW B023 Backport skip_layer_markstep for glm5_next** — `WORKING`. The patch is
+  landed in the fail-closed contract (`patches/skip_layer_markstep.py`): gated behind
+  `VLLM_GLM_SKIP_LAYER_MARKSTEP=1` (default OFF — experimental until HPU-verified in
+  this tree; an explicit `VLLM_CONFIG_HIDDEN_LAYERS` always wins). Contract tests
+  green (apply/idempotent/check/drift). Upstream evidence: bit-identical (greedy
+  parity 8/8) and +10% single-stream decode. HPU measurement pending a window;
+  deploy = apply the patch during the window boot. Evidence: RESEARCH-001 addendum 3.
 - **NEW B022 Port position-independent all-reduce (gather_sum)** — `READY` (upstream fix
   exists in abotsis fork; absent in our b059f9c tree). Fixes the co-batched row-order ULP
   that flips near-tie routing under concurrency. Evidence: RESEARCH-001.
