@@ -334,6 +334,10 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   our runner auto-pins it when unset, so the reference value already matches our
   effective config. One variable at a time; needs a server restart per candidate
   (approval). Evidence: RESEARCH-001 addendum 7 + the runtime recon in this entry.
+  Procedure (per candidate, from serve_mtp.sh): A = export VLLM_BUCKETING_STRATEGY=lin
+  before boot; B = add --enable-ep-weight-filter to the serve args. Measure decode bs=1,
+  16-stream aggregate, TTFT ladder, and the accuracy suite (5 reps) against the Stage-1
+  baseline; one candidate per boot.
 - **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. The abotsis fork's
   layer_diagnostic hooks + diag_compare tooling prove near-tie divergences at the boundary
   level (~1 bf16 ULP at attention output, bounded 2-6e-2 amplification through mHC, no
