@@ -348,6 +348,14 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   lin+tamed prompt cfgs (bs 1-8 step 1, query 128 step 2048, ctx 0 step 64) and
   decode (bs pinned 8, blocks 32..2048 step 128) -> 8x4x4 = 128 prompt graphs +
   1x16 = 16 decode graphs, matching the analytic estimate.
+- **NEW K010 Evaluate the abotsis fork as the serving base** — `READY` (strategic).
+  Their fork (919ec98f) is a full GLM-5.3-Flash serving stack: the draft graphs, the
+  KDA spec-state, the MoE expert cache, the pad bucketing, the device sampling, the
+  context buckets, the query tiling, the all-reduce fix, the mark_step skip, and the
+  decay-dot fix — all measured on the same model and hardware. Recommended: adopt as
+  the Phase-2 base after Stage-1 validates our current implementation (so the
+  comparison has a verified baseline), porting our docs/harness/suites onto it.
+  Evidence: RESEARCH-001 addenda 7-10.
 - **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. The abotsis fork's
   Status: WORKING - the diagnostics core is landed in this port
   (`layer_diagnostics.py`, CPU-verified 24 checks) env-gated OFF; the runner

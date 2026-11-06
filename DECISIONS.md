@@ -28,4 +28,12 @@ None failed outright so far; the k=2 performance result is recorded as REGRESSIO
 (kept as a capability, not the default) rather than FAILED.
 
 
-| 200 tok/s single-stream decode for GLM-5.3-Flash on 8x Gaudi 2 | REJECTED (physical limit) | Weight reads at bs=1 are 38.25 GiB/card/step = 41.1 GB. At the 2,450 GB/s spec BW the step floor is 16.8 ms (59.5 tok/s ceiling without MTP); at the bridge cost model's 1,945 GB/s it is 21.1 ms; at the ~69% measured utilization (~1,696 GB/s) it is 24.2 ms. The aggregate interpretation of the target is already MET (213-217 tok/s at 16 streams, no MTP). Single-stream 200 would require MTP-4 with acceptance >= 4.2 at 100% spec BW — above the measured utilization ceiling and beyond the checkpoint's single-head acceptance decay (reference MTP-4: 3.33 of 5). | HBM specs: GaudiGrimoire tier B (whitepaper 2.45 TB/s; bridge cost model 1,945 GB/s; measured utilization ~69%); our baseline EXP-OPT-001 |
+| 200 tok/s single-stream decode for GLM-5.3-Flash on 8x Gaudi 2 | REJECTED (physical limit) |
+| Strategic base for Phase 2 | PENDING OWNER DECISION | The abotsis fork (919ec98f) is a
+  full GLM-5.3-Flash serving stack on the same hardware with measured capabilities our
+  port lacks (the draft graphs, the MoE expert cache, the pad bucketing, the device
+  sampling, the query tiling). Recommended: validate our current implementation
+  (Stage-1), then migrate to their fork as the Phase-2 base, porting our docs/harness
+  onto it. Their single-stream decode is slower (21-24 vs 30.1) - the migration trades
+  per-stream speed for the richer optimization surface; measure before committing. | RESEARCH-001
+  addenda 7-10 | Weight reads at bs=1 are 38.25 GiB/card/step = 41.1 GB. At the 2,450 GB/s spec BW the step floor is 16.8 ms (59.5 tok/s ceiling without MTP); at the bridge cost model's 1,945 GB/s it is 21.1 ms; at the ~69% measured utilization (~1,696 GB/s) it is 24.2 ms. The aggregate interpretation of the target is already MET (213-217 tok/s at 16 streams, no MTP). Single-stream 200 would require MTP-4 with acceptance >= 4.2 at 100% spec BW — above the measured utilization ceiling and beyond the checkpoint's single-head acceptance decay (reference MTP-4: 3.33 of 5). | HBM specs: GaudiGrimoire tier B (whitepaper 2.45 TB/s; bridge cost model 1,945 GB/s; measured utilization ~69%); our baseline EXP-OPT-001 |

@@ -355,3 +355,43 @@ diagnostics attach to the same forward paths those changes touch).
 
 I015 remains READY with the refined scope; the reference modules and the dependency mapping
 are preserved in the operator workspace.
+
+
+## Addendum 10: their env-var reference reveals a much richer fork (strategic update)
+
+Their `docs/configuration/env_variables.md` documents capabilities our port lacks entirely:
+
+- **MoE expert cache** (`VLLM_GLM_MOE_CACHE_EXPERTS=10`, `VLLM_GLM_GRAPH_CACHE=auto`,
+  `VLLM_GLM_MOE_MIN_FREE_GB=4`): hot experts kept resident on device for the decode path,
+  graph-safe during HPU-graph replay, memory-guarded. A decode-path optimization our port
+  does not have.
+- **Padding-aware bucketing** (`VLLM_BUCKETING_STRATEGY=pad` + the FusedSDPA slicing params):
+  guarantees bounded padding in the sequence and context dimensions — a third bucketing
+  strategy (beyond exp/lin) with slicing for the attention kernel.
+- **Query tiling for large attention biases** (`VLLM_HPU_FSDPA_Q_TILE_ENABLE`): fixes a 2 GiB
+  bias overflow that silently returns NaN at long contexts. Our production 262K window could
+  hit this if our attention path uses FusedSDPA-style biases (our port uses custom NoPE MLA +
+  DSA — applicability unverified).
+- **`VLLM_KDA_NEUMANN_ITERS=2`**: a Neumann-series iteration cap for their KDA kernel
+  numerics — their KDA implementation differs from ours (theirs: plugin ops with a Neumann
+  path; ours: chunk/scan in the port plugin).
+- **`VLLM_HPU_DECODE_TENSOR_CACHE`**: on for glm5_next without spec decode (removes host work
+  from every replayed recipe; ~7 GB RSS per worker), off under spec decode (the doubled graph
+  count exceeds a 125 GB host at TP=8). Matches our MTP HBM situation.
+- **`VLLM_HPU_GRAPH_ASYNC_REPLAY`**: bit-identical async graph replay, opt-in for
+  re-measurement.
+
+**Strategic assessment update**: the abotsis fork (`919ec98f`) has evolved far beyond a
+spec-decode patch set — it is a full GLM-5.3-Flash serving stack with the draft graphs, the
+KDA spec-state, the MoE expert cache, the pad bucketing, the device sampling, the context
+buckets, and the query tiling, all measured. The adapt-vs-adopt decision now clearly favors
+**adopting their fork as the serving base** and porting our unique contributions onto it (the
+documented recipe/harness/docs, the recorded patch set where still needed, the validation
+suites) — rather than adapting their machinery into our older v0.26.0-based port piecemeal.
+The base delta (vLLM 568afb3a/v0.26.0 vs 3dc7a68ce4/v0.27.2rc0+1041) is substantial and their
+stack already runs the same model on the same hardware.
+
+This strengthens and refines the E015/A014 sequencing: the config A/Bs (B021/E015) remain
+valid for our current deployment, but the strategic recommendation is to plan the migration
+to their fork as the Phase-2 base, with Stage-1 (A001) validating our current implementation
+first so the comparison has a verified baseline.
