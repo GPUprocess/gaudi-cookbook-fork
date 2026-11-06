@@ -1,0 +1,274 @@
+{
+ "label": "mtp1_smoke",
+ "base": "http://127.0.0.1:8000",
+ "suite": "suite_v1.jsonl",
+ "reps": 1,
+ "runs": [
+  {
+   "rep": 0,
+   "per_item": {
+    "M001": {
+     "ok": true,
+     "content": "391",
+     "error": null
+    },
+    "M002": {
+     "ok": true,
+     "content": "12",
+     "error": null
+    },
+    "M003": {
+     "ok": true,
+     "content": "36",
+     "error": null
+    },
+    "M004": {
+     "ok": true,
+     "content": "80",
+     "error": null
+    },
+    "M005": {
+     "ok": true,
+     "content": "210",
+     "error": null
+    },
+    "M006": {
+     "ok": true,
+     "content": "36",
+     "error": null
+    },
+    "M007": {
+     "ok": true,
+     "content": "1024",
+     "error": null
+    },
+    "M008": {
+     "ok": true,
+     "content": "26",
+     "error": null
+    },
+    "R001": {
+     "ok": true,
+     "content": "Yes",
+     "error": null
+    },
+    "R002": {
+     "ok": true,
+     "content": "1",
+     "error": null
+    },
+    "R003": {
+     "ok": true,
+     "content": "5",
+     "error": null
+    },
+    "R004": {
+     "ok": true,
+     "content": "5",
+     "error": null
+    },
+    "R005": {
+     "ok": true,
+     "content": "6",
+     "error": null
+    },
+    "R006": {
+     "ok": true,
+     "content": "300",
+     "error": null
+    },
+    "R007": {
+     "ok": true,
+     "content": "9",
+     "error": null
+    },
+    "R008": {
+     "ok": true,
+     "content": "47",
+     "error": null
+    },
+    "F001": {
+     "ok": true,
+     "content": "{\"color\": \"blue\", \"count\": 3}",
+     "error": null
+    },
+    "F002": {
+     "ok": true,
+     "content": "- Python\n- JavaScript\n- Rust",
+     "error": null
+    },
+    "F003": {
+     "ok": true,
+     "content": "ananab",
+     "error": null
+    },
+    "F004": {
+     "ok": true,
+     "content": "Pink",
+     "error": null
+    },
+    "F005": {
+     "ok": true,
+     "content": "quick",
+     "error": null
+    },
+    "F006": {
+     "ok": true,
+     "content": "olleh dlrow",
+     "error": null
+    },
+    "F007": {
+     "ok": true,
+     "content": "joyful, cheerful",
+     "error": null
+    },
+    "F008": {
+     "ok": true,
+     "content": "The Sky Is Clear Today",
+     "error": null
+    },
+    "C001": {
+     "ok": true,
+     "content": "3",
+     "error": null
+    },
+    "C002": {
+     "ok": true,
+     "content": "10",
+     "error": null
+    },
+    "C003": {
+     "ok": false,
+     "content": "'ABC'",
+     "error": null
+    },
+    "C004": {
+     "ok": true,
+     "content": "[0, 2, 4, 6]",
+     "error": null
+    },
+    "C005": {
+     "ok": true,
+     "content": "3",
+     "error": null
+    },
+    "C006": {
+     "ok": true,
+     "content": "50",
+     "error": null
+    },
+    "C007": {
+     "ok": false,
+     "content": "'ababab'",
+     "error": null
+    },
+    "C008": {
+     "ok": true,
+     "content": "[1, 2, 3]",
+     "error": null
+    },
+    "G001": {
+     "ok": true,
+     "content": "Paris",
+     "error": null
+    },
+    "G002": {
+     "ok": true,
+     "content": "7",
+     "error": null
+    },
+    "G003": {
+     "ok": true,
+     "content": "Carbon dioxide",
+     "error": null
+    },
+    "G004": {
+     "ok": true,
+     "content": "William Shakespeare",
+     "error": null
+    },
+    "G005": {
+     "ok": true,
+     "content": "Au",
+     "error": null
+    },
+    "G006": {
+     "ok": true,
+     "content": "366",
+     "error": null
+    },
+    "G007": {
+     "ok": true,
+     "content": "Jupiter",
+     "error": null
+    },
+    "G008": {
+     "ok": true,
+     "content": "100",
+     "error": null
+    }
+   },
+   "per_category": {
+    "math": {
+     "correct": 8,
+     "n": 8
+    },
+    "reasoning": {
+     "correct": 8,
+     "n": 8
+    },
+    "instruction": {
+     "correct": 8,
+     "n": 8
+    },
+    "coding": {
+     "correct": 6,
+     "n": 8
+    },
+    "general": {
+     "correct": 8,
+     "n": 8
+    }
+   },
+   "aggregate": {
+    "overall": 38,
+    "n": 40
+   },
+   "wall_s": 9.8
+  }
+ ],
+ "summary": {
+  "per_rep_overall_acc": [
+   95.0
+  ],
+  "mean_acc": 95.0,
+  "median_acc": 95.0,
+  "pooled_acc": 95.0,
+  "wilson95": [
+   83.5,
+   98.62
+  ],
+  "per_category_pooled": {
+   "coding": {
+    "acc": 75.0,
+    "n": 8
+   },
+   "general": {
+    "acc": 100.0,
+    "n": 8
+   },
+   "instruction": {
+    "acc": 100.0,
+    "n": 8
+   },
+   "math": {
+    "acc": 100.0,
+    "n": 8
+   },
+   "reasoning": {
+    "acc": 100.0,
+    "n": 8
+   }
+  }
+ }
+}

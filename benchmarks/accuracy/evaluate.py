@@ -71,7 +71,11 @@ def score(item, content):
         except ValueError:
             return False
     if check == "exact":
-        return t == ans
+        # Accept Python-repr quoting of string answers ('ABC' for ABC).
+        stripped = t.strip()
+        if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "\"'":
+            stripped = stripped[1:-1].strip()
+        return stripped == ans
     if check == "contains":
         return ans.lower() in t.lower()
     if check == "contains_all":
