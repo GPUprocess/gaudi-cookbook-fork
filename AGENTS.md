@@ -12,6 +12,31 @@ You are usually here for one of two reasons:
 2. **You are changing this repository.** Read [Working on this repository](#working-on-this-repository)
    as well.
 
+## Project policies (mandatory reading)
+
+This fork carries four project policy documents. Read them at the start of every session, before
+any research, editing, benchmarking, or system-state change:
+
+| File | Role |
+| --- | --- |
+| [`docs/SESSION_PROTOCOL.md`](docs/SESSION_PROTOCOL.md) | Mandatory start-of-session and end-of-session workflow |
+| [`docs/BENCHMARK_POLICY.md`](docs/BENCHMARK_POLICY.md) | When a result may be called an improvement; baseline acceptance rules |
+| [`docs/HARDWARE_ROADMAP.md`](docs/HARDWARE_ROADMAP.md) | 8-HPU development / 4-HPU deployment roadmap and safety rules |
+| [`BASELINE.md`](BASELINE.md) | Authoritative verified-performance record (template until results are verified) |
+
+Mandatory requirements:
+
+1. Read `TASKS.md` and `EXPERIMENTS.md` in full at the beginning of every session.
+2. Read `BASELINE.md`, `CURRENT_STATE.md`, and the three policy documents before beginning work.
+3. Follow the session-start and end-of-session procedures in `docs/SESSION_PROTOCOL.md`.
+4. Follow the benchmark methodology and the accuracy gate (max 0.5 absolute percentage points
+   regression) in `docs/BENCHMARK_POLICY.md`.
+5. Follow the development (up to 8 HPUs) and final 4-HPU deployment roadmap in
+   `docs/HARDWARE_ROADMAP.md`.
+
+These project policies complement the repository conventions below; where they are stricter, the
+project policy wins.
+
 ## Facts to anchor on
 
 Everything here was run on these components. Treat anything outside them as untested.
