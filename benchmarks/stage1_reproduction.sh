@@ -57,6 +57,10 @@ stop_server() {
   sleep 3
 }
 
+# The serve scripts and the fix step require the deployment venv python
+# (the system python fails the fix-step target resolution).
+source /opt/glm53/venv/bin/activate
+
 run_condition() {
   local label=$1 serve_script=$2 log=$3
   echo "=== booting $label ==="
