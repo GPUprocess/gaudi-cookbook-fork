@@ -130,3 +130,27 @@ path is chosen.
   padding_aware.py): the abotsis bucket-pinning recipe (pin decode to one bucket) is directly
   applicable — their measurement: warmup 13 → ~2 min (one decode bucket), parity 12/12, decode
   within noise. Free win for boot time and determinism; untested here.
+
+
+## Addendum 3: skip_layer_markstep backport candidate (+10% single-stream, bit-identical)
+
+Our v0.26.0 runner installs a per-DecoderLayer forward hook that calls `mark_step()` after
+every decoder layer (`modify_model_layers`, interval from `VLLM_CONFIG_HIDDEN_LAYERS`,
+default 1 — our production launch does not set it). The abotsis runner (919ec98f) skips this
+hook for `glm5_next`/`glm5_next_text` under HPU-graph replay:
+
+> "The per-DecoderLayer mark_step hook predates HPU-graph replay: it flushed the lazy IR per
+> layer so compilation could pipeline against the device. Under wrap_in_hpu_graph the cuts it
+> makes are captured and replayed forever, and each replayed recipe boundary costs ~0.2-0.5 ms
+> of host time per decode step. For glm5_next the hook fires after the MoE all-reduce and the
+> trailing mHC math, splitting that math into its own recipe in every layer: 45 of 176 launches
+> per decode step. Skipping it is bit-identical (greedy parity 8/8) and measured +10%
+> single-stream decode."
+
+Their skip condition: lazy mode, not enforce_eager, model_type in (glm5_next, glm5_next_text),
+`VLLM_CONFIG_HIDDEN_LAYERS` unset — all match our production deployment. Reference code saved
+at `research/abotsis-919ec98f/skip_layer_markstep_reference.py` (operator workspace). Proposed
+as task B023: backport the skip into our runner as a fail-closed port patch, verify greedy
+parity on our golden set (expected bit-identical), measure decode bs=1 and concurrency.
+Related: `_decode_tensor_cache` defaults OFF when speculative decoding is on (kept tensors
+cost multi-GiB host memory per worker; TP=8 warmup OOM-killed ranks on their densest host).
