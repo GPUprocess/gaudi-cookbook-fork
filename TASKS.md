@@ -339,6 +339,9 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   16-stream aggregate, TTFT ladder, and the accuracy suite (5 reps) against the Stage-1
   baseline; one candidate per boot.
 - **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. The abotsis fork's
+  Status: WORKING - the diagnostics core is landed in this port
+  (`layer_diagnostics.py`, CPU-verified 24 checks) env-gated OFF; the runner
+  integration and model hooks land with the Stage-1 window.
   layer_diagnostic hooks + diag_compare tooling prove near-tie divergences at the boundary
   level (~1 bf16 ULP at attention output, bounded 2-6e-2 amplification through mHC, no
   logic-error signature). Upgrades our near-tie evidence from logprob gaps to tensors.
