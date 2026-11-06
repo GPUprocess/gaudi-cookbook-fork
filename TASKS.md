@@ -325,6 +325,11 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   video not served; MTP draft graph absent).
 - **K009 Reassess blocked tasks** — ongoing; G001/G002/G004 blocked on fixed architecture
   limits (not reassessable); A012/A014 reassessable after draft-graph work.
+- **NEW E015 Config-delta A/B sweep from the reference recipe** — `READY`. Three of the
+  reference fork's serving settings exist in our trees and are untested here:
+  `VLLM_BUCKETING_STRATEGY=lin`, `VLLM_COMPACT_GDN=0`, `--enable-ep-weight-filter`.
+  One variable at a time, decode bs=1 + 16-stream + TTFT per the benchmark policy;
+  needs a server restart per candidate (approval). Evidence: RESEARCH-001 addendum 7.
 - **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. The abotsis fork's
   layer_diagnostic hooks + diag_compare tooling prove near-tie divergences at the boundary
   level (~1 bf16 ULP at attention output, bounded 2-6e-2 amplification through mHC, no

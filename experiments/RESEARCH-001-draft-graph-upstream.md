@@ -233,3 +233,30 @@ From their `tools/LAYER0_DELTA_FINDINGS.md` (994 lines, 27 sections):
   hooks + diag_compare tooling upgrade near-tie evidence from logprob gaps to boundary-level
   tensors (the proof class their sections 1-3 demonstrate). Strengthens ACCURACY.md and every
   future parity claim.
+
+
+## Addendum 7: their serving recipe vs ours — config-delta matrix
+
+Their stack: vLLM `3dc7a68ce4` (v0.27.2rc0 + 1041 commits) with the GLM model integrated into
+their vllm-gaudi fork; GMU 0.35; MTP-4 default; block-size 128; max-num-batched-tokens 3200.
+Their single-stream decode (21-24 tok/s) is SLOWER than ours (30.1 non-MTP / 35.7-36.8 MTP k=1)
+— "adopt their fork" would cost per-stream speed; adapting their machinery into our faster base
+is the stronger path (their value: the draft-graph stack, KDA spec-state, device sampling).
+
+Config deltas from their recipe, checked against our trees:
+
+| Their setting | In our trees? | Note |
+|---|---|---|
+| Pinned decode shapes (B021) | yes (adopted into Stage-1) | warmup + determinism |
+| `VLLM_BUCKETING_STRATEGY=lin` | **yes** (vllm-gaudi) | untested here — A/B candidate |
+| `VLLM_COMPACT_GDN=0` | **yes** (vllm-gaudi) | untested here — A/B candidate |
+| `--enable-ep-weight-filter` | **yes** (vLLM core) | untested here — A/B candidate |
+| `VLLM_KDA_SCAN=parallel` | equivalent exists (`GLM5_NEXT_KDA_SCAN=1`, set) | same feature, different name |
+| `PT_HPU_LAZY_ACC_PAR_MODE=1` | no | Habana plugin env; test if our plugin accepts it |
+| `PT_HPU_MEMORY_POOL=none` | no | ditto |
+| `PT_HPU_GPT_MOE_WT_INTERLEAVED=0` | no | ditto |
+| `VLLM_GLM_FUSED_CLAMP_MOE=1` + `VLLM_GLM_TPC_CLAMP` | no | their TPC clamp kernel — feature gap |
+| `VLLM_HPU_PROMPT_GRAPH_MAX_TOKENS` + ctx buckets | no | their long-prompt graph fix |
+
+New task: a config-delta A/B sweep of the three "yes" candidates (one variable at a time, per
+the discipline), then the Habana-env probes.
