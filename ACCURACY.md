@@ -6,7 +6,15 @@ Accuracy gate: **maximum 0.5 absolute percentage points of regression** versus t
 baseline on the agreed metric, measured with a fixed, versioned evaluation suite under
 `docs/BENCHMARK_POLICY.md`. Correctness failures reject an optimization regardless of speed.
 
-## Current status: evaluation suite NOT YET ESTABLISHED
+## Current status: suite v1 BUILT; treatment half MEASURED (100%); control half pending the Stage-1 window
+
+`benchmarks/accuracy/` holds the versioned v1 suite (40 items, 5 categories, deterministic
+scoring) and the paired evaluator with the 0.5-pp gate. The **treatment half is measured**:
+MTP k=1 (live deployment), 5 repetitions x 40 items = **200/200 correct — 100.0% aggregate,
+Wilson 95% CI [98.12, 100.0], every category 100%**
+(`benchmarks/accuracy/results/mtp1_stage1_treatment.json`). The **control half** (non-MTP,
+same suite) requires the Stage-1 maintenance window; the 0.5-pp gate verdict follows the
+paired comparison. Until then the suite result does not clear the gate by itself.
 
 No formal accuracy evaluation (per the policy's requirements: fixed datasets, paired
 control/treatment runs, per-category metrics, uncertainty estimates) has been run yet. The
@@ -39,7 +47,13 @@ All of these were run against the served MTP k=1 configuration (and k=2 where no
   degeneration loops and coherent tails.
 - **k=2 content equivalence**: divergence positions identical to k=1; word-choice class.
 
-## TODO: establish the accuracy suite (blocks VERIFIED status for all performance results)
+## Remaining to establish the gate (control half + paired verdict)
+
+1. Run the control (non-MTP) half during the Stage-1 window: `evaluate.py run --label
+   control --reps 5` against the non-MTP server boot.
+2. Apply the gate: `evaluate.py gate --control results/control.json --treatment
+   results/mtp1_stage1_treatment.json`.
+3. Record the suite version alongside the performance figures in every experiment report.
 
 1. Select a fixed evaluation set covering reasoning, instruction following, math, coding,
    general language (size and license suitable for redistribution of *results*, not data).
