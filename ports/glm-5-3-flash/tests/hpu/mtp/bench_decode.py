@@ -33,7 +33,6 @@ def main():
         "messages": [{"role": "user", "content": PROMPT}],
         "max_tokens": args.tokens,
         "temperature": 0,
-        "stream": True,
         "chat_template_kwargs": {"reasoning_effort": "low"},
     }
     req = urllib.request.Request(
@@ -41,11 +40,26 @@ def main():
         data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"},
     )
+    # Non-streaming pass first: the primary Stage-1 metric (wall-clock tok/s,
+    # directly comparable with the historical 30.1/35.7 figures).
     t0 = time.time()
+    r = json.loads(urllib.request.urlopen(req, timeout=600).read())
+    wall = time.time() - t0
+    tokens = r["usage"]["completion_tokens"]
+    wall_tok_s = round(tokens / wall, 2)
+
+    # Streaming pass: TTFT and the inter-token latency distribution.
+    body_s = dict(body, stream=True)
+    req_s = urllib.request.Request(
+        args.base + "/v1/chat/completions",
+        data=json.dumps(body_s).encode(),
+        headers={"Content-Type": "application/json"},
+    )
+    t0s = time.time()
     first = None
     itls = []
-    tokens = 0
-    with urllib.request.urlopen(req, timeout=600) as resp:
+    stokens = 0
+    with urllib.request.urlopen(req_s, timeout=600) as resp:
         for line in resp:
             if not line.startswith(b"data: "):
                 continue
@@ -53,27 +67,26 @@ def main():
             if payload == b"[DONE]":
                 break
             delta = json.loads(payload)["choices"][0].get("delta") or {}
-            piece = delta.get("content")
-            if piece:
+            if delta.get("content"):
                 now = time.time()
                 if first is None:
                     first = now
                 else:
                     itls.append(now - last)
                 last = now
-                tokens += 1
-    total = time.time() - t0
-    decode_wall = (last - first) if (first and tokens > 1) else 0
+                stokens += 1
+    decode_wall = (last - first) if (first and stokens > 1) else 0
     itls.sort()
     out = {
         "label": args.label,
         "prompt_tokens_fixed": True,
         "generated_tokens": tokens,
-        "ttft_s": round(first - t0, 3) if first else None,
-        "decode_tok_s": round(tokens / decode_wall, 2) if decode_wall else None,
+        "wall_tok_s": wall_tok_s,
+        "wall_total_s": round(wall, 2),
+        "ttft_s": round(first - t0s, 3) if first else None,
+        "stream_tok_s": round(stokens / decode_wall, 2) if decode_wall else None,
         "itl_median_s": round(itls[len(itls) // 2], 4) if itls else None,
         "itl_p95_s": round(itls[int(len(itls) * 0.95)], 4) if itls else None,
-        "total_s": round(total, 2),
     }
     print(json.dumps(out))
 
