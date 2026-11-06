@@ -1,0 +1,40 @@
+{"id": "M001", "category": "math", "prompt": "What is 17 * 23? Reply with only the number.", "check": "numeric", "answer": "391"}
+{"id": "M002", "category": "math", "prompt": "What is 144 / 12? Reply with only the number.", "check": "numeric", "answer": "12"}
+{"id": "M003", "category": "math", "prompt": "What is 15% of 240? Reply with only the number.", "check": "numeric", "answer": "36"}
+{"id": "M004", "category": "math", "prompt": "A train travels 60 km in 45 minutes. What is its average speed in km/h? Reply with only the number.", "check": "numeric", "answer": "80"}
+{"id": "M005", "category": "math", "prompt": "What is the sum of the first 20 positive integers? Reply with only the number.", "check": "numeric", "answer": "210"}
+{"id": "M006", "category": "math", "prompt": "If x + 7 = 19, what is 3x? Reply with only the number.", "check": "numeric", "answer": "36"}
+{"id": "M007", "category": "math", "prompt": "What is 2 to the power of 10? Reply with only the number.", "check": "numeric", "answer": "1024"}
+{"id": "M008", "category": "math", "prompt": "A rectangle is 8 cm by 5 cm. What is its perimeter in cm? Reply with only the number.", "check": "numeric", "answer": "26"}
+{"id": "R001", "category": "reasoning", "prompt": "All bloops are razzies. All razzies are lazzies. Are all bloops definitely lazzies? Reply Yes or No only.", "check": "exact", "answer": "Yes"}
+{"id": "R002", "category": "reasoning", "prompt": "Alice has 3 brothers and each brother has 2 sisters. How many sisters does Alice have? Reply with only the number.", "check": "numeric", "answer": "1"}
+{"id": "R003", "category": "reasoning", "prompt": "A bat and a ball cost 1.10 in total. The bat costs 1.00 more than the ball. How much does the ball cost in cents? Reply with only the number.", "check": "numeric", "answer": "5"}
+{"id": "R004", "category": "reasoning", "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets? Reply with only the number of minutes.", "check": "numeric", "answer": "5"}
+{"id": "R005", "category": "reasoning", "prompt": "Emily is 3 times as old as Tom. In 6 years, Emily will be twice as old as Tom. How old is Tom now? Reply with only the number.", "check": "numeric", "answer": "6"}
+{"id": "R006", "category": "reasoning", "prompt": "There are 25 students. Each shakes hands once with every other student. How many handshakes? Reply with only the number.", "check": "numeric", "answer": "300"}
+{"id": "R007", "category": "reasoning", "prompt": "A farmer has 17 sheep. All but 9 run away. How many are left? Reply with only the number.", "check": "numeric", "answer": "9"}
+{"id": "R008", "category": "reasoning", "prompt": "Lily pads double daily. On day 48 the pond is full. On which day was it half full? Reply with only the day number.", "check": "numeric", "answer": "47"}
+{"id": "F001", "category": "instruction", "prompt": "Reply with exactly this JSON object and nothing else: {\"color\": \"blue\", \"count\": 3}", "check": "contains_all", "answer": "{\"color\": \"blue\", \"count\": 3}"}
+{"id": "F002", "category": "instruction", "prompt": "List exactly three programming languages as a bullet list, one per line, starting each line with '- '. No other text.", "check": "bullets", "answer": "3"}
+{"id": "F003", "category": "instruction", "prompt": "Write the word 'banana' reversed. Reply with only the reversed word.", "check": "exact", "answer": "ananab"}
+{"id": "F004", "category": "instruction", "prompt": "Answer with a single word: what color do you get by mixing red and white?", "check": "contains", "answer": "pink"}
+{"id": "F005", "category": "instruction", "prompt": "Reply with only the second word of this sentence: 'the quick brown fox'", "check": "exact", "answer": "quick"}
+{"id": "F006", "category": "instruction", "prompt": "Spell 'hello' backwards, then spell 'world' backwards. Format: first second. Reply with only that line.", "check": "exact", "answer": "olleh dlrow"}
+{"id": "F007", "category": "instruction", "prompt": "Give exactly two synonyms of 'happy' separated by a comma. Reply with only those two words.", "check": "items2", "answer": "2"}
+{"id": "F008", "category": "instruction", "prompt": "Capitalize every word of this sentence and reply with only the result: 'the sky is clear today'", "check": "contains_all", "answer": "The Sky Is Clear Today"}
+{"id": "C001", "category": "coding", "prompt": "In Python, what does len([1,2,3]) return? Reply with only the number.", "check": "numeric", "answer": "3"}
+{"id": "C002", "category": "coding", "prompt": "What does this print? print(sum([1,2,3,4])). Reply with only the number.", "check": "numeric", "answer": "10"}
+{"id": "C003", "category": "coding", "prompt": "In Python, what is 'abc'.upper()? Reply with only the result.", "check": "exact", "answer": "ABC"}
+{"id": "C004", "category": "coding", "prompt": "What is the output of print([x*2 for x in range(4)])? Reply with only the printed value.", "check": "exact", "answer": "[0, 2, 4, 6]"}
+{"id": "C005", "category": "coding", "prompt": "In Python, what does [1,2,3][-1] evaluate to? Reply with only the value.", "check": "numeric", "answer": "3"}
+{"id": "C006", "category": "coding", "prompt": "What does int('42') + 8 equal in Python? Reply with only the number.", "check": "numeric", "answer": "50"}
+{"id": "C007", "category": "coding", "prompt": "What is the result of 'ab' * 3 in Python? Reply with only the result.", "check": "exact", "answer": "ababab"}
+{"id": "C008", "category": "coding", "prompt": "What does sorted([3,1,2]) return in Python? Reply with only the printed value.", "check": "exact", "answer": "[1, 2, 3]"}
+{"id": "G001", "category": "general", "prompt": "What is the capital of France? Reply with only the city name.", "check": "exact", "answer": "Paris"}
+{"id": "G002", "category": "general", "prompt": "How many continents are there on Earth? Reply with only the number.", "check": "numeric", "answer": "7"}
+{"id": "G003", "category": "general", "prompt": "What gas do plants primarily absorb for photosynthesis? Reply with only the gas name.", "check": "contains", "answer": "carbon dioxide"}
+{"id": "G004", "category": "general", "prompt": "Who wrote 'Romeo and Juliet'? Reply with only the name.", "check": "contains", "answer": "Shakespeare"}
+{"id": "G005", "category": "general", "prompt": "What is the chemical symbol for gold? Reply with only the symbol.", "check": "exact", "answer": "Au"}
+{"id": "G006", "category": "general", "prompt": "How many days are in a leap year? Reply with only the number.", "check": "numeric", "answer": "366"}
+{"id": "G007", "category": "general", "prompt": "What is the largest planet in our solar system? Reply with only the planet name.", "check": "exact", "answer": "Jupiter"}
+{"id": "G008", "category": "general", "prompt": "At what temperature does water boil at sea level in Celsius? Reply with only the number.", "check": "numeric", "answer": "100"}
