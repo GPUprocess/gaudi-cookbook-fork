@@ -154,10 +154,13 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   anchored-MME-matmul fix at 15.6x kernel-time reduction and TTFT up to 3.23x (their commit
   c860b8ea; oracle 12/12 CPU, test_hpu_kda 14/14). Applies directly to our `_gauged_scores`
   (off-diagonal blocks already matmul). Evidence: RESEARCH-001 addendum 4. See C015.
-- **NEW C015 KDA diagonal decay-dot -> anchored MME matmul** — `READY`. Replace `mid` in
-  `_gauged_scores` (kda.py) with the block-anchor matmul factorization; oracle-test vs the
-  current implementation; measure the prefill ladder + TTFT; re-check the chunk-size
-  tradeoff after landing. Evidence: RESEARCH-001 addendum 4.
+- **NEW C015 KDA diagonal decay-dot -> anchored MME matmul** — `WORKING`. Landed in
+  `_gauged_scores` (kda.py): the diagonal block now factors around its block-first-row gate
+  and contracts with a matmul (row factor ≤ 1; column factor exceeds 1 only in the masked
+  upper triangle, inside fp32 at ≤ e^75 with the −5/token gate bound). Oracle vs the
+  pre-C015 elementwise form: 12/12 shapes, max rel err 5.7e-7 (CPU). HPU measurement
+  (prefill ladder + TTFT + chunk re-check) pending a window. Evidence: RESEARCH-001
+  addendum 4; repo `tests/cpu/check_c015_gauged_scores.py`.
 - **C006–C012** — `NOT INVESTIGATED` (MoE prefill dispatch, prefill graph capture, allocation
   overhead, tokenization overhead, prompt batching, concurrent prefill scheduling,
   prefill/decode interference).

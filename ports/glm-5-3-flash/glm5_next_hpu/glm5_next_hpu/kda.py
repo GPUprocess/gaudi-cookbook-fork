@@ -133,8 +133,15 @@ def _gauged_scores(
         i0, i1 = i_blk * sub, (i_blk + 1) * sub
         g_ref = g[:, i0 : i0 + 1, :]
         gi = g[:, i0:i1, :]
-        dexp = (gi.unsqueeze(2) - gi.unsqueeze(1)).clamp(max=0.0).exp()
-        mid = (a[:, i0:i1, :].unsqueeze(2) * b[:, i0:i1, :].unsqueeze(1) * dexp).sum(-1) * keep
+        # Diagonal block: anchor the exponent at the block's first-row gate and
+        # contract over D with a matmul (MME), instead of materializing the
+        # [sub, sub, d] elementwise product on the TPCs. The row factor is <= 1;
+        # the column factor exceeds 1 for j past the anchor (up to e^75 with the
+        # -5/token gate bound - inside fp32) but those entries sit in the masked
+        # upper triangle, while the kept lower triangle is bounded by 1.
+        row_f = a[:, i0:i1, :] * (gi - g_ref).clamp(max=0.0).exp()
+        col_f = b[:, i0:i1, :] * (g_ref - gi).exp()
+        mid = (row_f @ col_f.transpose(-1, -2)) * keep
 
         pieces = []
         if i0 > 0:
