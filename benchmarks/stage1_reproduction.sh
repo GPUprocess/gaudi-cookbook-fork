@@ -90,11 +90,12 @@ run_condition control "$SERVE/serve_control_window.sh" "$LOGD/control.log" || ex
 run_condition mtp1   "$SERVE/serve_mtp.sh"         "$LOGD/mtp1.log"    || exit 1
 
 echo "=== summarize decode runs ==="
-python3 - << PYEOF
-import json, statistics, glob
+STAGE1_OUT="$OUT" python3 - << "PYEOF"
+import json, os, statistics, glob
+OUT = os.environ["STAGE1_OUT"]
 for label in ("control", "mtp1"):
     vals, ttfts, med, p95 = [], [], [], []
-    for f in sorted(glob.glob("$OUT/decode_${label}_rep*.json")):
+    for f in sorted(glob.glob(f"{OUT}/decode_{label}_rep*.json")):
         d = json.load(open(f))
         vals.append(d["decode_tok_s"]); ttfts.append(d["ttft_s"])
         med.append(d["itl_median_s"]); p95.append(d["itl_p95_s"])
@@ -105,6 +106,10 @@ for label in ("control", "mtp1"):
 PYEOF
 
 echo "=== accuracy gate ==="
-python3 "$ACC/evaluate.py" gate --control "$OUT/control.json" --treatment "$OUT/mtp1.json"
+if [ -f "$OUT/control.json" ] && [ -f "$OUT/mtp1.json" ]; then
+  python3 "$ACC/evaluate.py" gate --control "$OUT/control.json" --treatment "$OUT/mtp1.json"
+else
+  echo "SKIP: accuracy gate needs both condition results (a condition failed - see logs above)"
+fi
 
 echo "=== DONE — raw runs in $OUT; update EXPERIMENTS.md / BASELINE.md per the policy ==="
