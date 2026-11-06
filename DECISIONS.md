@@ -26,3 +26,6 @@
 
 None failed outright so far; the k=2 performance result is recorded as REGRESSION-neutral
 (kept as a capability, not the default) rather than FAILED.
+
+
+| 200 tok/s single-stream decode for GLM-5.3-Flash on 8x Gaudi 2 | REJECTED (physical limit) | Weight reads at bs=1 are 38.25 GiB/card/step = 41.1 GB. At the 2,450 GB/s spec BW the step floor is 16.8 ms (59.5 tok/s ceiling without MTP); at the bridge cost model's 1,945 GB/s it is 21.1 ms; at the ~69% measured utilization (~1,696 GB/s) it is 24.2 ms. The aggregate interpretation of the target is already MET (213-217 tok/s at 16 streams, no MTP). Single-stream 200 would require MTP-4 with acceptance >= 4.2 at 100% spec BW — above the measured utilization ceiling and beyond the checkpoint's single-head acceptance decay (reference MTP-4: 3.33 of 5). | HBM specs: GaudiGrimoire tier B (whitepaper 2.45 TB/s; bridge cost model 1,945 GB/s; measured utilization ~69%); our baseline EXP-OPT-001 |

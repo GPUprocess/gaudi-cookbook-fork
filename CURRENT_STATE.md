@@ -53,6 +53,15 @@ unfilled and these are recorded as BASELINE CANDIDATE / PROVISIONAL in `EXPERIME
   30-50% TTFT.
 - `VLLM_HPU_DECODE_TENSOR_CACHE` stays off under speculative decoding (host memory at TP=8).
 
+## Target disambiguation resolved (pending owner confirmation)
+
+The "200 tok/s decode" target is **met under the aggregate interpretation** (213.2-217.2 tok/s
+at 16 streams, no MTP, replicated across two sessions) and **physically unachievable under the
+single-stream interpretation**: the weight-read bandwidth floor (41.1 GB/card/step at
+1,696-2,450 GB/s) caps bs=1 decode at ~40-59 tok/s without MTP and ~150-190 tok/s with deep
+MTP at perfect utilization (DECISIONS.md has the full roofline analysis). Owner confirmation
+of the aggregate reading closes the target.
+
 ## Blockers
 
 - GitHub publish of the knowledge-base/policy files: awaiting user review/approval (local
