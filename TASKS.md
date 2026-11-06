@@ -127,6 +127,13 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   non-MTP; MTP window 32K.
 - **B019 Batch-size effects** — covered by A025.
 - **B020 Adaptive scheduling** — `NOT INVESTIGATED`.
+- **NEW B021 Pin decode bucket ladder** — `READY`. `VLLM_DECODE_BS_BUCKET_MIN/STEP` exist
+  in our tree; abotsis measured warmup 13 → ~2 min and 12/12 serial-vs-concurrent parity
+  with decode pinned to one bucket, decode within noise. Free determinism + boot-time win;
+  needs a server restart (approval). Evidence: RESEARCH-001 addendum 2.
+- **NEW B022 Port position-independent all-reduce (gather_sum)** — `READY` (upstream fix
+  exists in abotsis fork; absent in our b059f9c tree). Fixes the co-batched row-order ULP
+  that flips near-tie routing under concurrency. Evidence: RESEARCH-001.
 
 ## C. PP — prefill performance
 

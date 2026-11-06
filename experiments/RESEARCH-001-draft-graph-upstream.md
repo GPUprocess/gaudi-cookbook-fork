@@ -112,3 +112,21 @@ has no value. The strategic options are (a) port their draft-graph + spec-state 
 our plugin, (b) evaluate their fork directly as the serving base, or (c) hybrid. This decision
 belongs to the project owner; our recorded evidence and harness remain useful for whichever
 path is chosen.
+
+
+## Addendum 2: applicability check against our deployment (measured)
+
+- **Sampled decode is NOT slow on our stack**: measured on the live MTP k=1 server, 384-token
+  generations, single stream: greedy 36.2–36.3 tok/s, sampled (T=0.7/top_p 0.9) 32.8–33.7 tok/s
+  (−8%). The abotsis host-rejection bottleneck (~5 tok/s at their MTP-4 shape) does not bite at
+  our k=1/small-batch shape — but our sampler does move tensors to host per step
+  (`hpu_rejection_sampler.py` `.cpu()` calls), so the cost grows with k and batch; their
+  device-side sampling is the lever if we ever see it bite.
+- **`VLLM_HPU_ALLREDUCE_MODE=gather_sum` does NOT exist in our vllm-gaudi b059f9c tree** — it
+  is an abotsis-fork feature. Our concurrent-determinism findings stand as measured; porting
+  the position-independent all-reduce would fix the co-batched row-order ULP issue and is a
+  candidate for the A014 adaptation package.
+- **`VLLM_DECODE_BS_BUCKET_*` DOES exist in our tree** (extension/features.py + bucketing/
+  padding_aware.py): the abotsis bucket-pinning recipe (pin decode to one bucket) is directly
+  applicable — their measurement: warmup 13 → ~2 min (one decode bucket), parity 12/12, decode
+  within noise. Free win for boot time and determinism; untested here.
