@@ -55,9 +55,12 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   on the draft-execution lever (A014) because eager per-step cost grows with depth.
 - **A013 Determine optimal speculative depth** — `WORKING`. k=1 is optimal in the eager-draft
   configuration (k=2 net-neutral; concurrent net-negative). Revisit after A014.
-- **A014 Optimize draft execution** — `NOT INVESTIGATED`. Draft HPU graph is the documented
-  lever (shared storage requires a split pre/post-attention graph design). Depends on graph
-  compatibility work (A018/A019).
+- **A014 Optimize draft execution** — `READY`. A working reference implementation exists:
+  abotsis fork 919ec98f ships private-storage draft cores plus attention-in-graph
+  (`VLLM_GLM_MTP_DRAFT_GRAPH/_ATTN_GRAPH`), measured at MTP-4: accepted 3.33 vs 2.41
+  bypass, aggregate 26.0 vs 20.2 tok/s, parity 12/12. The eager draft is host-launch-bound
+  (93 ms host vs 17 ms device per step). Experiment = adapt that machinery into this
+  plugin, keeping our KDA candidate-slot work. Evidence: RESEARCH-001.
 - **A015 Optimize target verification** — `NOT INVESTIGATED`. Vocabulary-parallel argmax in
   `get_top_tokens` is the documented draft-side lever; verification-side kernel work pending
   profiling.
@@ -65,9 +68,11 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
 - **A017 Investigate synchronization overhead** — `RESEARCHING`. Prefill is CPU-bound: the
   Habana AccThread busy-waits (~100% of one core) during lazy-mode dispatch; identified during
   validation. Evidence: EXP-MTP-001 (TTFT analysis).
-- **A018 Investigate HPU graph compatibility for the draft** — `NOT INVESTIGATED`. Shared
-  storage between target and draft prevents a second full graph; split-graph design proposed,
-  not prototyped.
+- **A018 Investigate HPU graph compatibility for the draft** — `READY`. The blocker is
+  solved upstream: private storage copies (`_private_copy`, ~0.9 GiB/rank) make target and
+  draft graphs independent by construction, and the draft attention runs INSIDE the graph
+  with metadata tensors as graph inputs. Reference: abotsis fork 919ec98f. Evidence:
+  RESEARCH-001.
 - **A019 Investigate graph capture/compilation overhead** — `PARTIAL`. Verify-row graphs
   captured at window config; every new row count adds graphs (documented constraint). Draft
   graph capture unattempted (A014).
