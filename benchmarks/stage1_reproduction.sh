@@ -97,7 +97,7 @@ for label in ("control", "mtp1"):
     vals, ttfts, med, p95 = [], [], [], []
     for f in sorted(glob.glob(f"{OUT}/decode_{label}_rep*.json")):
         d = json.load(open(f))
-        vals.append(d["decode_tok_s"]); ttfts.append(d["ttft_s"])
+        vals.append(d["wall_tok_s"]); ttfts.append(d["ttft_s"])
         med.append(d["itl_median_s"]); p95.append(d["itl_p95_s"])
     if vals:
         print(f"{label}: tok/s median {statistics.median(vals)}, mean {statistics.mean(vals):.2f}, "
