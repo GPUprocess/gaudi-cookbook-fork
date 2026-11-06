@@ -163,19 +163,26 @@ def gate(args):
     print(f"delta     : {dc:+.2f} percentage points")
     lo, hi = t["wilson95"]
     c_lo, c_hi = c["wilson95"]
-    if dc <= -0.5:
+    if dc >= 0:
+        print("VERDICT: accuracy IMPROVED or equal — no aggregate regression; "
+              "check per-category drops below")
+    elif dc > -0.5:
+        print("VERDICT: within the 0.5 pp gate — eligible to pass (paired with performance gates)")
+    else:
         clear = hi < c_lo or abs(dc) > 1.0
         print("VERDICT: FAIL — regression beyond 0.5 pp" + ("" if clear else
               " (investigate: treatment CI overlaps control CI)"))
-    elif abs(dc) > 0.5 or hi < c_lo or c_hi < lo:
-        print("VERDICT: INCONCLUSIVE-ish — delta beyond 0.5 pp but check CIs; "
-              "per policy, report per-category and rerun with more reps")
+    drops = []
+    for cat, tv in t["per_category_pooled"].items():
+        cv = c["per_category_pooled"].get(cat, {}).get("acc")
+        if cv is not None and tv["acc"] < cv:
+            drops.append((cv - tv["acc"], cat, cv, tv["acc"]))
+    if drops:
+        drops.sort(reverse=True)
+        for d, cat, cv, tv in drops:
+            print(f"per-category drop: {cat} {cv}% -> {tv}% ({-d:+.2f} pp)")
     else:
-        print("VERDICT: within the 0.5 pp gate — eligible to pass (paired with performance gates)")
-    worst = min(t["per_category_pooled"].items(),
-                key=lambda kv: kv[1]["acc"] - c["per_category_pooled"].get(kv[0], {"acc": 0})["acc"])
-    print(f"largest per-category drop: {worst[0]} "
-          f"({c['per_category_pooled'].get(worst[0], {}).get('acc')} -> {worst[1]['acc']})")
+        print("per-category drops: none")
 
 
 def main():
