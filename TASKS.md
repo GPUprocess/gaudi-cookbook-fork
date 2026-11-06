@@ -328,8 +328,8 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
 - **K009 Reassess blocked tasks** — ongoing; G001/G002/G004 blocked on fixed architecture
   limits (not reassessable); A012/A014 reassessable after draft-graph work.
 - **NEW E015 Config-delta A/B sweep from the reference recipe** — `READY` (narrowed to
-  two candidates after the runtime recon): `VLLM_BUCKETING_STRATEGY=lin` (consumed via
-  extension features + bucketing/common) and `--enable-ep-weight-filter` (consumed in
+  two candidates after the runtime recon): `VLLM_BUCKETING_STRATEGY=lin` (verified
+  implemented: LinearBucketingStrategy selectable via the features config, default exp) and `--enable-ep-weight-filter` (consumed in
   vLLM core arg_utils/weight_utils/parallel config). `VLLM_COMPACT_GDN=0` needs no A/B:
   our runner auto-pins it when unset, so the reference value already matches our
   effective config. One variable at a time; needs a server restart per candidate
