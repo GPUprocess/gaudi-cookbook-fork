@@ -260,3 +260,33 @@ Config deltas from their recipe, checked against our trees:
 
 New task: a config-delta A/B sweep of the three "yes" candidates (one variable at a time, per
 the discipline), then the Habana-env probes.
+
+
+## Addendum 8: Habana runtime env audit of our live deployment
+
+Checked against the live engine process and our v0.26.0 plugin source:
+
+- **Auto-pinned by our plugin at import (verified in source)**: `PT_HPU_WEIGHT_SHARING=0` and
+  `PT_HPU_ENABLE_LAZY_COLLECTIVES=true` — both required for multi-rank HPU-graph serving.
+  Matches the reference recipe.
+- **`PT_HPU_LAZY_ACC_PAR_MODE`**: a Habana-bridge flag (vendor source: `AccThread`
+  parallel-accumulation thread, default enabled with lazy mode) — the same AccThread our
+  prefill profiling identified as the busy-wait core. The reference recipe pins `1` explicitly;
+  our deployment does not set it and the bridge default is enabled, so behavior should match.
+  Worth one explicit pin in the launch scripts for determinism of the recipe.
+- **`PT_HPU_MEMORY_POOL=none`**: reference "validated-recipe value (Synapse-side pool off)".
+  Not set by our plugin and not in our launch env — an untested A/B candidate for our
+  deployment (needs a window).
+- **`PT_HPU_GPT_MOE_WT_INTERLEAVED=0`**: the reference auto-pins it because a mismatch with
+  their FUSED clamped-SwiGLU MoE kernel is SILENT corruption ("no error, just wrong expert
+  math"). Our v0.26.0 plugin has no fused clamped-SwiGLU MoE kernel (that is their addition)
+  and our stock MoE path passed all correctness gates — no exposure at our release. Revisit if
+  we ever adopt their fused MoE kernel.
+- **Their TPC clamp kernel** (`VLLM_GLM_TPC_CLAMP`/`VLLM_GLM_FUSED_CLAMP_MOE`): a feature gap
+  in our release (absent from our trees). Their own measurement says arming it changed their
+  decode "by ~nothing" at their shape, while the recipe table calls it "~2x on GLM-5.3 decode"
+  — contradictory upstream evidence; treat as unproven until measured.
+
+Actionable: add `PT_HPU_LAZY_ACC_PAR_MODE=1` and `PT_HPU_MEMORY_POOL=none` to both serve
+scripts as explicit recipe pins (no behavior change expected for the first; untested for the
+second), and re-verify at the next window.
