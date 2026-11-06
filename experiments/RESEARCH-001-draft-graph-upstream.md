@@ -154,3 +154,29 @@ as task B023: backport the skip into our runner as a fail-closed port patch, ver
 parity on our golden set (expected bit-identical), measure decode bs=1 and concurrency.
 Related: `_decode_tensor_cache` defaults OFF when speculative decoding is on (kept tensors
 cost multi-GiB host memory per worker; TP=8 warmup OOM-killed ranks on their densest host).
+
+
+## Addendum 4: KDA diagonal-block decay-dot -> anchored MME matmul (major prefill candidate)
+
+Applicability verified against our `_gauged_scores` (kda.py): our OFF-diagonal blocks already
+use the anchored matmul, but the DIAGONAL block still materializes `[m, sub, sub, d]`
+elementwise (`dexp = (gi.unsqueeze(2) - gi.unsqueeze(1)).clamp(max=0.0).exp()` then
+`(a * b * dexp).sum(-1)`) — the exact TPC-bound pattern abotsis fixed (commit c860b8ea).
+
+Their fix: per 16-row block, factor the exponent around the block's first-row gate —
+`row_f = a * exp(g_i - g_ref)`, `col_f = b * exp(g_ref - g_j)`, both factors in (0, 1] since
+`g` is non-positive decreasing and the anchor is the block's first row — then `mid = row_f @
+col_f.T` on the MME. The gate lower bound (-5/token) keeps every factor inside fp32
+(e^{+-80} within a block). Measured: per layer 57.6 -> 3.7 ms summed kernel time (512 tokens,
+15.6x), 224 -> 14.3 ms (2048); TTFT speedups 1.11x @123 tokens to 3.23x @1995 tokens; 3099
+tokens 0.915 -> 0.479 s (1.91x, 6,476 tok/s). The 2048-token cliff was the decay-dot
+temporaries. Validation blueprint: oracle transition tests 12/12 (CPU), test_hpu_kda 14/14 on
+HPU, serving gates (rowdep 8/8, parity 12/12, decode bench unchanged).
+
+Interaction with our knob: our chunk=64-optimal finding (EXP-MTP-004) measured the scan
+intermediates cost — with the diagonal block moved to the MME that tradeoff may shift
+(re-test chunk after landing this).
+
+Proposed task C015 (READY): replace the `mid` computation in `_gauged_scores` with the
+anchored matmul; oracle-test against the current implementation; measure the prefill ladder
+and TTFT; re-check the chunk-size tradeoff.
