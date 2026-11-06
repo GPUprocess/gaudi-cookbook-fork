@@ -149,7 +149,15 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
 - **C003 Chunked prefill** — `VERIFIED` (enabled, 8192).
 - **C004 Optimal prefill chunk size** — `WORKING`. KDA prefill chunk=64 optimal (128 measured
   worse: 8K TTFT 1.85 s vs 1.29 s). Evidence: EXP-MTP-004.
-- **C005 Attention/KDA prefill kernels** — `WORKING` (same knob evidence as C004).
+- **C005 Attention/KDA prefill kernels** — `READY` (upgraded). The diagonal block of
+  `_gauged_scores` materializes `[sub, sub, d]` elementwise on TPCs; abotsis measured the
+  anchored-MME-matmul fix at 15.6x kernel-time reduction and TTFT up to 3.23x (their commit
+  c860b8ea; oracle 12/12 CPU, test_hpu_kda 14/14). Applies directly to our `_gauged_scores`
+  (off-diagonal blocks already matmul). Evidence: RESEARCH-001 addendum 4. See C015.
+- **NEW C015 KDA diagonal decay-dot -> anchored MME matmul** — `READY`. Replace `mid` in
+  `_gauged_scores` (kda.py) with the block-anchor matmul factorization; oracle-test vs the
+  current implementation; measure the prefill ladder + TTFT; re-check the chunk-size
+  tradeoff after landing. Evidence: RESEARCH-001 addendum 4.
 - **C006–C012** — `NOT INVESTIGATED` (MoE prefill dispatch, prefill graph capture, allocation
   overhead, tokenization overhead, prompt batching, concurrent prefill scheduling,
   prefill/decode interference).
