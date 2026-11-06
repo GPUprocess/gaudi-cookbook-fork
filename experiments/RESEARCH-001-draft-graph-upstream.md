@@ -180,3 +180,21 @@ intermediates cost — with the diagonal block moved to the MME that tradeoff ma
 Proposed task C015 (READY): replace the `mid` computation in `_gauged_scores` with the
 anchored matmul; oracle-test against the current implementation; measure the prefill ladder
 and TTFT; re-check the chunk-size tradeoff.
+
+
+## Addendum 5: env-var applicability map (our b059f9c trees vs the reference fork)
+
+| Reference env var | In our tree? | Note |
+|---|---|---|
+| `VLLM_GLM_MTP_DRAFT_GRAPH/_SPLIT_GRAPH/_ATTN_GRAPH/_DRAFT_ATTN` | no | the A014 adaptation package |
+| `VLLM_HPU_ALLREDUCE_MODE=gather_sum` | no | B022 port |
+| `VLLM_HPU_DECODE_TENSOR_CACHE` | no | defaults off under spec decode on the reference; host-memory note |
+| `VLLM_HPU_PROMPT_GRAPH_MAX_TOKENS` + ctx buckets | no | their long-prompt graph fix (7690-token prompt 4.1 -> 1.22 s) |
+| `VLLM_HPU_GRAPH_ASYNC_REPLAY` | no | untested lever |
+| `VLLM_DECODE_BS_BUCKET_MIN/STEP/MAX` | **yes** | B021 (bucket pinning) |
+| `VLLM_PROMPT_QUERY_BUCKET_*` | **yes** | prompt-just-over-an-edge pays 30-50% TTFT — size to workload |
+| per-DecoderLayer mark_step skip for glm5_next | no (logic absent) | B023 backport |
+
+Conclusion: only the bucket/query-bucket knobs exist in our release; everything else arrives
+with the A014 adaptation or dedicated ports. The reference implementation (919ec98f) bundles
+them all and is the fastest route to most of them.
