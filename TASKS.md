@@ -370,6 +370,9 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
 - **NEW H013 Port the fused clamp TPC kernel from the reference fork** - `READY`.
   Our vLLM's fp8 quantization config already carries the clamped-SwiGLU contract
   (swiglu_limit / swiglu_alpha / swiglu_beta); the reference's TPC kernel and loader
+  NOTE: the enable_clamped_swiglu method is an abotsis-fork addition;
+  our stock vllm-gaudi MoE op lacks it. H013 requires adding the method
+  to the MoE op class + porting the TPC kernel binary + the loader.
   module implement it on device. Their measurement: ~nothing on MoE decode at their
   shape; the recipe table claims ~2x on GLM-5.3 decode (contradictory - measure).
   Evidence: RESEARCH-001 addendum 11.
