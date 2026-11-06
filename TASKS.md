@@ -335,9 +335,12 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   effective config. One variable at a time; needs a server restart per candidate
   (approval). Evidence: RESEARCH-001 addendum 7 + the runtime recon in this entry.
   Procedure (per candidate, from serve_mtp.sh): A = export VLLM_BUCKETING_STRATEGY=lin
-  before boot; B = add --enable-ep-weight-filter to the serve args. Measure decode bs=1,
-  16-stream aggregate, TTFT ladder, and the accuracy suite (5 reps) against the Stage-1
-  baseline; one candidate per boot.
+  before boot - MUST pair it with the prompt-bucket taming the reference recipe uses
+  (VLLM_PROMPT_QUERY_BUCKET_STEP=2048 VLLM_PROMPT_CTX_BUCKET_STEP=64) because lins
+  default prompt steps (query=block_size=16, ctx=1) explode the warmup set (hundreds
+  of prompt graphs); B = add --enable-ep-weight-filter to the serve args. Measure decode
+  bs=1, 16-stream aggregate, TTFT ladder, and the accuracy suite (5 reps) against the
+  Stage-1 baseline; one candidate per boot.
 - **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. The abotsis fork's
   Status: WORKING - the diagnostics core is landed in this port
   (`layer_diagnostics.py`, CPU-verified 24 checks) env-gated OFF; the runner
