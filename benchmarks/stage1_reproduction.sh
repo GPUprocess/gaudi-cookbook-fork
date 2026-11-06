@@ -28,6 +28,14 @@ mkdir -p "$OUT" "$LOGD"
 export COOKBOOK="$REPO"
 export GLM53_MODEL_PATH="${GLM53_MODEL_PATH:?set GLM53_MODEL_PATH to the checkpoint directory}"
 
+# Bucket pinning (applied to BOTH conditions equally — it is not the Stage-1
+# variable; MTP on/off is). Removes decode-ladder noise from the comparison and
+# cuts warmup ~13 -> ~2 min. Reference recipe at max-num-seqs 8; see
+# experiments/RESEARCH-001-draft-graph-upstream.md addendum 2.
+export VLLM_DECODE_BS_BUCKET_MIN=8
+export VLLM_DECODE_BS_BUCKET_STEP=8
+export VLLM_DECODE_BLOCK_BUCKET_MIN=32
+
 REPS_MEASURED=5
 REPS_TOTAL=6   # first rep is warm-up, discarded
 TOKENS=256
