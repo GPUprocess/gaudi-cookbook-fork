@@ -142,8 +142,10 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   prompt-bucket taming (VLLM_PROMPT_QUERY_BUCKET_STEP=2048 VLLM_PROMPT_CTX_BUCKET_STEP=64)
   cuts it to ~128 graphs (~4 min) at the cost of coarser prompt granularity (a prompt
   just over an edge pays the next bucket). Applicable to the production launch and the
-  Stage-1 boots alike; needs a restart (approval). Evidence: the bucket-set math in the
-  E015 entry + our boot-time measurements.
+  Stage-1 boots alike; needs a restart (approval). Measured production boot (the MTP
+  window, from serve_mtp.log): 31.5 min start-to-health, 125 decode graphs captured, the
+  prompt buckets bs [1] query 13 ctx 9 = 117 prompt graphs, the graph-capture phase 13.3
+  min of the total. Evidence: the bucket-set math in the E015 entry + serve_mtp.log.
 - **NEW B023 Backport skip_layer_markstep for glm5_next** — `WORKING`. The patch is
   landed in the fail-closed contract (`patches/skip_layer_markstep.py`): gated behind
   `VLLM_GLM_SKIP_LAYER_MARKSTEP=1` (default OFF — experimental until HPU-verified in
