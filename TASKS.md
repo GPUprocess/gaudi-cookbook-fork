@@ -131,6 +131,14 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   in our tree; abotsis measured warmup 13 → ~2 min and 12/12 serial-vs-concurrent parity
   with decode pinned to one bucket, decode within noise. Free determinism + boot-time win;
   needs a server restart (approval). Evidence: RESEARCH-001 addendum 2.
+- **NEW B024 Prompt-bucket taming for the production warmup** — `READY` (config-only,
+  no code change). Our production warmup (~13-15 min) is dominated by the exp prompt
+  bucket set: 4 bs x 13 query x 9 ctx = 468 prompt graphs. The reference recipes
+  prompt-bucket taming (VLLM_PROMPT_QUERY_BUCKET_STEP=2048 VLLM_PROMPT_CTX_BUCKET_STEP=64)
+  cuts it to ~128 graphs (~4 min) at the cost of coarser prompt granularity (a prompt
+  just over an edge pays the next bucket). Applicable to the production launch and the
+  Stage-1 boots alike; needs a restart (approval). Evidence: the bucket-set math in the
+  E015 entry + our boot-time measurements.
 - **NEW B023 Backport skip_layer_markstep for glm5_next** — `WORKING`. The patch is
   landed in the fail-closed contract (`patches/skip_layer_markstep.py`): gated behind
   `VLLM_GLM_SKIP_LAYER_MARKSTEP=1` (default OFF — experimental until HPU-verified in
