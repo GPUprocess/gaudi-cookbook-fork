@@ -290,3 +290,26 @@ Checked against the live engine process and our v0.26.0 plugin source:
 Actionable: add `PT_HPU_LAZY_ACC_PAR_MODE=1` and `PT_HPU_MEMORY_POOL=none` to both serve
 scripts as explicit recipe pins (no behavior change expected for the first; untested for the
 second), and re-verify at the next window.
+
+
+## I015 porting assessment (reference fetched)
+
+The reference diagnostics live as flat modules at 919ec98f:
+`vllm_gaudi/v1/worker/layer_diagnostic.py` (427 lines: ticket-based capture dirs, position
+filtering via `VLLM_DIAG_LAYER_POSITIONS`, boundary dumps for attention/mHC/FFN, KDA boundary
+and sequence hooks, cache-written tracking, `VLLM_DEBUG=fwd` phase tracing) and
+`vllm_gaudi/v1/worker/kda_state_diagnostic.py` (199 lines: KDA recurrent-state dumps). The
+runner integrates them in `prepare(runner, path, context, tokens, positions, metadata,
+logits_indices, mark_step, rank, baseline_graphs)` plus capture roles via
+`VLLM_DIAG_SAMPLER_DIR` (must not exist at boot) and `VLLM_DEBUG=fwd`.
+
+Porting scope to our b059f9c tree: the capture machinery is largely runner-agnostic; the
+integration points (where `prepare` and the boundary hooks attach in the forward path) need
+adapting to our runner — which already carries our MTP verify paths, so the highest-value
+attach points are our verify forward and the sampler (exactly where our near-tie evidence
+lives). Reference copies for the port are in the operator workspace at
+`research/abotsis-919ec98f/ldiag/` (not committed — third-party code; the port would carry
+attribution per Apache-2.0).
+
+Sequencing: after Stage-1 and A014 — the diagnostics attach to the same forward paths those
+changes touch, and the maintenance windows to exercise them already exist then.
