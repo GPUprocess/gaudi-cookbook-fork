@@ -83,3 +83,32 @@ Their docs do not mention KDA candidate slots explicitly.
 "Draft HPU graph" was previously NOT INVESTIGATED (documented as a lever only). This note does
 not repeat an experiment — it records new evidence (a working reference implementation with
 measurements) that changes feasibility, exactly the retry justification the protocol requires.
+
+
+## Addendum: KDA speculative-state deduplication answered
+
+The same fork also implements KDA candidate-slot state for speculative decoding — the problem
+our KDA candidate-slot work solves — with a different mechanism:
+
+- **Theirs** (`vllm_gaudi/models/glm5_next.py`): per-request private candidate slots APPENDED
+  to the recurrent-state pool, with slot ids stable across batch condense and swap;
+  `state_indices` is `[bs, 1 + num_spec + 1]` (column 0 = canonical post-prompt state,
+  column 1+j = state after draft token j of the previous verify); `num_accepted` selects the
+  resume slot directly (0 = fresh sentinel); the whole draft chain is scored in ONE batched
+  kernel call (`chunk_kda_spec_states`) that writes every candidate state; prefix caching
+  explicitly rejected under spec decode; plus layer-diagnostic tooling (kda boundary/sequence/
+  pool-row hooks).
+- **Ours** (`ports/glm-5-3-flash/glm5_next_hpu/`): S+1 columns addressed by the compact-GDN
+  pool formula; verify-forward scatters one state per row; post-verify load selects the column
+  matching the accepted prefix; churn/chain/boundary parity tests.
+
+Same problem, two solutions; theirs is integrated with a working draft-graph stack and device
+sampling and reports MTP-4 acceptance 3.33 of 4.0. A third independent GLM-5.3-Flash port
+exists in the corpus (`inderjodhsingh/gaudi-llm-notes`, pinned c422c56d, KDA prefill
+padding-mask fix).
+
+**Conclusion:** the KDA spec-state problem is solved three ways in the wild; inventing a fourth
+has no value. The strategic options are (a) port their draft-graph + spec-state advances into
+our plugin, (b) evaluate their fork directly as the serving base, or (c) hybrid. This decision
+belongs to the project owner; our recorded evidence and harness remain useful for whichever
+path is chosen.
