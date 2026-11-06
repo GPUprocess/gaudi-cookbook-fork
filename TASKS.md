@@ -131,6 +131,11 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   in our tree; abotsis measured warmup 13 → ~2 min and 12/12 serial-vs-concurrent parity
   with decode pinned to one bucket, decode within noise. Free determinism + boot-time win;
   needs a server restart (approval). Evidence: RESEARCH-001 addendum 2.
+  Measured production boot (the MTP window, from serve_mtp.log): 31.5 min
+  start-to-health, 125 decode graphs captured (the bucket config: decode bs
+  [1,2,8] blocks [1,8,2048]; the MTP verify shapes roughly double the graph
+  count), the graph-capture phase 13.3 min of the total. The prompt buckets:
+  bs [1] (one bucket), query 13, ctx 9 = 117 prompt graphs.
 - **NEW B024 Prompt-bucket taming for the production warmup** — `READY` (config-only,
   no code change). Our production warmup (~13-15 min) is dominated by the exp prompt
   bucket set: 4 bs x 13 query x 9 ctx = 468 prompt graphs. The reference recipes
