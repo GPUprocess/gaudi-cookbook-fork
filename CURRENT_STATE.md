@@ -37,12 +37,21 @@ unfilled and these are recorded as BASELINE CANDIDATE / PROVISIONAL in `EXPERIME
 
 ## Active work
 
-- **Stage 1 (next task, A001)**: controlled MTP=1 reproduction per `docs/BENCHMARK_POLICY.md`
-  — non-MTP control vs MTP k=1, same window/config, ≥5 repetitions per condition, alternating
-  order, median/mean/std/P95, plus the accuracy-gate setup (see `ACCURACY.md`).
-- After Stage 1: MTP depth is already settled for the eager-draft configuration (k=1 optimal);
-  the draft HPU graph (A014/A018) is the highest-value lever to reopen k=2+ and the concurrent
-  crossover.
+- **Stage 1 (A001)**: turnkey — `pre_flight.sh` (26/26) then `stage1_reproduction.sh`
+  (the venv fix, the bucket-pinned dual-condition boot, the dual-mode decode benchmark,
+  the accuracy gate). Awaiting the maintenance-window approval.
+- **E015**: turnkey — `serve_e015_lin.sh` and `serve_e015_epfilter.sh` (both dry-run-
+  validated), one variable per boot.
+- **B023**: turnkey — the patch is in the fail-closed contract with real-tree anchors
+  verified; deploy during the window boot with `VLLM_GLM_SKIP_LAYER_MARKSTEP=1`.
+- **C015**: landed in the repo; deploy `kda.py` during the window and measure the prefill
+  ladder.
+- **I015**: the capture core landed (CPU-verified); the diag boots are pre-staged
+  (`serve_diag.sh` / `serve_diag_mtp.sh`); the capture runs during the window with
+  `VLLM_GLM_LAYER_DIAG_DIR` + the sentinel; `diag_compare.py` analyzes the payloads.
+- **A014/A018 (the draft HPU graph)**: the abotsis fork's implementation is the reference
+  (RESEARCH-001 addendum 1); adapting it into this port is the highest-value lever after
+  the measurements.
 
 ## Production runbook additions (from RESEARCH-001, pending deployment)
 
@@ -61,6 +70,14 @@ single-stream interpretation**: the weight-read bandwidth floor (41.1 GB/card/st
 1,696-2,450 GB/s) caps bs=1 decode at ~40-59 tok/s without MTP and ~150-190 tok/s with deep
 MTP at perfect utilization (DECISIONS.md has the full roofline analysis). Owner confirmation
 of the aggregate reading closes the target.
+
+## E015 config A/B readiness
+
+Both candidates are pre-staged and validated:
+- `serving/serve_e015_lin.sh`: linear bucketing + the prompt-bucket taming (37 args,
+  the bucket set verified: 128 prompt + 16 decode graphs vs exp's 468 + 60).
+- `serving/serve_e015_epfilter.sh`: `--enable-ep-weight-filter` (38 args, the CLI arg
+  verified in our vLLM tree).
 
 ## Blockers
 
@@ -84,6 +101,6 @@ of the aggregate reading closes the target.
 ## Git state
 
 - Repository: this fork (origin = the GPUprocess fork of the cookbook; do not change).
-- Branch: `glm53-flash`, tip `e3c6f52` — pushed and verified on the remote.
-- This session's policy/knowledge-base files are committed locally on the same branch, NOT
-  pushed (awaiting user review per the project directive).
+- Branch: `glm53-flash`, tip `044f764` — pushed and verified on the remote.
+- All policy files, the knowledge base, the audit, the E015 A/B scripts, the dual-mode
+  decode benchmark, and the research record are published on the remote.
