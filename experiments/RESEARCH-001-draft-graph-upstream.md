@@ -313,3 +313,30 @@ attribution per Apache-2.0).
 
 Sequencing: after Stage-1 and A014 — the diagnostics attach to the same forward paths those
 changes touch, and the maintenance windows to exercise them already exist then.
+
+
+## Addendum 9: remaining reference findings, mapped
+
+- **Prefill is device-bound on small fp32 TPC kernels** (after their decay-dot fix);
+  "attention and the mHC mixing are minor at every bucket". Their forward wall: ~80 ms floor of
+  per-layer graph launches + ~0.1 ms/token. Rewriting the mHC Sinkhorn or the KDA chunk length
+  at the op level did not move it (their findings doc section 20). Bounds our C-series
+  expectations: after C015, prefill gains come from bucket sizing and launch-overhead work, not
+  kernel rewrites.
+- **Prompt-query bucket edges cost 30-50% TTFT** (a prompt just over an edge pays the next
+  bucket): "size `VLLM_PROMPT_QUERY_BUCKET_*` to the workload". Runbook item for our production
+  launch (our buckets are the default ladder).
+- **`VLLM_KDA_SCAN=parallel`**: 7% TTFT at the 3200 bucket, neutral below, clean gates —
+  equivalent to our `GLM5_NEXT_KDA_SCAN=1` (already enabled). No gap.
+- **`VLLM_HPU_GRAPH_ASYNC_REPLAY=1`**: untested lever, absent from our trees.
+- **`VLLM_HPU_DECODE_TENSOR_CACHE`**: on for glm5_next WITHOUT spec decode, off under it (the
+  doubled graph count exceeds host memory at TP=8) — matches our MTP HBM situation; no gap.
+- **Warmup under speculation runbook**: decode buckets must be warmed AS verify batches (else
+  the first real request per shape compiles for tens of seconds); the draft's prompt-cache fill
+  (per prompt bucket) and attention graph (per decode shape) compile on first use (2-8 s each)
+  — run a warm client after /health covering the served prompt lengths. Our Stage-1
+  orchestrator does one warmup rep; production should adopt the warm-client runbook.
+- **FP8 all-reduce contiguity**: their fix stops round-tripping `orig_M`/`orig_N` through the
+  device. Our `hpu_fp8.py` uses them only in the weight-dequant path (not the forward
+  all-reduce), so the exact fix does not apply; verify our forward all-reduce tensor handling
+  during the Phase-10 profiling pass (unverified check).

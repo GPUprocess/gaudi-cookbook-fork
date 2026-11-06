@@ -44,6 +44,15 @@ unfilled and these are recorded as BASELINE CANDIDATE / PROVISIONAL in `EXPERIME
   the draft HPU graph (A014/A018) is the highest-value lever to reopen k=2+ and the concurrent
   crossover.
 
+## Production runbook additions (from RESEARCH-001, pending deployment)
+
+- Warm client after /health covering served prompt lengths (the draft prompt-cache fill and
+  attention graph compile on first use, 2-8 s each; decode buckets must warm as verify
+  batches).
+- Size `VLLM_PROMPT_QUERY_BUCKET_*` to the workload: a prompt just over a bucket edge pays
+  30-50% TTFT.
+- `VLLM_HPU_DECODE_TENSOR_CACHE` stays off under speculative decoding (host memory at TP=8).
+
 ## Blockers
 
 - GitHub publish of the knowledge-base/policy files: awaiting user review/approval (local
