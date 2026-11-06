@@ -344,7 +344,10 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   32..2048 by 128) - SMALLER than exp, so A also speeds warmup. B = add
   --enable-ep-weight-filter to the serve args. Measure decode bs=1, 16-stream
   aggregate, TTFT ladder, and the accuracy suite (5 reps) against the Stage-1
-  baseline; one candidate per boot.
+  baseline; one candidate per boot. Empirically confirmed under our window:
+  lin+tamed prompt cfgs (bs 1-8 step 1, query 128 step 2048, ctx 0 step 64) and
+  decode (bs pinned 8, blocks 32..2048 step 128) -> 8x4x4 = 128 prompt graphs +
+  1x16 = 16 decode graphs, matching the analytic estimate.
 - **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. The abotsis fork's
   Status: WORKING - the diagnostics core is landed in this port
   (`layer_diagnostics.py`, CPU-verified 24 checks) env-gated OFF; the runner
