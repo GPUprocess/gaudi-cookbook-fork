@@ -198,3 +198,38 @@ and TTFT; re-check the chunk-size tradeoff.
 Conclusion: only the bucket/query-bucket knobs exist in our release; everything else arrives
 with the A014 adaptation or dedicated ports. The reference implementation (919ec98f) bundles
 them all and is the fastest route to most of them.
+
+
+## Addendum 6: boundary diagnostics, concurrency reference, and depth sweep (their findings doc)
+
+From their `tools/LAYER0_DELTA_FINDINGS.md` (994 lines, 27 sections):
+
+1. **Near-tie attribution, boundary-level proof**: with bit-identical attention inputs and
+   weights, `attention_raw_output` differs by ~1 bf16 ULP across batch contexts (relL2
+   3-4e-3 = bf16 eps); deltas stay bounded (2-6e-2) through all 45 layers — "amplification via
+   mHC mixing, no blow-up signature of a logic error". Root cause pinned to the TP/EP all-reduce
+   not being row-invariant (their section 11). Our near-tie attribution (logprob-gap evidence)
+   is consistent; their boundary-diagnostic tooling (`diag_window.sh`, `diag_compare.py`, the
+   layer_diagnostic hooks) would upgrade our evidence from logprob-level to boundary-level.
+2. **Concurrency with the draft graph** (their MTP-4, 80-lane graphs, GMU 0.35): aggregate
+   15.5 / 56.0 / 106.7 / 185.9 tok/s at 1/4/8/16 streams — near-linear; the cost is
+   single-stream (15.7 vs 21 at MAXSEQ=8; every step pads to 80 lanes). Quantifies the A014
+   payoff for our 16-stream net-negative finding.
+3. **Depth sweep with the draft graph** (their section 26): MTP-4 optimal — accepted 3.33,
+   aggregate 26.3; depth 5 gains 0.1 accepted but the 48-lane verify costs more; depth 3 saves
+   nothing. Greedy 5/8 vs the depth-4 reference is the verify-shape near-tie class, "not an
+   error".
+4. **Long prompts**: chunk-with-context steps cost ~1.4 s vs 0.45 s for a fresh 3200-token
+   prompt (the draft prompt-cache fill is 5-12% of long-prompt time; the rest is the target's
+   chunked prefill with context); ctx-bucket resizing helps but padding is not the main term.
+   Their 262K trial (MTP-4): decode at 219K context drops to ~6 tok/s — each speculative lane
+   carries the request's whole block table (10240 blocks/step); levers: share the block table
+   across lanes, paged-attention kernel throughput. **Directly informs our A024: MTP at the
+   production 262K window may be net-negative without those levers.**
+
+## New task from this addendum
+
+- **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. Their layer_diagnostic
+  hooks + diag_compare tooling upgrade near-tie evidence from logprob gaps to boundary-level
+  tensors (the proof class their sections 1-3 demonstrate). Strengthens ACCURACY.md and every
+  future parity claim.

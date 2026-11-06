@@ -325,3 +325,12 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   video not served; MTP draft graph absent).
 - **K009 Reassess blocked tasks** — ongoing; G001/G002/G004 blocked on fixed architecture
   limits (not reassessable); A012/A014 reassessable after draft-graph work.
+- **NEW I015 Adopt boundary-level divergence diagnostics** — `READY`. The abotsis fork's
+  layer_diagnostic hooks + diag_compare tooling prove near-tie divergences at the boundary
+  level (~1 bf16 ULP at attention output, bounded 2-6e-2 amplification through mHC, no
+  logic-error signature). Upgrades our near-tie evidence from logprob gaps to tensors.
+  Evidence: RESEARCH-001 addendum 6.
+- **A024 update (via RESEARCH-001 addendum 6)**: MTP at the production 262K window is
+  likely NET-NEGATIVE without the block-table-sharing lever (their 262K MTP-4 trial:
+  decode ~6 tok/s at 219K context, each lane carrying the full block table). Plan the
+  262K MTP test after A014, with the block-table-sharing lever on the list.
