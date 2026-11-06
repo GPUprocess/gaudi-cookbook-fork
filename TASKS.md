@@ -364,6 +364,11 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   budget/secure-flush/nesting + the self-arming flow). The HPU capture run happens
   in a diagnostic boot (enforce_eager + the env + the sentinel) - shares the Stage-1
   window. The runner-level request mapping (their prepare()) is out of scope for v1.
+  LANDED: the diag boot scripts (`serving/serve_diag.sh` non-MTP and
+  `serve_diag_mtp.sh` MTP, both enforce_eager with the layer-diagnostic dir) and
+  `benchmarks/diag_compare.py` (the delta-map tool: per-boundary relL2/max_abs,
+  history validation; tested with synthetic payloads). I015 procedure: boot both
+  diag variants -> run the golden prompts -> diag_compare the payloads.
   Evidence: RESEARCH-001 addendum 6 + the I015 porting assessment.
 - **A024 update (via RESEARCH-001 addendum 6)**: MTP at the production 262K window is
   likely NET-NEGATIVE without the block-table-sharing lever (their 262K MTP-4 trial:
