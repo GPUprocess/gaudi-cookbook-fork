@@ -362,7 +362,9 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   baseline; one candidate per boot. Empirically confirmed under our window:
   lin+tamed prompt cfgs (bs 1-8 step 1, query 128 step 2048, ctx 0 step 64) and
   decode (bs pinned 8, blocks 32..2048 step 128) -> 8x4x4 = 128 prompt graphs +
-  1x16 = 16 decode graphs, matching the analytic estimate.
+  1x16 = 16 decode graphs, matching the analytic estimate. Warmup projection:
+  exp 593 total graphs ~31.5 min -> lin+tamed 144 total graphs ~8-9 min
+  (the graph count ratio 4.1x, assuming the per-graph compile time is uniform).
 - **NEW K010 Evaluate the abotsis fork as the serving base** — `READY` (strategic).
   Their fork (919ec98f) is a full GLM-5.3-Flash serving stack: the draft graphs, the
   KDA spec-state, the MoE expert cache, the pad bucketing, the device sampling, the
