@@ -270,8 +270,11 @@ class Glm5NextDecoderLayer(nn.Module):
         )
 
     def forward(self, positions: torch.Tensor, streams: torch.Tensor) -> torch.Tensor:
+        _layer_diag.maybe_arm_layer(self)
         residual = streams
         post, comb, x = self._hc_pre(streams, self.hc_attn_fn, self.hc_attn_scale, self.hc_attn_base)
+        _layer_diag.layer_capture(self, "attention_mhc_pre_input", streams)
+        _layer_diag.layer_capture(self, "attention_mhc_pre_post_a", post)
         x = self.input_layernorm(x)
         if self.is_kda:
             out = torch.empty_like(x)
@@ -279,13 +282,18 @@ class Glm5NextDecoderLayer(nn.Module):
             x = out
         else:
             x = self.self_attn(positions, x)
+        _layer_diag.layer_capture(self, "attention_raw_output", x)
         streams = self.mhc_post(x, residual, post, comb)
+        _layer_diag.layer_capture(self, "attention_mhc_post", streams)
 
         residual = streams
         post, comb, x = self._hc_pre(streams, self.hc_ffn_fn, self.hc_ffn_scale, self.hc_ffn_base)
         x = self.post_attention_layernorm(x)
         x = self.mlp(x)
-        return self.mhc_post(x, residual, post, comb)
+        out = self.mhc_post(x, residual, post, comb)
+        _layer_diag.layer_capture(self, "ffn_mhc_post", out)
+        _layer_diag.layer_step_done(self)
+        return out
 
 
 class Glm5NextModel(nn.Module):

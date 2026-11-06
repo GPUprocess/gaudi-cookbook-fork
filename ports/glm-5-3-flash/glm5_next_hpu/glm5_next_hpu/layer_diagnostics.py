@@ -31,6 +31,7 @@ import os
 import stat
 
 import torch
+from types import SimpleNamespace
 
 MAX_BYTES = 64 * 1024 * 1024
 MAX_CAPTURES = 9
@@ -89,15 +90,11 @@ def arm(runner, *, rank: int = 0) -> dict | None:
         runner._glm_diag_admitted = []
     if getattr(runner, "_glm_diag_seen", None) is None:
         runner._glm_diag_seen = set()
-    
     _collector = dict(path=path,
                       rank=rank,
                       ordinal=ordinal,
                       bytes_used=used,
                       positions=allowed_positions(),
-                      runner=runner,
-                      admitted=runner._glm_diag_admitted,
-                      seen_set=runner._glm_diag_seen,
                       payload=dict(schema=1, rank=rank, ordinal=ordinal,
                                    records=[], boundaries=[], truncated=False))
     return _collector
@@ -109,8 +106,8 @@ def admit(request_id, position: int, prompt_token_ids: list[int],
     if _collector is None:
         return None
     positions = _collector["positions"]
-    admitted: list = _collector["admitted"]
-    seen: set = _collector["seen_set"]
+    admitted: list = _collector["payload"] and _collector.setdefault("admitted", []) or []
+    seen: set = _collector["seen"]
     if position not in positions or (request_id, position) in seen:
         return None
     if request_id not in admitted:
@@ -191,3 +188,68 @@ def flush(mark_step=None) -> None:
 def disarm() -> None:
     global _collector
     _collector = None
+
+
+# --- self-arming layer capture (plugin-side; no runner changes) -------------
+LAYER_DIAG_ENV = "VLLM_GLM_LAYER_DIAG_DIR"
+MAX_FORWARDS = 9
+
+
+def _layer_index(prefix: str) -> int | None:
+    """The decoder-layer index from a `model.layers.N` style prefix."""
+    import re
+    m = re.search(r"layers\.(\d+)$", prefix or "")
+    return int(m.group(1)) if m else None
+
+
+def maybe_arm_layer(layer) -> None:
+    """Called from the decoder layer's forward: self-arm iff everything holds.
+
+    Refuses to arm under lazy mode (HPU graphs) — the capture requires an
+    enforce_eager diagnostic boot so tensors are real and stable.
+    """
+    global _collector
+    if _collector is not None:
+        return
+    try:
+        from habana_torch_plugin import htorch
+        if htorch.utils.internal.is_lazy():
+            return
+    except Exception:
+        return
+    index = _layer_index(getattr(layer, "_prefix", ""))
+    if index is None or index != 0:
+        return
+    path = os.environ.get(LAYER_DIAG_ENV, "")
+    if not path:
+        return
+    fake_runner = SimpleNamespace(_glm_layer_diag_dir=path, _glm_diag_calls=0,
+                                  _glm_diag_bytes=0, _glm_diag_admitted=None,
+                                  _glm_diag_seen=None)
+    ticket = arm(fake_runner)
+    if ticket is not None:
+        ticket["layer"] = layer
+        ticket["layer_index"] = index
+
+
+def layer_capture(layer, name: str, tensor, *, row_indices=None) -> None:
+    """Owner-gated boundary capture from the decoder layer's forward."""
+    if _collector is None or _collector.get("layer") is not layer:
+        return
+    boundary(f"layers.{_collector['layer_index']}.{name}", tensor, row_indices=row_indices)
+
+
+def layer_forwards(layer) -> int:
+    """How many captures the armed collector has taken (drives the auto-flush)."""
+    if _collector is None or _collector.get("layer") is not layer:
+        return 0
+    return _collector.get("forwards", 0)
+
+
+def layer_step_done(layer, mark_step=None) -> None:
+    """Count the forward; auto-flush and disarm at MAX_FORWARDS."""
+    if _collector is None or _collector.get("layer") is not layer:
+        return
+    _collector["forwards"] = _collector.get("forwards", 0) + 1
+    if _collector.get("forwards", 0) >= MAX_FORWARDS:
+        flush(mark_step)
