@@ -395,3 +395,21 @@ This strengthens and refines the E015/A014 sequencing: the config A/Bs (B021/E01
 valid for our current deployment, but the strategic recommendation is to plan the migration
 to their fork as the Phase-2 base, with Stage-1 (A001) validating our current implementation
 first so the comparison has a verified baseline.
+
+
+## Addendum 11: the fused clamp MoE kernel is portable (our fp8 config has the contract)
+
+Our vLLM tree's fp8.py quantization config already carries swiglu_limit,
+swiglu_alpha, and swiglu_beta (the clamped-SwiGLU contract) - the reference's
+fused clamp TPC kernel concept is portable to our MoE path. The kernel implementation
+lives in their fork's TPC loader (VLLM_GLM_TPC_CLAMP_LOADER); porting it requires
+the TPC kernel binary + the loader module.
+
+Their performance notes also confirm:
+- Prefill after the decay-dot fix is device-bound on small fp32 TPC kernels (not MME);
+  attention and mHC mixing are minor at every bucket.
+- An 80 ms forward-wall floor from per-layer graph launches + ~0.1 ms/token.
+- Prompt-query bucket edges cost 30-50% TTFT; size VLLM_PROMPT_QUERY_BUCKET_* to
+  the workload.
+- VLLM_KDA_SCAN=parallel: 7% TTFT at the 3200 bucket, neutral below.
+- VLLM_HPU_DECODE_TENSOR_CACHE: on for glm5_next without spec decode, off under it.

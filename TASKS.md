@@ -367,6 +367,12 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   1x16 = 16 decode graphs, matching the analytic estimate. Warmup projection:
   exp 593 total graphs ~31.5 min -> lin+tamed 144 total graphs ~8-9 min
   (the graph count ratio 4.1x, assuming the per-graph compile time is uniform).
+- **NEW H013 Port the fused clamp TPC kernel from the reference fork** - `READY`.
+  Our vLLM's fp8 quantization config already carries the clamped-SwiGLU contract
+  (swiglu_limit / swiglu_alpha / swiglu_beta); the reference's TPC kernel and loader
+  module implement it on device. Their measurement: ~nothing on MoE decode at their
+  shape; the recipe table claims ~2x on GLM-5.3 decode (contradictory - measure).
+  Evidence: RESEARCH-001 addendum 11.
 - **NEW K010 Evaluate the abotsis fork as the serving base** — `READY` (strategic).
   Their fork (919ec98f) is a full GLM-5.3-Flash serving stack: the draft graphs, the
   KDA spec-state, the MoE expert cache, the pad bucketing, the device sampling, the
