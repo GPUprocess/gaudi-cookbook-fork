@@ -4,7 +4,7 @@
 |---|---|---|---|
 | Bind the draft head to the target's layer-45 modules by reference instead of loading a second copy | ACCEPTED | Zero marginal weight memory (no duplicate ~0.9 GiB/rank); the checkpoint ships the MTP block inside the target model | EXP-MTP-001; repo `mtp.py` |
 | Run the draft eagerly (no dedicated HPU graph) | ACCEPTED (for now) | Shared storage between target and draft cannot be captured in a second full graph; at k=1 the eager cost is bounded and correctness-first. Revisit: draft HPU graph is the documented lever for k≥2 and concurrency (A014/A018) | EXP-MTP-002, EXP-MTP-003 |
-| Default speculative depth k=1 | ACCEPTED | k=1 net-positive single-stream; k=2 net-neutral (eager per-step cost ≥ acceptance gain); concurrent net-negative by 16 streams. Revisit after the draft graph | EXP-MTP-002, EXP-MTP-003 |
+| Default speculative depth k=1 | **VERIFIED** (Stage-1: +15.1% decode, accuracy PASS) | k=1 net-positive single-stream; k=2 net-neutral (eager per-step cost ≥ acceptance gain); concurrent net-negative by 16 streams. Revisit after the draft graph | EXP-MTP-002, EXP-MTP-003 |
 | KDA candidate-slot state (S+1 columns) for verify rows | ACCEPTED | Required for correct post-verify state selection; algebra shared with the compact Mamba layout; churn/chaining parity tested | EXP-MTP-001; repo `kda_layer.py`, `tests/cpu/` |
 | Per-verify-row KV block lists (`spec_verify_blocks`) | ACCEPTED | Correct output when verify rows straddle KV-block boundaries (measured at 640/1280 crossings) | EXP-MTP-001; repo patches |
 | Prefix caching stays OFF | ACCEPTED (architectural) | KDA layers store no per-block states; the engine refuses to start with prefix caching enabled | Base port docs; engine behavior |

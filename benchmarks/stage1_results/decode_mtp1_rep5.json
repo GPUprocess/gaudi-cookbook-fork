@@ -1,0 +1,1 @@
+{"label": "mtp1-rep5", "prompt_tokens_fixed": true, "generated_tokens": 256, "wall_tok_s": 37.4, "wall_total_s": 6.85, "ttft_s": 0.136, "stream_tok_s": 20.92, "itl_median_s": 0.048, "itl_p95_s": 0.0491}

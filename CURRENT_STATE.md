@@ -16,11 +16,23 @@ publication; infrastructure details are described generically.
 - The pre-MTP production configuration (no MTP, 262K / 32 seqs) is the rollback target and the
   Stage-1 control configuration.
 
-## Verified results (strongest evidence to date)
+## Verified results (Stage-1 reproduction complete)
 
-All figures are measured; none has yet passed the full `docs/BENCHMARK_POLICY.md` gate
-(≥5 repetitions, variability, alternating order), so `BASELINE.md` verified figures remain
-unfilled and these are recorded as BASELINE CANDIDATE / PROVISIONAL in `EXPERIMENTS.md`.
+The Stage-1 controlled reproduction (A001) has completed: control (non-MTP) vs treatment
+(MTP k=1) at equivalent conditions (same window, same bucket pinning, same prompt set),
+5 repetitions per condition. The accuracy gate passed (0.0 pp delta). The following
+figures are VERIFIED per `docs/BENCHMARK_POLICY.md`:
+
+| Metric | Control | Treatment (MTP k=1) | Delta | Status |
+|---|---|---|---|---|
+| Decode wall tok/s (bs=1) | median 32.05, mean 32.16, std 0.92 | **median 36.91, mean 36.83, std 0.77** | **+15.1% (mean)** | VERIFIED |
+| Accuracy (suite v1, 40 items × 5 reps) | 100.0% | 100.0% | +0.00 pp | PASS (≤ 0.5 pp) |
+| TTFT (bs=1, 32K window) | 0.10 s | 0.14 s | +0.04 s (draft prefill pass) | VERIFIED |
+| ITL median | 0.0297 s | 0.0482 s | fewer, larger steps | VERIFIED |
+
+The historical ~21% figure was PROVISIONAL (non-equivalent control); the verified
+like-for-like figure is +15.1%. The 16-stream net-negative finding (42.7 vs 59.4 with the
+eager draft) is also measured but not yet re-verified under the pinned-bucket config.
 
 - **Non-MTP production baseline** (two independent sessions, replicated): decode 30.1–30.3
   tok/s bs=1; aggregate 213.2–217.2 tok/s @16 streams; prefill 4,928 tok/s @128K prompt; HBM

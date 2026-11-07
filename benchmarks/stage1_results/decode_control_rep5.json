@@ -1,0 +1,1 @@
+{"label": "control-rep5", "prompt_tokens_fixed": true, "generated_tokens": 256, "wall_tok_s": 32.37, "wall_total_s": 7.91, "ttft_s": 0.099, "stream_tok_s": 33.81, "itl_median_s": 0.0296, "itl_p95_s": 0.0307}

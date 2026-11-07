@@ -1,0 +1,1 @@
+{"label": "control-rep3", "prompt_tokens_fixed": true, "generated_tokens": 256, "wall_tok_s": 31.27, "wall_total_s": 8.19, "ttft_s": 0.105, "stream_tok_s": 33.76, "itl_median_s": 0.0297, "itl_p95_s": 0.0325}

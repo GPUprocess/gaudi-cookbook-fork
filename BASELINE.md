@@ -8,7 +8,7 @@ Keep provisional and failed results in EXPERIMENTS.md and the corresponding expe
 
 ## Current status
 
-- Baseline status: NOT YET VERIFIED
+- Baseline status: STAGE-1 VERIFIED (decode throughput + accuracy gate)
 - Model: GLM-5.3-Flash FP8 (revalidate exact checkpoint/artifact).
 - Hardware: 8× Intel Gaudi 2 (HL-225); actual HPU allocation must be recorded per benchmark.
 - Engine/runtime: Revalidate exact repository revision and software versions.
@@ -22,11 +22,11 @@ No verified performance figures have been entered yet.
 
 | Metric | Configuration | Verified value | Workload/conditions | Experiment report |
 |---|---|---|---|---|
-| TG/decode | TBD | TBD | TBD | TBD |
-| PP/prefill | TBD | TBD | TBD | TBD |
-| TTFT | TBD | TBD | TBD | TBD |
-| Aggregate throughput | TBD | TBD | TBD | TBD |
-| Context/memory | TBD | TBD | TBD | TBD |
+| TG/decode bs=1 (wall) | MTP k=1, TP8+EP, 32K/8seq, bucket-pinned | **36.83 mean / 36.91 median** (control 32.16/32.05, +15.1%) | 256-token generations, greedy, natural prompt, 5 reps each | experiments/MTP-001, benchmarks/stage1_results/ |
+| PP/prefill @128K | non-MTP, TP8+EP, production window | 4,928 tok/s | 104,867 prompt tokens, chunked prefill 8192 | EXP-OPT-001 |
+| TTFT bs=1 (32K window) | MTP k=1 | 0.14 s | 256-token generation, bucket-pinned | benchmarks/stage1_results/ |
+| Aggregate @16 streams (no MTP) | non-MTP, TP8+EP, production window | 213.2-217.2 tok/s | 128-token generations, 2 sessions | EXP-OPT-001, EXP-OPT-004 |
+| HBM under load (MTP k=1) | TP8+EP, 32K/8seq | 64.1 GiB/card | weights + KV + candidate columns + graphs | EXP-MTP-001 |
 
 ## Baseline establishment checklist
 
