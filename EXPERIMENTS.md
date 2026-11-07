@@ -576,3 +576,33 @@ our 288-expert MoE at TP8+EP8 (36 local/rank).
 shape (correctness vs the stock fp8 GEMM path, then kernel time); port the
 pytorch op wrappers into our plugin build (the DSV4.1 env used bridge-build.sh);
 then the MoE variant selection for our shapes.
+
+## EXP-Q02 closure — same-window non-MTP comparison: the MTP+levers stack wins
+## on BOTH axes; the concurrency crossover is GONE (2026-11-07, boot nomtp)
+
+**Setup:** serve_nomtp.sh = the adopted serving script minus the speculative
+config (same lin buckets, same window, GLM_ROUTER_FAST=1 kept - the router
+lever is spec-independent). The honest comparison against the adopted
+MTP+levers stack under IDENTICAL conditions.
+
+**Results (steady state):**
+
+| Metric | non-MTP + router-fast | MTP + all levers (adopted) | MTP advantage |
+|---|---|---|---|
+| bs=1 decode | 32.4-32.8 | 38.0-39.1 | **+17%** |
+| Aggregate @16 | 143-160 (median ~154) | 181-185 | **+18-20%** |
+| R003 | (not probed this boot) | "10" | - |
+
+**Findings:**
+1. The historical "213.2 t/s non-MTP @16" was the PRODUCTION window (262K/32seq,
+   exp buckets) - a different regime. Under the current serving window non-MTP
+   delivers only ~154 t/s @16 and ~32.8 t/s bs=1.
+2. With the Q18 levers, **MTP is net-POSITIVE at 16 streams (+18-20%)** - the
+   eager-draft crossover documented in EXP-Q02/Q03 is eliminated by the lever
+   stack, not merely pushed.
+3. The adopted configuration (MTP k=1 + router fast + device-side rejection +
+   early draft) is the best known config on every axis under the serving window.
+
+**Q02 CLOSED.** The remaining aggregate gap to the 800 t/s objective (4.3x) is
+the device-efficiency track (Q21 kernels) and scheduling work, not an MTP
+trade-off.

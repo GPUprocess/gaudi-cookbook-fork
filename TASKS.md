@@ -450,7 +450,10 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   shape; correctness gated by existing parity/churn suites. Dependencies: none (top priority).
   Next action: port the draft-core pattern into `glm5_next_hpu` behind
   `VLLM_GLM_MTP_DRAFT_GRAPH`, CPU parity first, then HPU A/B on the live config.
-- **Q02 Aggregate decode at bs=16 under the pinned-bucket config (MTP on/off)** — `WORKING` (MTP half measured: 126.7 @16, saturation ~128 from 8 streams; non-MTP comparison boot pending).
+- **Q02 Aggregate decode at bs=16 under the pinned-bucket config (MTP on/off)** — `CLOSED`
+  (same-window non-MTP: ~154 @16 / 32.8 bs=1 vs the adopted MTP stack 183 / 38.3 - MTP
+  net-positive +18-20 percent on both axes; the crossover is GONE. The historical 213
+  was the production window, a different regime. (MTP half measured: 126.7 @16, saturation ~128 from 8 streams; non-MTP comparison boot pending).
   Hypothesis: the 42.7-vs-59.4 16-stream crossover was measured under the old MTP window, the
   213 t/s aggregate under the production window — neither reflects the current pinned-bucket
   config; the true MTP-on aggregate baseline is unknown. Bottleneck: AGG/SCHED.
