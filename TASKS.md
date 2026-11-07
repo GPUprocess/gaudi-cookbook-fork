@@ -153,6 +153,7 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   green (apply/idempotent/check/drift). Upstream evidence: bit-identical (greedy
   parity 8/8) and +10% single-stream decode. HPU measurement pending a window;
   deploy = apply the patch during the window boot. Evidence: RESEARCH-001 addendum 3.
+  HPU MEASUREMENT (MTP k=1): the +10% claim is NOT reproduced - B023 median 36.85 vs baseline 36.91 wall tok/s (no measurable change). Our k=1 config may have different graph patterns than their MTP-4.
 - **NEW B022 Port position-independent all-reduce (gather_sum)** — `READY` (upstream fix
   exists in abotsis fork; absent in our b059f9c tree). Fixes the co-batched row-order ULP
   that flips near-tie routing under concurrency. Evidence: RESEARCH-001.
