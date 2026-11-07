@@ -130,7 +130,7 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
 - **NEW B021 Pin decode bucket ladder** — `READY`. `VLLM_DECODE_BS_BUCKET_MIN/STEP` exist
   in our tree; abotsis measured warmup 13 → ~2 min and 12/12 serial-vs-concurrent parity
   with decode pinned to one bucket, decode within noise. Free determinism + boot-time win;
-  needs a server restart (approval). Evidence: RESEARCH-001 addendum 2.
+  needs a server restart (autonomous). Evidence: RESEARCH-001 addendum 2.
   Measured production boot (the MTP window, from serve_mtp.log): 31.5 min
   start-to-health, 125 decode graphs captured (the bucket config: decode bs
   [1,2,8] blocks [1,8,2048]; the MTP verify shapes roughly double the graph
@@ -347,8 +347,8 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   implemented: LinearBucketingStrategy selectable via the features config, default exp) and `--enable-ep-weight-filter` (consumed in
   vLLM core arg_utils/weight_utils/parallel config). `VLLM_COMPACT_GDN=0` needs no A/B:
   our runner auto-pins it when unset, so the reference value already matches our
-  effective config. One variable at a time; needs a server restart per candidate
-  (approval). Evidence: RESEARCH-001 addendum 7 + the runtime recon in this entry.
+  effective config. One variable at a time; needs a server restart
+  (autonomous: the server is dedicated to development). Evidence: RESEARCH-001 addendum 7 + the runtime recon in this entry.
   Procedure (per candidate, from serve_mtp.sh): A = export VLLM_BUCKETING_STRATEGY=lin
   before boot - MUST pair it with the prompt-bucket taming the reference recipe uses
   (VLLM_PROMPT_QUERY_BUCKET_STEP=2048 VLLM_PROMPT_CTX_BUCKET_STEP=64). Quantified under
