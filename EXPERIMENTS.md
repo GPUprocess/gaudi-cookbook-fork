@@ -679,3 +679,30 @@ per build).
 **Assets staged (committed):** kernels/mxfp4-moe/extra/block_fp8_dequant_glm/
 {block_fp8_dequant_glm.c, glue.inc, op.cpp}; /tmp/mxk_dist/libmxk_tpc.so carries
 the gated GUID (rebuildable with one command).
+
+## EXP-Q21 step 2 continued — the op-library load collision: root cause isolated
+## (2026-11-07)
+
+Bisection with /proc/self/maps + isolated dlopens:
+1. `import torch` ALONE maps libhabana_pytorch_backend.so (the hpu platform
+   plugin is a torch entry point in this venv) - ONE copy, venv path.
+2. The TPC library (libmxk_tpc.so, 3254 GUIDs incl. ours) dlopens cleanly after
+   the imports.
+3. libmxk_op_lazy.so dlopens COLLIDE: `hpu::habana_d2d_memcpy_other is already
+   registered` (habana_operator.h:799), in both venvs, both load orders, and
+   with the STOCK glm op library too - it is not our op.cpp.
+4. The trigger: mxk_op_lazy.cpp's STATIC `TORCH_LIBRARY_IMPL(custom_op, HPU,
+   ...)` - the first HPU-dispatch-key impl registration from a second .so makes
+   the habana dispatcher run its lazy init, which re-registers the built-in
+   kernels (d2d memcpy et al.) that the backend .so already registered at
+   `import torch`. The mxfp4 serving image's stack does not have this quirk
+   (its gate passes in-image).
+
+**Resolution paths (next session):**
+a. Run the kernel inside the proper serving image (the framework's assumption);
+b. A single-.so design registering the ops from the plugin's own init (the
+   upstream pattern) instead of a second load_library'd .so;
+c. Probe the stack for an idempotent-registry flag before the second
+   registration (habana_dispatcher init guards).
+The TPC ELF itself is DONE and gated (block_fp8_dequant_glm is in
+libmxk_tpc.so); only the torch-op shim's load path remains.
