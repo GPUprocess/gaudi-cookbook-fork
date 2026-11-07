@@ -551,3 +551,28 @@ but is immaterial).
 **Q21 (the 1Cat kernel track) is the remaining lever for deep-depth prefill**
 (TPC block-FP8 dequant + fused attention kernels), along with the 200 t/s
 single-stream objective.
+
+## EXP-Q21 step 1 — local 1Cat kernel inventory (2026-11-07)
+
+The complete 1Cat-vLLM-Gaudi tree with compiled artifacts is on this host:
+
+- Sources: `/opt/dsv41/1Cat-vLLM-Gaudi/csrc/flashinfer_gaudi/` (bridge/, host/,
+  kernels/, pytorch/)
+- TPC kernels (tpc-clang, gaudi2): `block_fp8_dequant_gaudi2.c` (128x128
+  block-FP8 dequant - OUR checkpoint format), `add_rmsnorm_quant_bf16_gaudi2.c`,
+  `silu_mul_quant_bf16_gaudi2.c`, `silu_and_mul_bf16_gaudi2.c`,
+  `tp2_dynamic_quant_bf16_gaudi2.c`, plus DSV4.1-specific GDN/MTP kernels
+- PyTorch op wrappers: hpu_flashinfer_{activation,gaudi,norm}.cpp + setup.py
+- Build: `/opt/dsv41/build/` (bridge-build with compiled _hpu_C.so,
+  dsv41-native, plugin-snapshot, synapse-build)
+
+**Mapping to our model:** block_fp8_dequant (weights) + silu_and_mul (MoE
+activation) + add_rmsnorm_quant (norm fusion) cover the GLM-5.3-Flash decode
+hot path building blocks; the DSV4.1 MoE family (moe_fp8_prequant/
+direct_finalize/prefetch_w2 variants, n256 experts) is the tuning playbook for
+our 288-expert MoE at TP8+EP8 (36 local/rank).
+
+**Next actions (Q21 step 2):** qualify `block_fp8_dequant` on one GLM layer
+shape (correctness vs the stock fp8 GEMM path, then kernel time); port the
+pytorch op wrappers into our plugin build (the DSV4.1 env used bridge-build.sh);
+then the MoE variant selection for our shapes.
