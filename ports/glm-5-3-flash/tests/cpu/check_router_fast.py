@@ -4,14 +4,17 @@
 
 Verifies, on CPU, that skipping the group stage when num_expert_group == 1 and
 topk_group == 1 is bit-identical to the stock grouped_topk (both with and
-without an e_score_correction_bias), and that the patch's gate refuses other
-group configurations (the stage is NOT an identity there).
+without an e_score_correction_bias), and that the identity claim itself holds.
+Mirrors vllm cpu_fused_moe.grouped_topk's contract (softmax -> optional bias ->
+group stage -> top-k -> renormalize -> scaling).
 Run: python3 tests/cpu/check_router_fast.py
 """
 import torch  # noqa: E402
 
 
-def _impl(scores, topk, renormalize, num_expert_group, topk_group, bias, rsf, fast):
+def _impl(gating_output, topk, renormalize, num_expert_group, topk_group, bias, rsf, fast):
+    scores = torch.softmax(gating_output.float(), dim=-1)
+    num_token = scores.shape[0]
     original_scores = scores
     if bias is not None:
         scores = scores + bias.unsqueeze(0)
@@ -19,15 +22,15 @@ def _impl(scores, topk, renormalize, num_expert_group, topk_group, bias, rsf, fa
         tmp_scores = scores
     else:
         if bias is not None:
-            group_scores = scores.view(-1, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
+            group_scores = scores.view(num_token, num_expert_group, -1).topk(2, dim=-1)[0].sum(dim=-1)
         else:
-            group_scores = scores.view(-1, num_expert_group, -1).max(dim=-1).values
+            group_scores = scores.view(num_token, num_expert_group, -1).max(dim=-1).values
         group_idx = torch.topk(group_scores, k=topk_group, dim=-1, sorted=False)[1]
         group_mask = torch.zeros_like(group_scores)
         group_mask.scatter_(1, group_idx, 1)
         score_mask = (group_mask.unsqueeze(-1)
-                      .expand(-1, num_expert_group, scores.shape[-1] // num_expert_group)
-                      .reshape(-1, -1))
+                      .expand(num_token, num_expert_group, scores.shape[-1] // num_expert_group)
+                      .reshape(num_token, -1))
         tmp_scores = scores.masked_fill(~score_mask.bool(), float("-inf"))
     if bias is not None:
         topk_ids = torch.topk(tmp_scores, k=topk, dim=-1, sorted=False)[1]
@@ -48,20 +51,14 @@ def main():
 
     # 1. n_group=1, topk_group=1: fast == stock, with and without the bias.
     for b in (bias, None):
-        s = torch.softmax(logits.float(), dim=-1)
-        if b is not None:
-            s_biased = s + b.unsqueeze(0)
-        else:
-            s_biased = s
-        w1, i1 = _impl(s_biased, topk, True, 1, 1, b, rsf, fast=False)
-        w2, i2 = _impl(s_biased, topk, True, 1, 1, b, rsf, fast=True)
+        w1, i1 = _impl(logits, topk, True, 1, 1, b, rsf, fast=False)
+        w2, i2 = _impl(logits, topk, True, 1, 1, b, rsf, fast=True)
         assert torch.equal(w1, w2) and torch.equal(i1, i2), "fast path must be bit-identical at n_group=1"
     print("PASS: fast == stock (bit-identical) at n_group=1/topk_group=1, bias and no-bias")
 
-    # 2. n_group>1: the stage is NOT an identity; the fast gate must not apply.
-    s = torch.softmax(logits.float(), dim=-1)
-    w1, i1 = _impl(s, topk, True, 8, 2, None, rsf, fast=False)
-    w2, i2 = _impl(s, topk, True, 8, 2, None, rsf, fast=True)
+    # 2. n_group>1: the stage is NOT an identity; the fast gate must not fire.
+    w1, i1 = _impl(logits, topk, True, 8, 2, None, rsf, fast=False)
+    w2, i2 = _impl(logits, topk, True, 8, 2, None, rsf, fast=True)
     assert not torch.equal(i1, i2), "n_group>1 must route differently (gate must not fire)"
     print("PASS: gate refused at n_group=8/topk_group=2 (routing differs)")
 
