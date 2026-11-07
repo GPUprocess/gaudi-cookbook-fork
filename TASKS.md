@@ -605,6 +605,15 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   adapt anchors; boot GLM_ROUTER_FAST=1 first, then + GLM_SPEC_DEVICE_REJECT=1 +
   GLM_EARLY_DRAFT=1. Bonus: ports/glm-5-mxfp4/patches/spec_sampling.py fixes the
   all_greedy assert (temperature > 0 crashes the engine under MTP - verify on ours).
+  ADAPTATION NOTES (from inspecting both trees): the lean module is
+  ports/glm-5-mxfp4/glm5_hpu/glm5_hpu/decode_lean.py (225 lines: early_draft,
+  take_early_draft, make_device_reject) - copy into our glm5_next_hpu package and
+  rewrite its import (from glm5_hpu -> from glm5_next_hpu). The runner anchors
+  (OLD_RESET/OLD_EARLY/OLD_TAKE in patches/decode_lean.py) may have shifted under
+  our mtp_runner.py patch - run --check first and re-anchor. The sampler tail wires
+  make_device_reject around rejection_sampler.rejection_sample (hpu_rejection_sampler.py,
+  pristine in our tree). Router fast path: DONE separately as our
+  patches/router_fast.py (bit-identity contract test green; env GLM_ROUTER_FAST).
 
 ### Queue operating rule
 
