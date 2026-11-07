@@ -9,8 +9,8 @@ Primary objectives vs the best VERIFIED, accuracy-gated measurements:
 
 | Objective | Best verified | Status |
 |---|---|---|
-| 200 t/s single-stream decode | 37.4 t/s (MTP k=1, E015-A buckets) | 5.3x gap; Q01 draft graphs reach 40.9 (+9.3%) but fail the accuracy gate (Q01b) |
-| 800 t/s aggregate @ bs=16 | 213.2 t/s (non-MTP) / 126.7 (adoptable MTP) | 3.7x gap; Q01-split reaches ~168 (+33% over adoptable MTP) but fails the gate |
+| 200 t/s single-stream decode | **39.1 t/s** (MTP k=1, lin buckets, router fast path - Q18 lever 1, bit-identical) | 5.1x gap; Q01 draft graphs reach 40.9 and are accuracy-NEUTRAL vs their own control (Q01b) - re-eligible |
+| 800 t/s aggregate @ bs=16 | 213.2 t/s (non-MTP) / 126.7 (adoptable MTP) | 3.7x gap; Q01-split reaches ~168 (+33%) and is accuracy-neutral vs its own control (Q01b) - re-eligible |
 | 3,000-6,000 t/s prefill | 3,338-5,697 t/s warm at 0.5-2K, 6K, 8K depths | **MET at most depths** (Q07 + measurement correction); 3.5K bucket-edge point 2,696 (Q07b open) |
 | 1M context | **VERIFIED**: 1M window boots (1660 hybrid blocks ~8 GiB/card); needle retrieved exactly at ~860K depth (860,739 tokens, 523.7 s); deep prefill 1,643 t/s at that depth | **MET** (serving-validated on 8 HPUs) |
 | GLM-5.3-Flash FP8 | served as published (block FP8) | met |
