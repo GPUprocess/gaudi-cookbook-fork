@@ -592,7 +592,10 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Risk: load-time trap (page-faulting placement selection — read contiguous shares first);
   76.5->larger per-rank weights at TP2 sharding needs the memory check. Dependencies: none.
   Next action: compute the placement offline, then a TP2-EP4 boot with the load-order fix.
-- **Q18 router fast path + early draft + device-side rejection** — `RESEARCH`. Hypothesis:
+- **Q18 router fast path + early draft + device-side rejection** — `WORKING` (lever 1
+  VERIFIED: router fast path +4.4% bs=1 (39.10 vs 37.44 median), bit-identical on HPU
+  (byte-identical R003 logprobs), patches/router_fast.py env-gated GLM_ROUTER_FAST.
+  Levers 2-3 (device-side rejection walk, early draft) adaptation staged - see notes.) Hypothesis:
   three bit-identical changes (router fast path: n_group=1 qualifies on OUR config, verified;
   device-side rejection walk with float32-rounded draws; device-side draft row indices)
   remove ~3.7 ms of a ~39 ms step and the end-of-step host sync. Bottleneck: MTP/SCHED/KERNEL.

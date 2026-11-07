@@ -437,3 +437,30 @@ gathered-weight copy plus the fp32 down GEMM dominate at 2-row shapes.
 applied patch is inert without the env). The upstream win (vllm-gaudi #1731)
 does not transfer to GLM-5.3-Flash's 2-token verify shapes at 288 experts.
 Revisit only if a later stack changes the gather implementation's cost model.
+
+## EXP-Q18 lever 1 — router fast path: VERIFIED +4.4%, bit-identical (2026-11-07, boot q18b)
+
+**Change:** `patches/router_fast.py` (this repo, fail-closed, env-gated
+`GLM_ROUTER_FAST=1`): in vLLM cpu_fused_moe.grouped_topk, skip the group stage
+when num_expert_group == 1 and topk_group == 1 - our config (verified) - where
+it is provably an identity (masked_fill with an all-true mask). Saves the
+group_scores/topk/scatter/expand/masked_fill launches per MoE layer.
+
+**Verification:**
+- CPU contract test (tests/cpu/check_router_fast.py): fast == stock bit-identical
+  at n_group=1 (bias and no-bias); gate refused at n_group=8.
+- HPU bit-identity: R003 logprobs BYTE-IDENTICAL to the pre-patch server
+  ("10" -0.392 / "5" -1.142); suite 97.5% (the R003 chaos item, per EXP-Q15).
+- First boot crashed: the patch's env def used os without importing it in
+  cpu_fused_moe.py (NameError) - fixed with a module-local import; the patch
+  source updated to match.
+
+**Performance (steady reps 6-13, after warm-up):** 38.59/38.95/39.14/39.25/
+38.78/40.02/38.54/39.28 -> **median 39.10, mean 39.07** vs the 37.44/37.12
+baseline = **+4.4% median / +5.3% mean** - matching the study's ~1.7 ms/39 ms
+(~+4.5%) prediction almost exactly. Best verified single-stream figure of the
+project (37.4 -> 39.1); the earlier reps 2-5 were warm-up-contaminated.
+
+**Status:** ADOPTED-CANDIDATE (bit-identical, gate-neutral, +4.4%). The
+remaining Q18 levers (device-side rejection walk, early draft) are staged as an
+adaptation task (see TASKS Q18 notes).
