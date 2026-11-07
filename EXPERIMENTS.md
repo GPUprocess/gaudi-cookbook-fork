@@ -631,3 +631,19 @@ for MXFP4 at 66 t/s).
 compare dequant output vs the stock fp8 GEMM path bit-for-bit on the scale
 rounding, then micro-bench the GEMV variant against the stock fused MoE op at
 our decode shapes (2/4/8/16 tokens x 8 routes).
+
+## EXP-Q21 step 2 — toolchain + kernel build verification (2026-11-07)
+
+- `tpc-clang` is on PATH (/usr/bin/tpc-clang, also /opt/habanalabs/bin); the DSV4.1
+  bridge build environment (/opt/dsv41/bridge-build.sh) carries every include path.
+- `block_fp8_dequant_gaudi2.c` compiles cleanly standalone:
+  `tpc-clang -march=gaudi2 -O2 -x c++ ... -o ...` -> 13,856-byte TPC ELF, GUID string
+  embedded (one pipelining warning, benign).
+- The host-glue pair exists beside it (`block_fp8_dequant_gaudi2.cpp/hpp`):
+  `GetGcDefinitions` + the `_binary_*_o_start/end` embedded-ELF pattern - the same
+  shape as the mxfp4-moe framework's `glue.inc` contract, so the kernel drops into
+  our variant build via `--extra-kernel` with a thin adaptation.
+
+**Step-2 build verification: PASS.** The on-device qualification (dequant output vs
+the stock fp8 path on a GLM weight shard) is the next session's opening action;
+everything it needs is staged on the host.
