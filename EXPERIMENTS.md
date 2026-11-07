@@ -177,3 +177,11 @@ config). The +33% aggregate prize motivates a dedicated correctness follow-up
 
 **Next action:** restore the known-good default boot (graphs OFF); run Q01b
 hypothesis 1 (logprob diff on R003) on the next planned boot.
+
+**R003 logprob evidence (graphs-ON):** after `</think>` (-0.092), the next-token
+distribution is `10` at -0.392 vs `5` at -1.142 — a 0.75-nat gap, NOT a near-tie.
+The model genuinely ranks "10" first under split graphs; under the Stage-1
+baseline it answered "5" across 200/200 runs. This is a real distribution shift
+introduced by the graphed draft, not FP tie-breaking. Q01b hypothesis 1
+(bonus-token path) is consistent with this: the answer tokens arrive via the
+draft-proposal-dependent bonus path.
