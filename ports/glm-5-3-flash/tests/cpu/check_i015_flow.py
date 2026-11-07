@@ -12,11 +12,12 @@ payload contents.
 """
 import os
 import sys
+from pathlib import Path
 import tempfile
 import torch
 from types import SimpleNamespace
 
-sys.path.insert(0, "/home/tmpai2/publish_work/fork/ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu")
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "glm5_next_hpu"))
 import layer_diagnostics as ld  # noqa: E402
 
 H = 6144
