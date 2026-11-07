@@ -560,6 +560,15 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Dependencies: prefer after Q01/Q04 (so the levers carry over). Next action: schedule a
   TP4+EP boot with the pinned buckets; run the full objective benchmark pass.
 
+- **Q15 TP8 accuracy drift vs Stage-1 (97.5% vs 100%, R003)** — `READY`. Hypothesis: a
+  deployed-tree change since Stage-1 (the Q01 mtp.py rewrite is the prime suspect to EXCLUDE
+  first) or decode-bucket pinning differences shifted a config-chaotic item; TP4 passes and
+  every TP8 variant fails identically. Bottleneck: ACC. Expected gain: restores the 100%
+  baseline and unblocks Q01 adoption. Evidence: EXP-Q01b/Q15 matrix. Risk: may be intrinsic
+  TP8-sharding chaos -> the gate policy moves to same-boot-family controls. Dependencies: none.
+  Next action: deploy the Stage-1-era mtp.py (git 719f5bd) at TP8 and re-probe R003; then add
+  decode-bs pinning; then a kda.py checkout.
+
 ### Queue operating rule
 
 After EVERY experiment: update the entry, ask what now limits performance, add newly discovered

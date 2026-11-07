@@ -306,3 +306,48 @@ shape. Deep prefill (8K) is 75% of TP8.
 larger windows at TP4 need pool re-sizing (weights leave 11.1 GiB/card free).
 The 1M-context objective was validated at TP8; at TP4 the pool budget (~9.5
 GiB/card max) supports ~1.2M tokens — a TP4 1M boot is plausible but untested.
+
+## EXP-Q01b/Q15 — the R003 accuracy matrix: draft graphs are accuracy-NEUTRAL;
+## a TP8-specific drift vs Stage-1 is the real signal (2026-11-07)
+
+**Method:** R003 (bat-and-ball) probed directly (greedy, logprobs) plus the full
+40-item suite (2 reps) across a config matrix on the current tree.
+
+**Matrix (suite result / R003 answer):**
+
+| Config | Suite | R003 |
+|---|---|---|
+| Stage-1 boot (TP8, pre-I015 tree, orchestrator config) | 100.0% x5 | "5" |
+| TP8 + exp buckets + current tree, graphs OFF | 97.5% | "10" |
+| TP8 + lin buckets + current tree, graphs OFF | 97.5% | "10" (-0.392 vs "5" -1.142) |
+| TP8 + lin + split draft graphs (Q01) | 97.5% | "10" (IDENTICAL logprobs) |
+| TP4 + lin + current tree (Q14) | 100.0% x2 | "5" |
+
+**Findings:**
+1. **Q01 verdict REVERSED**: the split draft graphs produce byte-identical R003
+   logprobs and the identical suite result as their own graphs-OFF control.
+   The draft graphs are accuracy-NEUTRAL on this suite. The earlier gate
+   failure was an artifact of comparing against Stage-1 across configs.
+2. **A TP8-specific accuracy drift exists on the current tree**: every TP8
+   configuration tested (exp/lin buckets, graphs off/on) sits at 97.5% with
+   R003="10", while Stage-1's boot scored 100% and current-code TP4 scores
+   100%. The drift is bounded to R003 so far (-2.5 pp, gate limit -0.5 pp).
+3. R003 is plausibly CONFIG-CHAOTIC: the intuitive-wrong answer ("10") vs the
+   reasoned-correct ("5") sits behind a long greedy reasoning trace; small
+   numerics changes (TP sharding order, KDA state FP) can branch the trace.
+   The 0.75-nat final-answer gap does NOT imply a large model change.
+
+**Q15 opened (accuracy drift TP8 vs Stage-1):** candidates ranked:
+  a. The deployed-tree drift since Stage-1 (mtp.py rewritten for Q01 - the
+     eager path should be op-identical but is the prime suspect to EXCLUDE
+     first: deploy the Stage-1-era mtp.py from git 719f5bd and re-probe R003);
+  b. Decode-bucket pinning differences (Stage-1 pinned decode bs; the current
+     boots do not - verify-row graph family changes);
+  c. C015 kda.py (was already deployed at Stage-1 - unlikely but cheap to
+     test via a kda.py checkout);
+  d. Genuine TP8-sharding numerics chaos (TP4 passes; if a-c exclude, the
+     verdict is chaos and the gate policy needs same-boot-family controls).
+
+**Adoption impact:** Q01 (draft graphs, +33% aggregate @16, +9.3% bs=1) is
+RE-ELIGIBLE for adoption once Q15 establishes the proper same-config control;
+the +33% was never accuracy-blocked on its own merits.
