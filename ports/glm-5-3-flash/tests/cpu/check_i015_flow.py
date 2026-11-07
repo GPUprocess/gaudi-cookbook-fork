@@ -17,7 +17,7 @@ import tempfile
 import torch
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "glm5_next_hpu"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "glm5_next_hpu"))
 import layer_diagnostics as ld  # noqa: E402
 
 H = 6144
