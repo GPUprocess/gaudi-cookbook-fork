@@ -673,6 +673,19 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   snapshot is on this server at /opt/dsv41/1Cat-vLLM-Gaudi (csrc, bridge-build.sh,
   build/plugin-snapshot) - the kernels are already compiled for this host; the inventory
   and qualification can start from the local artifacts.
+  IMPLEMENTATION PLAYBOOK (in our repo, verified): kernels/mxfp4-moe/build.sh builds a
+  VARIANT kernel library (--variant glm|dsv41|...) with two gates + MANIFEST + code hashes,
+  and **--extra-kernel DIR** lets a port add its own TPC kernel (3 files: <guid>.c,
+  glue.inc, op.cpp) to the same library. The GLM variant + runtime already exist
+  (ports/glm-5-mxfp4/glm5_hpu/glm5_hpu/mxfp4_moe.py, GLM_MXK=1; mxk_deq.c GLM unpack;
+  mxk8_core.h = dequant+dot / w13 GEMV + gated activation / w2 GEMV headers).
+  Q21 CONCRETE PLAN: (1) new TPC kernel block_fp8_dequant+GEMV adapting the 1Cat
+  block_fp8_dequant_gaudi2.c core (E4M3 + FP32 scales in place) into the mxfp4-moe
+  framework via --extra-kernel; (2) runtime hook in OUR port modeled on the mxfp4
+  mxfp4_moe.py (GLM_FP8_MXK=1, fail-closed, decode-sized calls <= 16 tokens/128 routes);
+  (3) PT_HPU_LAZY_ACC_PAR_MODE=0 required (custom ops on views); (4) parity vs stock +
+  the accuracy gate. The kernel core swap: the mxfp4 dequant unit (E2M1+E8M0) becomes
+  E4M3+scale/128-blocks - the 1Cat source is the reference.
 
 ### Queue operating rule
 
