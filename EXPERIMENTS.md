@@ -647,3 +647,35 @@ our decode shapes (2/4/8/16 tokens x 8 routes).
 **Step-2 build verification: PASS.** The on-device qualification (dequant output vs
 the stock fp8 path on a GLM weight shard) is the next session's opening action;
 everything it needs is staged on the host.
+
+## EXP-Q21 step 2 — the extra-kernel build pipeline: TPC gate PASS, op-library
+## load blocked by a stack-header mismatch (2026-11-07)
+
+**Built:** `kernels/mxfp4-moe/build.sh --variant glm --extra-kernel
+extra/block_fp8_dequant_glm` with the adapted kernel (1-D index space, npts as a
+scalar param), glue.inc (DATA_F8_143/F32 -> BF16 contract, pairs = (N/128)x(K/256),
+setIndexSpace + scalar npts per the inst_mxk_deq convention), and op.cpp
+(REGISTER_CUSTOM_OP_ATTRIBUTES via the legacy hpu_custom_op.h API - no
+TORCH_LIBRARY def: the legacy bridge registers the schema by name).
+
+**Results:**
+- TPC library gate: **PASS - 3254 GUIDs (stock 3250 + mxk_w13x, mxk_w2x,
+  mxk_deq, block_fp8_dequant_glm)**. Our kernel is IN the gated library.
+- Op-library load: **FAIL in this venv** - `hpu::habana_d2d_memcpy_other is
+  already registered` (habana_operator.h:799). The STOCK glm variant's op
+  library fails the SAME probe here, so it is environmental: the build pulls
+  -I/usr/include/habanalabs from the DSV41 stack (1.24.1-482) while the
+  /opt/glm53 serving venv's plugin is the GLM stack's 1.24.1 - the registrar
+  sets differ, and loading an op library linked against one stack into a
+  process running the other double-registers. Verified not our op.cpp (the
+  stock build fails identically; both load orders tried).
+
+**Fix (next session):** build against the GLM serving stack's headers - either
+run build.sh inside the GLM serving image, or point the Habana includes at the
+venv plugin's include dir instead of /usr/include/habanalabs. The TPC ELF
+itself is stack-version-tolerant (compiled for gaudi2; the recipe cache keys
+per build).
+
+**Assets staged (committed):** kernels/mxfp4-moe/extra/block_fp8_dequant_glm/
+{block_fp8_dequant_glm.c, glue.inc, op.cpp}; /tmp/mxk_dist/libmxk_tpc.so carries
+the gated GUID (rebuildable with one command).
