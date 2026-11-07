@@ -516,7 +516,7 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   prefill. Evidence: A017/B009; B023 negative result shows the decode-side knob alone was
   inert — the new hypothesis targets the PREFILL path, a different code path. Risk: medium.
   Dependencies: Q06/Q07 profiling. Next action: profile first; do not blind-patch.
-- **Q10 1M-context serving feasibility on 8 HPUs (KV math + boot test)** — `READY`.
+- **Q10 1M-context serving feasibility on 8 HPUs (KV math + boot test)** — `VERIFIED` (1M window boots at 1660 hybrid blocks ~8 GiB/card; needle retrieved exactly at ~860K depth; deep prefill 1,643 t/s at that depth. Full-depth needle follow-up queued.)
   Hypothesis: measured KV cost is ~11.5 KiB/token/card at TP8 (1.8 GiB per 163,840 tokens);
   a 1M-token pool needs ~11.5 GiB/card — affordable next to 38.2 GiB weights; the objective
   is capacity-blocked, not architecture-blocked, on 8 cards. Bottleneck: KV.

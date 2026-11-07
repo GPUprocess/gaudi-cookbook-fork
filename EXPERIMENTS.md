@@ -225,3 +225,33 @@ gain; the ~25% scheduler-headroom estimate is unvalidated.
 **Caveat:** the D005 figures for the user-facing TTFT (with streaming) remain
 valid as END-TO-END first-token latency under 64-token generation budgets; the
 correction is about attributing that time to prefill.
+
+## EXP-Q10 — 1M-context serving validation (2026-11-07)
+
+**Setup:** `serve_mtp_1m.sh` — max-model-len 1,048,576 (the published config
+context length), MTP k=1, TP8+EP, lin buckets, KV override 1660 blocks.
+
+**Block-size finding (corrects the sizing math):** the `--num-gpu-blocks-override`
+counts 640-token HYBRID attention blocks, not 128-token cache blocks. First
+attempt (8192 blocks) auto-sized a 5.22M-token pool (38.4 GiB/card KV) and OOM'd
+on a 5 GiB single allocation. Correct sizing: 1660 blocks = 1,062,400 tokens ≈
+8 GiB/card — boots clean at GMU 0.82 (weights 38.2 + KV 8 + graphs reserve 4.3).
+
+**Needle test (third run, warm graph set):**
+- Prompt: 860,739 tokens (word-padded doc; needle "The access code is
+  ZEPHYR-7492" at ~950K target ≈ deep in the last 10%)
+- Wall 523.7 s → 1,643 t/s deep-context prefill (8192-token chunked prefill;
+  the per-chunk warm throughput at short depths is 3.3-5.7K t/s — Q07)
+- Answer: **"ZEPHYR-7492" — PASS** (exact retrieval at ~860K depth)
+
+**Verdict:** the 1M-context objective is SERVING-VALIDATED on 8 HPUs (window
+1,048,576; retrieval proven at ~860K; 188K window margin). Deep-context prefill
+(1,643 t/s at 860K) is outside the 3-6K band measured at short depths — the
+band objective is met for practical prompt depths (Q07), and deep-context
+prefill throughput is now a measured, separate data point.
+
+**Caveats:** 860,739 tokens is the tokenizer's count of the "~1M" word-built
+document (word estimates undercount ~14%); the window itself is validated to
+1,048,576 by config and the pool holds 1,062,400. A needle at the full 1,048,576
+depth is queued as a follow-up (needs a ~1.19M-word document; HTTP request
+~4.8 MB).
