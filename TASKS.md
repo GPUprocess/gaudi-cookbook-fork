@@ -436,7 +436,7 @@ Expected gain (ESTIMATE, not measured) / Evidence / Risk / Dependencies / Status
 Prioritize by: objective relevance, evidence the bottleneck exists, expected gain, feasibility,
 effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck move?
 
-- **Q01 Draft HPU graphs (private-storage draft cores + attention-in-graph)** — `READY`.
+- **Q01 Draft HPU graphs (private-storage draft cores + attention-in-graph)** — `WORKING` (split mode implemented, performance VERIFIED +9-11% bs=1 / +33% @16 aggregate, acceptance held — but the ACCURACY GATE FAILED: 97.5% vs 100.0% baseline, R003 deterministic flip, -2.5 pp > 0.5 pp limit. NOT adopted as default (env-gated OFF). Follow-up Q01b owns the correctness investigation).
   Hypothesis: the eager draft is host-launch-bound (93 ms host vs 17 ms device per draft step);
   capturing the draft in an HPU graph with metadata tensors as inputs removes the host overhead
   and makes MTP profitable at every batch size. Bottleneck: MTP/TG/GRAPH.

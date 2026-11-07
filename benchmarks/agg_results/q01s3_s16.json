@@ -1,0 +1,38 @@
+[
+ {
+  "streams": 16,
+  "aggregate_tok_s": 54.50335897349319,
+  "total_tokens": 2520,
+  "wall_s": 46.23568248748779,
+  "per_stream_mean": 6.468655245859846,
+  "per_stream_min": 3.2618210716112546,
+  "per_stream_max": 10.191078786508376,
+  "errors": [],
+  "rep": 1,
+  "label": "q01s3-agg16"
+ },
+ {
+  "streams": 16,
+  "aggregate_tok_s": 143.3106571630572,
+  "total_tokens": 2529,
+  "wall_s": 17.64697790145874,
+  "per_stream_mean": 18.281590845076362,
+  "per_stream_min": 5.410902488727852,
+  "per_stream_max": 26.668335029803604,
+  "errors": [],
+  "rep": 2,
+  "label": "q01s3-agg16"
+ },
+ {
+  "streams": 16,
+  "aggregate_tok_s": 158.85082233872174,
+  "total_tokens": 2468,
+  "wall_s": 15.53658938407898,
+  "per_stream_mean": 18.524429642635685,
+  "per_stream_min": 6.814485267221355,
+  "per_stream_max": 25.976941203555263,
+  "errors": [],
+  "rep": 3,
+  "label": "q01s3-agg16"
+ }
+]

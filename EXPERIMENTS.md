@@ -128,3 +128,52 @@ beats sys.path).
 **Status:** boot q01s3 (2D fix) in flight; A/B measurement next: bs=1 decode
 (baseline median 37.44), 16-stream aggregate (baseline 126.7), acceptance
 (baseline ~1.88), accuracy (baseline 100.0%).
+
+## EXP-Q01 results — split-mode draft graphs: HPU A/B (2026-11-07, boot q01s3)
+
+**Config:** MTP k=1, TP8+EP, lin prompt buckets, 32K/8seq window,
+`VLLM_GLM_MTP_DRAFT_GRAPH=1 VLLM_GLM_MTP_DRAFT_GRAPH_MODE=split` vs the E015-A
+baseline (same window, eager draft).
+
+**Performance (VERIFIED, 5 reps bs=1 / steady-state reps at concurrency):**
+
+| Metric | Eager draft (baseline) | Split graphs | Delta |
+|---|---|---|---|
+| bs=1 decode wall tok/s | median 37.44, mean 37.12 | **median 40.93, mean 41.28** | **+9.3% / +11.2%** |
+| bs=1 streaming tok/s | 20.7–21.0 | 22.1–24.4 | +6–16% |
+| Aggregate @4 streams | 92.8 | 103.0 | +11% |
+| Aggregate @8 streams | 128.0 | 151.1 | +18% |
+| Aggregate @16 streams | 126.7 (saturated) | **~168 (167.4–168.9)** | **+33%** |
+| Acceptance (mean len) | ~1.88 | 1.84–1.85 | held |
+| Acceptance (pos-0) | 73–98% | 84.3–84.5% | held |
+
+The eager-draft aggregate saturation at ~128 t/s is broken: the draft-graph gain
+SCALES with concurrency (the eager draft's host cost scaled with the virtual
+verify-row batch). MTP @16 remains net-negative vs non-MTP (213.2) but the gap
+narrowed from −40% to −21%.
+
+**Accuracy gate: FAILED.** Suite v1 (40 items, greedy): **97.5%** (39/40) on both
+a 1-rep and a 5-rep run (Stage-1 baseline: 100.0% × 5 reps, 200/200). The failed
+item is R003 (bat-and-ball: answers "10", expected "5") — deterministic across
+3 direct queries. The gate allows ≤ 0.5 pp regression; measured −2.5 pp.
+
+**Decision (per BENCHMARK_POLICY): NOT adopted as default.** The implementation
+stays in the tree, env-gated DEFAULT OFF (zero behavior change for the stock
+config). The +33% aggregate prize motivates a dedicated correctness follow-up
+(Q01b) rather than acceptance.
+
+**Q01b hypotheses for the R003 flip (ranked):**
+1. FP drift in the graphed draft hidden state vs eager (op-fusion order) changes
+   the draft token distribution; in MTP the OUTPUT includes the bonus token
+   predicted GIVEN the draft proposal, so borderline 2-token answers can flip
+   even with row-0 logits unchanged. Test: logprob the first token under both
+   configs; diff the draft proposals on R003.
+2. The attn mode (whole step in one graph) may have different (possibly smaller)
+   drift than the split mode's two graphs + eager seam. Test: attn-mode boot,
+   same suite.
+3. A seam bug (mark_step/sync placement) corrupts one op class. Test: the
+   I015-style layer capture on the draft path, or bisect by graphing only the
+   post-attention core.
+
+**Next action:** restore the known-good default boot (graphs OFF); run Q01b
+hypothesis 1 (logprob diff on R003) on the next planned boot.
