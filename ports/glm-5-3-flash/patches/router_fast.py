@@ -94,7 +94,8 @@ NEW = """    num_token = scores.shape[0]
 """
 
 ENV_DEF = '''# [gaudi-port:glm-5-3-flash/router-fast] skip the identity group stage
-_GLM_ROUTER_FAST = os.environ.get("GLM_ROUTER_FAST", "0") == "1"
+import os as _os_rf
+_GLM_ROUTER_FAST = _os_rf.environ.get("GLM_ROUTER_FAST", "0") == "1"
 '''
 
 
