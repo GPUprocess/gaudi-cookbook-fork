@@ -595,8 +595,13 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   remove ~3.7 ms of a ~39 ms step and the end-of-step host sync. Bottleneck: MTP/SCHED/KERNEL.
   Expected gain (ESTIMATE): +12% single-stream (bit-identical, measured on GLM-5.3 MXFP4).
   Evidence: docs/results/moe-decode-step.md. Risk: medium (sampler walk port; check mode
-  available). Dependencies: none. Next action: port the router fast path first (smallest,
-  bit-identical), then the sampler walk with the check mode.
+  Next action UPDATED (turnkey): the glm-5-mxfp4 port already implements all three
+  levers as a fail-closed patch (ports/glm-5-mxfp4/patches/decode_lean.py -> vllm
+  cpu_router.py + vllm_gaudi hpu_model_runner.py + hpu_rejection_sampler.py - the SAME
+  files in our tree; greedy bit-identical; off by default). Try --check on our tree;
+  adapt anchors; boot GLM_ROUTER_FAST=1 first, then + GLM_SPEC_DEVICE_REJECT=1 +
+  GLM_EARLY_DRAFT=1. Bonus: ports/glm-5-mxfp4/patches/spec_sampling.py fixes the
+  all_greedy assert (temperature > 0 crashes the engine under MTP - verify on ours).
 
 ### Queue operating rule
 
