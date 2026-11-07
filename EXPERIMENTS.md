@@ -606,3 +606,28 @@ MTP+levers stack under IDENTICAL conditions.
 **Q02 CLOSED.** The remaining aggregate gap to the 800 t/s objective (4.3x) is
 the device-efficiency track (Q21 kernels) and scheduling work, not an MTP
 trade-off.
+
+## EXP-Q21 step 2 prep — the block_fp8_dequant kernel core read (2026-11-07)
+
+`/opt/dsv41/1Cat-vLLM-Gaudi/csrc/flashinfer_gaudi/kernels/block_fp8_dequant_gaudi2.c`
+(40 lines, Apache-2.0): a TPC-C kernel that expands E4M3 weights packed 256-per-128B
+rows with per-(128-row, 256-col) block FP32 scales (rounded to BF16 before
+multiplying - matching our checkpoint contract), using `v_f8_ld_tnsr_b` with
+SW_UNPACK + `v_convert_f8_to_bf16_b` (load-pipe expansion into conversion lanes)
+and vector stores. Index space over (block_k, block_n); the second-half scale
+load is predicated on `block_k*256+128 < width`.
+
+**Read-across to our model:** our weights are E4M3 with 128x128 blocks and FP32
+scales - the same layout this kernel consumes. The mxfp4-moe framework's
+`--extra-kernel` wraps it as `<guid>.c` + `glue.inc` + `op.cpp`; the decode
+GEMV fusion (dequant-in-registers + dot, per the mxk8_core.h pattern) is the
+next kernel to write: block-FP8 w13 GEMV + SiLU-and-mul and w2 GEMV variants
+reading E4M3 in place (the Q16 gather lesson says the gather-then-GEMM
+decomposition loses; the fused in-register dequant GEMV is the shape that won
+for MXFP4 at 66 t/s).
+
+**Qualification plan (step 2):** build the 1Cat kernel standalone
+(tpc-clang -march=gaudi2), run it against a GLM weight shard slice on one card,
+compare dequant output vs the stock fp8 GEMM path bit-for-bit on the scale
+rounding, then micro-bench the GEMV variant against the stock fused MoE op at
+our decode shapes (2/4/8/16 tokens x 8 routes).
