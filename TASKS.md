@@ -697,10 +697,13 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   RESOLUTION PATHS: (a) build/load inside the proper serving image (the
   framework's assumption); (b) register the ops from the plugin's own init
   instead of a second load_library'd .so; (c) probe the dispatcher init guards;
-  (d) TEST THE SERVING-TIME LOAD ORDER FIRST - the mxfp4 installer loads the op
-  from the vllm_gaudi plugin hook DURING plugin import (a different point in the
-  dispatcher init than the gate probe); wire that installer pattern adapted to
-  our op and boot - the real serving process may not collide.
+  (d) SERVING-TIME LOAD ORDER: TESTED AND EXCLUDED - the installer/runtime/hooks
+  are wired (install_block_fp8.py, fail-closed) and the real boot collided at
+  the plugin-hook load point too; the runtime caught it and the server came up
+  healthy on stock ops. The collision is order-independent on this stack.
+  The track needs a stack-level change: v0.30.0 upgrade, a plugin-rebuild, or
+  an isolated image. The kernel + installer + runtime remain in the repo, inert
+  without GLM_FP8_MXK=1.
 
 ### Queue operating rule
 

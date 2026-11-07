@@ -706,3 +706,32 @@ c. Probe the stack for an idempotent-registry flag before the second
    registration (habana_dispatcher init guards).
 The TPC ELF itself is DONE and gated (block_fp8_dequant_glm is in
 libmxk_tpc.so); only the torch-op shim's load path remains.
+
+## EXP-Q21 path (d) — the serving-time load order: EXCLUDED; the fail-closed
+## design held (2026-11-07, boot q21rt)
+
+The installer (mxfp4 pattern adapted: runtime in vllm_gaudi/ops/block_fp8_rt.py,
+setup_env hook at the top of vllm_gaudi/__init__.py, install hook at the end of
+ops/hpu_fp8.py) was wired and the real server booted with GLM_FP8_MXK=1.
+
+**Result:** the collision is LOAD-ORDER-INDEPENDENT - torch.ops.load_library of
+the op .so collides with the registrar even at the serving-time plugin-hook
+point. The runtime's fail-closed except caught it: "block_fp8_dequant_glm NOT
+registered ... stock ops kept" in every worker, and the boot completed healthy
+on the stock ops. No production risk at any point.
+
+**Q21 standing after this session:**
+- DONE: kernel source adapted + compiled (tpc-clang, valid TPC ELF); the
+  extra-kernel pipeline built (TPC gate PASS, 3254 GUIDs incl. ours); the
+  installer/runtime/hooks implemented and installed (fail-closed verified in
+  the real serving process).
+- BLOCKED: the torch-op shim cannot load on this stack (vllm-gaudi v0.26.0 +
+  Gaudi SW 1.24.1) - the second .so's HPU-dispatch registration re-triggers the
+  dispatcher's built-in kernel registration. Order-independent; both venvs.
+- PATHS FORWARD: (a) a stack upgrade (v0.30.0 carries the fp8-gather natively
+  and may have the registrar guards), (b) a plugin-rebuild track (register the
+  op from the plugin's own init), (c) run the kernels in the DSV41-style
+  isolated image. All are stack-level engineering beyond this port.
+
+**Session close:** the server runs the adopted config (the hooks are installed
+but inert without GLM_FP8_MXK=1 - subsequent boots are unaffected).
