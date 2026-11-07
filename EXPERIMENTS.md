@@ -35,3 +35,37 @@ MTP=1 (36.8 tok/s, 32K/8seq window) against a non-MTP control measured on the pr
 window the single-run comparison is +14% (35.7 vs 31.4 tok/s). Both observations are preserved;
 neither has passed the repetition/variability requirements of `docs/BENCHMARK_POLICY.md`. The
 Stage-1 task (A001) is the controlled reproduction.
+
+## EXP-Q02/Q03 — Aggregate decode ladder under the pinned-bucket config (2026-11-07)
+
+**Question:** what is the true MTP-on aggregate baseline (the 800 t/s @ bs=16 target), and
+where does the eager-draft crossover sit? Prior figures (42.7 vs 59.4 @16; 213 @16 non-MTP)
+came from different windows/configs.
+
+**Setup:** live E015-A server (MTP k=1, TP8+EP, lin prompt buckets, 32K/8seq window).
+`bench_concurrent.py --streams N --reps 2` (16 distinct prompts, 256 gen tokens each,
+greedy, reasoning_effort low). Rep 1 at a new stream count pays first-use graph capture
+for that decode-batch shape.
+
+**Results (aggregate tok/s, steady-state rep):**
+
+| Streams | MTP k=1 (this ladder) | Non-MTP (historical, production window) |
+|---|---|---|
+| 2 | 55.7–56.3 | n/r |
+| 4 | 92.8 | n/r |
+| 8 | 125.1, 130.8 | 125.1 (B001) |
+| 16 | **126.7** (rep1 49.8 = capture) | 213.2–217.2 (B001) |
+
+**Findings:**
+1. With the eager draft, aggregate SATURATES at ~128 t/s from 8 streams onward — the draft
+   pass dominates the step as batch grows (per-step draft host cost scales with the virtual
+   batch of verify rows).
+2. MTP @16 streams is NET-NEGATIVE by ~40% vs the non-MTP figure (126.7 vs 213.2) under the
+   pinned-bucket config — the crossover is confirmed between 8 and 16 streams.
+3. First-use capture per new decode-batch shape costs ~30–60 s wall (rep1 @16: 49.8 vs
+   rep2 126.7) — pre-warming served shapes matters (D003).
+
+**Conclusion:** the eager draft is THE aggregate bottleneck, not just a bs=1 problem.
+Q01 (draft graphs) is the highest-impact lever for both the 200 t/s single-stream and the
+800 t/s aggregate objectives. Non-MTP @16 under the pinned-bucket window still needs a
+comparison boot (Q02 second half).

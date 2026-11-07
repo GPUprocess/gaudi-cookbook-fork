@@ -1,0 +1,26 @@
+[
+ {
+  "streams": 2,
+  "aggregate_tok_s": 52.089657927464884,
+  "total_tokens": 234,
+  "wall_s": 4.4922544956207275,
+  "per_stream_mean": 32.195711303526174,
+  "per_stream_min": 31.442619878481658,
+  "per_stream_max": 32.94880272857069,
+  "errors": [],
+  "rep": 1,
+  "label": "mtp-lin-s2"
+ },
+ {
+  "streams": 2,
+  "aggregate_tok_s": 56.28897986304113,
+  "total_tokens": 233,
+  "wall_s": 4.1393537521362305,
+  "per_stream_mean": 34.16430951207053,
+  "per_stream_min": 32.81167637117249,
+  "per_stream_max": 35.51694265296857,
+  "errors": [],
+  "rep": 2,
+  "label": "mtp-lin-s2"
+ }
+]

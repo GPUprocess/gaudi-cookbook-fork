@@ -450,15 +450,15 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   shape; correctness gated by existing parity/churn suites. Dependencies: none (top priority).
   Next action: port the draft-core pattern into `glm5_next_hpu` behind
   `VLLM_GLM_MTP_DRAFT_GRAPH`, CPU parity first, then HPU A/B on the live config.
-- **Q02 Aggregate decode at bs=16 under the pinned-bucket config (MTP on/off)** — `READY`.
+- **Q02 Aggregate decode at bs=16 under the pinned-bucket config (MTP on/off)** — `WORKING` (MTP half measured: 126.7 @16, saturation ~128 from 8 streams; non-MTP comparison boot pending).
   Hypothesis: the 42.7-vs-59.4 16-stream crossover was measured under the old MTP window, the
   213 t/s aggregate under the production window — neither reflects the current pinned-bucket
   config; the true MTP-on aggregate baseline is unknown. Bottleneck: AGG/SCHED.
   Expected gain (ESTIMATE): none directly — establishes the baseline the 800 t/s target is
   measured against and locates the real MTP crossover. Evidence: A025, E013/E014, CURRENT_STATE.
-  Risk: none. Dependencies: none. Next action: run `check_concurrent_16.py` on the live
-  (E015-A lin) server now; non-MTP comparison boot afterwards.
-- **Q03 MTP batch ladder 1/2/4/8/16** — `READY` (eager-draft regime) / re-run after Q01.
+  Risk: none. Dependencies: none. MEASURED (EXP-Q02/Q03): MTP @16 = 126.7 t/s aggregate (saturation ~128 from 8 streams;
+  eager draft dominates). Non-MTP comparison boot pending.
+- **Q03 MTP batch ladder 1/2/4/8/16** — `WORKING` (eager-draft regime measured: 2s 55.7–56.3, 4s 92.8, 8s 128.0, 16s 126.7 aggregate; per-stream 33/31/23/17.3. Re-run after Q01.)
   Hypothesis: acceptance and per-step cost scale differently with batch; the optimal MTP
   concurrency is unknown between 1 and 16. Bottleneck: MTP/AGG.
   Expected gain (ESTIMATE): identifies the concurrency band where MTP adds throughput.

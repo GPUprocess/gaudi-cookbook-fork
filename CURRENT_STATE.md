@@ -49,6 +49,11 @@ eager draft) is also measured but not yet re-verified under the pinned-bucket co
 
 ## Active work
 
+- **Q01 draft HPU graphs** (top priority): implemented (split + attn modes, env-gated default
+  OFF, CPU contract tests green, EXP-Q02/Q03 shows the eager draft saturates aggregate at
+  ~128 t/s). HPU A/B pending: split-mode boot, bs=1 decode + 16-stream aggregate + acceptance
+  + accuracy gate.
+
 - **Stage 1 (A001)**: turnkey — `pre_flight.sh` (26/26) then `stage1_reproduction.sh`
   (the venv fix, the bucket-pinned dual-condition boot, the dual-mode decode benchmark,
   the accuracy gate). Awaiting the maintenance-window approval.
