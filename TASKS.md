@@ -638,6 +638,36 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   pristine in our tree). Router fast path: DONE separately as our
   patches/router_fast.py (bit-identity contract test green; env GLM_ROUTER_FAST).
 
+- **Q20 allreduce-graph-split flag (PT_HPU_ENABLE_ALLREDUCE_GRAPH_SPLIT=0)** — `EXCLUDED`.
+  The flag lives in the habana torch.compile backend config (dynamo); our serving is lazy
+  mode, where recipe splits come from mark_step instead - the flag is inert here. Evidence:
+  habana_frameworks/torch/dynamo/compile_backend/config.py:66; the 2x claim (gaudi-llm-notes
+  qwen3.8-flash-next) was on a torch.compile port. Launch-bound decode is confirmed across
+  all Gaudi 2 ports (Qwen3.8: 6.7 ms kernels in a 25 ms step; DSV4.1: many-small-op
+  launch-bound; our levers attack exactly this).
+
+- **Q21 1Cat flashinfer_gaudi block-FP8 TPC kernels (the custom-kernel track to 200 t/s)**
+  — `RESEARCH`. Hypothesis: the 1Cat-vLLM-Gaudi fork ships Gaudi 2 TPC kernels for our exact
+  quantization format - `flashinfer_gaudi_block_fp8_dequant_gaudi2` and `block_fp8_linear`
+  (TPC block-weight BF16 dequant then BF16 MME, aligned 128x128 blocks = our checkpoint) plus
+  fused_add_rmsnorm_quant / silu_and_mul_quant and a tuned DeepSeek-V4.1 MoE kernel family
+  (moe_fp8_prequant / direct_finalize / prefetch_w2 variants) that RAN ON THIS SERVER in the
+  DSV4.1 deployment this project replaced. Replacing the stock fp8 GEMM/MoE lowering with
+  these kernels attacks the 15x device-efficiency gap (0.9 ms physics vs ~15 ms measured
+  device time per step) that caps single-stream decode at ~40 t/s.
+  Bottleneck: KERNEL/TG. Expected gain (ESTIMATE): the MXFP4 analogue (custom v8 kernels)
+  reached 66 t/s where stock reaches ~37; with the MoE kernel family and MTP-4-style
+  speculation the 200 t/s objective becomes reachable. Evidence: 1cat-vllm-gaudi
+  csrc/flashinfer_gaudi/, flashinfer_gaudi/tactics/native_coverage.json (block_fp8_linear,
+  block_fp8_dequant contracts); the DSV4.1 serving on this host.
+  Risk: large integration (TPC build, per-shape qualification, our KDA/hybrid layers need
+  the surrounding ops); license/binary provenance to verify. Dependencies: none (research
+  first: inventory the kernel set, map our layer call sites, qualify block_fp8_linear on
+  one layer shape). HOST FINDING: the full 1Cat-vLLM-Gaudi checkout with the BUILT plugin
+  snapshot is on this server at /opt/dsv41/1Cat-vLLM-Gaudi (csrc, bridge-build.sh,
+  build/plugin-snapshot) - the kernels are already compiled for this host; the inventory
+  and qualification can start from the local artifacts.
+
 ### Queue operating rule
 
 After EVERY experiment: update the entry, ask what now limits performance, add newly discovered
