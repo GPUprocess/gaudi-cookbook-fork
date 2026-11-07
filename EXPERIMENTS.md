@@ -525,3 +525,29 @@ previous default, -13% vs non-MTP) at bs=1 parity with every other variant,
 byte-identical outputs, suite unchanged. The serve script's env block is
 updated accordingly; the draft-graph code stays available (env-gated) for
 future host-overhead work where early-draft is not enabled.
+
+## EXP-Q07c REVISED — the >2K prefill wall is quadratic attention, not a removable
+## fixed cost (2026-11-07, boot q07c + edge probes)
+
+Phase 1 (prefill-shaped draft calls through the split cores, env-gated) measured
+NO change in the warm >2K walls (1.26-1.41 s, same as baseline) - because the
+draft pass is ~2% of the wall (1 MLA + 1 MoE vs the target's 45 layers), as the
+device-work arithmetic always said.
+
+**Edge bisection:** prompts of 1888/1920 real tokens prefill in 0.30 s; 2095
+tokens takes 1.46 s - the jump is the 2048->4096 prompt-bucket transition, and
+the per-token wall grows 146 -> 308 us/token (~2.1x) - matching quadratic MLA
+attention at depth (0.65x1 + 0.35x4 ~ 2.05x). The earlier "flat 1.2-1.4 s
+floor" reading compared depths that all landed in the >=4096 buckets.
+
+**Revised verdict:** the 3.5-8K prefill walls are the target's own quadratic
+attention scaling - physics, not a removable host cost. The 3,000-6,000 t/s
+band holds at 2K/6K/8K (5,750/4,166/5,663 t/s warm); the 3.5-4K dip
+(2,500-2,800 t/s) is the 4096-bucket quadratic penalty and is not recoverable
+by bucketing (Q07b negative) or draft-side changes. The draft-model prefill
+KV fill is confirmed negligible at every size (the always-eager finding stands
+but is immaterial).
+
+**Q21 (the 1Cat kernel track) is the remaining lever for deep-depth prefill**
+(TPC block-FP8 dequant + fused attention kernels), along with the 200 t/s
+single-stream objective.

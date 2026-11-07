@@ -499,8 +499,11 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   recover the 3.5K point - 2,475 vs 2,696 t/s at step 2048; the dip is a FIXED ~1.2-1.4 s
   per-prompt cost, flat from 2.6K to 7.1K tokens, independent of bucketing. Config reverted
   to step 2048. Superseded by Q07c.)
-- **Q07c fixed per-prompt prefill cost >2K (draft prefill KV fill)** — `READY` (root cause
-  found). Hypothesis CONFIRMED by source: the draft prompt-KV fill
+- **Q07c fixed per-prompt prefill cost >2K (draft prefill KV fill)** — `REVISED-NEGATIVE`
+  (phase 1 measured no change; edge bisection shows the wall is the TARGET's quadratic
+  MLA attention at depth - physics. The draft KV fill is negligible at every size. The
+  4K-band dip is not recoverable by bucketing or draft-side changes; Q21 kernels are the
+  lever. Phase-1 code retained env-gated.) Hypothesis CONFIRMED by source: the draft prompt-KV fill
   (`_hpu_spec_fill_draft_kv`, hpu_model_runner.py ~7476) calls the draft model with
   `bypass_hpu_graphs` - but the draft model is NEVER graph-wrapped
   (`_shares_target_modules` excludes it from the runner adapter), so the draft prefill pass
