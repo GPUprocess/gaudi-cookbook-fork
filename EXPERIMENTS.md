@@ -185,3 +185,43 @@ baseline it answered "5" across 200/200 runs. This is a real distribution shift
 introduced by the graphed draft, not FP tie-breaking. Q01b hypothesis 1
 (bonus-token path) is consistent with this: the answer tokens arrive via the
 draft-proposal-dependent bonus path.
+
+## EXP-Q07 — Small-prompt prefill ladder + TTFT measurement correction (2026-11-07)
+
+**Method:** `bench_prefill.py` (gen=1 token, so wall ≈ TTFT; prefill t/s =
+prompt_tokens / wall). 3 reps per depth; rep1 pays first-use graph capture for
+the prompt bucket, rep3 is warm. Server: MTP k=1 (draft mode irrelevant to the
+target-prefill property measured; the draft prompt-KV fill IS included in the
+wall).
+
+**Warm prefill throughput (t/s) by prompt depth:**
+
+| Prompt tokens | Wall (s) | Prefill t/s |
+|---|---|---|
+| 467 (~512) | 0.140 | **3,338** |
+| 907 (~1K) | 0.189 | **4,802** |
+| 1,784 (~2K) | 0.313 | **5,697** |
+| 3,514 (~4K) | 1.303 | 2,696 |
+| 5,267 (~6K) | 1.393 | **3,782** |
+| 7,148 (~8K) | 1.395 | **5,123–5,456** |
+
+**Finding 1 — the prefill objective is (mostly) already met.** The 3,000–6,000
+t/s band holds at 512–2K, 6K, and 8K depths; the 3.5K point sits at 2,696 t/s
+(just under) with a step-change in wall time (0.31 s -> 1.30 s) crossing the
+2048->4096 lin-bucket edge. The 4K bucket shape is the one prefill graph family
+worth a look (Q07b).
+
+**Finding 2 — TTFT measurement correction (supersedes C001's small-prompt
+figure and D005's "TTFT" figures).** The historical "warm small-prompt ~770
+t/s" (C001) and "TTFT 2.1 s @2K" (D005) included 64-token generation in the
+wall (check_ttft.py uses max_tokens=64): 64 gen tokens at ~47 ms ITL ≈ 3 s
+dominated the wall. With gen=1, warm TTFT at 2K is 0.31 s — 7x smaller. The
+"prefill is CPU-bound / AccThread busy-wait" narrative (A017/B009/Q06) was
+built on those inflated figures and must be re-examined: at 5,697 t/s warm the
+prefill is already in the objective band, and the host-overhead share is far
+smaller than believed. Q06 stays RESEARCH but with a much smaller expected
+gain; the ~25% scheduler-headroom estimate is unvalidated.
+
+**Caveat:** the D005 figures for the user-facing TTFT (with streaming) remain
+valid as END-TO-END first-token latency under 64-token generation budgets; the
+correction is about attributing that time to prefill.

@@ -484,16 +484,23 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
 - **Q06 AccThread busy-wait / scheduler headroom** — `RESEARCHING`. Hypothesis: prefill is
   CPU-bound (Habana AccThread busy-waits ~100% of one core during lazy dispatch); scheduler
   tuning (poll intervals, CPU affinity, eager-bridge flags) recovers part of an estimated ~25%
-  headroom. Bottleneck: SCHED/INFRA/PP. Expected gain (ESTIMATE): up to +25% prefill at small
-  prompts; decode effect unknown. Evidence: A017, B009, B017, D002. Risk: low-medium (runtime
+  headroom. Bottleneck: SCHED/INFRA/PP. Expected gain (ESTIMATE): REVISED DOWN — the warm prefill is already 3.3-5.7K t/s
+  (EXP-Q07 correction); the ~25% headroom estimate was built on generation-inflated
+  TTFT figures and is unvalidated. Evidence: A017, B009, B017, D002. Risk: low-medium (runtime
   env flags). Dependencies: host-side profile of a small-prompt prefill. Next action: profile
   one 2K prefill (pidstat + torch profiler), then sweep the runtime knobs.
-- **Q07 Small-prompt prefill ladder 512/1K/2K/4K/8K** — `READY`. Hypothesis: warm small-prompt
+- **Q07 Small-prompt prefill ladder 512/1K/2K/4K/8K** — `VERIFIED` (warm 3,338/4,802/5,697/2,696/3,782/5,123 t/s at 0.5/1/2/3.5/5/7K tokens — the 3,000-6,000 objective band holds except the 3.5K bucket-edge point at 2,696; MEASUREMENT CORRECTION: the old ~770 t/s and 2.1 s @2K figures included 64-token generation in the wall — warm TTFT at 2K is 0.31 s). Hypothesis: warm small-prompt
   prefill (~770 t/s) is far below the 3000-6000 t/s objective band and is host-bound, not
   kernel-bound; the ladder quantifies where the crossover to kernel-bound happens.
   Bottleneck: PP/TTFT. Expected gain (ESTIMATE): none directly — locates the regime where Q06/Q09
   must act. Evidence: C001, D002, EXP-OPT-001. Risk: none. Dependencies: none.
   Next action: extend check_ttft.py to report prefill t/s at 512-8K on the live server.
+- **Q07b 4K-bucket prefill step** — `READY`. Hypothesis: the 2048->4096 lin-bucket edge
+  step (0.31 s -> 1.30 s wall) is a graph-family or chunk-pipeline artifact; aligning
+  the bucket step (e.g. 1024) or the chunk size recovers ~5,000 t/s at 3.5-4K.
+  Bottleneck: PP/GRAPH. Expected gain (ESTIMATE): 2,696 -> ~5,000 t/s at 3.5-4K.
+  Evidence: EXP-Q07. Risk: more prompt graphs = longer warmup. Dependencies: none.
+  Next action: boot with VLLM_PROMPT_QUERY_BUCKET_STEP=1024 and re-run the ladder.
 - **Q08 KDA anchored-MME at short prompts (C015 re-measure at 512-2K)** — `READY`. Hypothesis:
   C015 showed no TTFT change at 2K-16K, but the upstream 3.23x evidence was at 507-3099 tokens
   where the diagonal decay-dot dominates prefill compute; the win should appear BELOW 2K.
