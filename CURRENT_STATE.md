@@ -3,6 +3,48 @@
 Updated at the end of the policy-installation / knowledge-base session. Sanitized for
 publication; infrastructure details are described generically.
 
+## Objective scorecard (session status, 2026-11-07)
+
+Primary objectives vs the best VERIFIED, accuracy-gated measurements:
+
+| Objective | Best verified | Status |
+|---|---|---|
+| 200 t/s single-stream decode | 37.4 t/s (MTP k=1, E015-A buckets) | 5.3x gap; Q01 draft graphs reach 40.9 (+9.3%) but fail the accuracy gate (Q01b) |
+| 800 t/s aggregate @ bs=16 | 213.2 t/s (non-MTP) / 126.7 (adoptable MTP) | 3.7x gap; Q01-split reaches ~168 (+33% over adoptable MTP) but fails the gate |
+| 3,000-6,000 t/s prefill | 3,338-5,697 t/s warm at 0.5-2K, 6K, 8K depths | **MET at most depths** (Q07 + measurement correction); 3.5K bucket-edge point 2,696 (Q07b open) |
+| 1M context | feasibility boot done; KV pool sized (override counts 640-token hybrid blocks: 1660 blocks = 1.06M tokens ~8 GiB/card) | needle test in flight |
+| GLM-5.3-Flash FP8 | served as published (block FP8) | met |
+| <= 0.5 pp accuracy regression | 100.0% on the adopted config | met for the adopted config; Q01-split at 97.5% NOT adopted |
+| Final deployment on 4 HPUs | TP4+EP boots (G003); benchmark pass pending | Q14 |
+
+## Session findings (this session)
+
+1. **Q02/Q03:** with the eager draft, aggregate SATURATES at ~128 t/s from 8 streams; MTP @16
+   net-negative 40% vs non-MTP. The eager draft is the aggregate bottleneck, not just bs=1.
+2. **Q01 (draft graphs):** implemented (split + attn modes, env-gated default OFF). Split mode
+   VERIFIED for performance: bs=1 +9.3%/+11.2%, aggregate @16 +33% (~168 t/s), acceptance held.
+   Accuracy gate FAILED (97.5% vs 100.0%, R003 bat-and-ball flips to "10" deterministically;
+   logprobs show a 0.75-nat gap — a real distribution shift, not a tie-flip). NOT adopted;
+   Q01b owns the correctness investigation. A speculative-decoding contract break (draft must
+   never change content) — likely verify/rollback interaction with the graphed draft.
+3. **Q07:** warm small-prompt prefill is 3,338-5,697 t/s — the 3,000-6,000 objective band is
+   mostly met. MEASUREMENT CORRECTION: the historical "~770 t/s" and "TTFT 2.1 s @2K" figures
+   included 64-token generation in the wall; warm TTFT at 2K is 0.31 s. Q06 (scheduler
+   headroom) revised down accordingly.
+4. **Q10:** the KV-pool block override counts 640-token hybrid blocks (8192 blocks = 5.22M
+   tokens = OOM); 1660 blocks = 1.06M tokens ~8 GiB/card boots clean.
+5. **Standalone wrap_in_hpu_graph limitation:** any graph containing an add fails recipe
+   compile in standalone processes on this stack (1.24.1) with HabanaFusedOpLazy synStatus 26;
+   the server process captures the same ops fine. HPU graph validation must happen in-engine.
+
+## Highest-value open opportunities (queue)
+
+1. **Q01b** — draft-graph accuracy regression (R003 flip): unlocks Q01's +33% aggregate.
+2. **Q07b** — 4K bucket-edge prefill step (2,696 -> ~5,000 t/s expected): closes the prefill gap.
+3. **Q10** — 1M needle validation (in flight).
+4. **Q14** — TP4+EP deployment-candidate benchmark pass.
+5. **Q11** — MTP k=2/k=4 revival under draft graphs (blocked on Q01b).
+
 ## What is deployed and running
 
 - **GLM-5.3-Flash** (block-FP8 checkpoint as published, 328 GiB), cookbook port on vllm-gaudi

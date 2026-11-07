@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Q10: 1M-context feasibility boot. Same as serve_mtp.sh except:
 #   --max-model-len 1048576 (the published config context length)
-#   --num-gpu-blocks-override 8192 (8192*128 = 1,048,576-token KV pool;
+#   --num-gpu-blocks-override 1660 (8192*128 = 1,048,576-token KV pool;
 #     measured KV cost 11.5 KiB/token/card -> ~11.8 GiB/card, affordable
 #     next to 38.2 GiB weights at GMU 0.82 on 96 GiB cards)
 # Graphs capture lazily (VLLM_SKIP_WARMUP=true): the first 1M-shaped prompt
@@ -35,7 +35,7 @@ exec vllm serve "$GLM53_MODEL_PATH" \
   --dtype bfloat16 \
   --max-model-len 1048576 \
   --max-num-seqs 8 \
-  --num-gpu-blocks-override 8192 \
+  --num-gpu-blocks-override 1660 \
   --max-num-batched-tokens 8192 \
   --max-cudagraph-capture-size 2048 \
   --enable-chunked-prefill \
