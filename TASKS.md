@@ -495,14 +495,28 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Bottleneck: PP/TTFT. Expected gain (ESTIMATE): none directly — locates the regime where Q06/Q09
   must act. Evidence: C001, D002, EXP-OPT-001. Risk: none. Dependencies: none.
   Next action: extend check_ttft.py to report prefill t/s at 512-8K on the live server.
-- **Q07b 4K-bucket prefill step** — `FAILED` (negative: step 1024 does not recover the 3.5K
-  point - 2,475 vs 2,696 t/s; the dip is a FIXED ~1.2-1.4 s per-prompt cost flat from 2.6K
-  to 7.1K tokens, independent of bucketing. Superseded by Q07c.) Hypothesis: the 2048->4096 lin-bucket edge
-  step (0.31 s -> 1.30 s wall) is a graph-family or chunk-pipeline artifact; aligning
-  the bucket step (e.g. 1024) or the chunk size recovers ~5,000 t/s at 3.5-4K.
-  Bottleneck: PP/GRAPH. Expected gain (ESTIMATE): 2,696 -> ~5,000 t/s at 3.5-4K.
-  Evidence: EXP-Q07. Risk: more prompt graphs = longer warmup. Dependencies: none.
-  Next action: boot with VLLM_PROMPT_QUERY_BUCKET_STEP=1024 and re-run the ladder.
+- **Q07b 4K-bucket prefill step** — `FAILED` (negative: query bucket step 1024 does NOT
+  recover the 3.5K point - 2,475 vs 2,696 t/s at step 2048; the dip is a FIXED ~1.2-1.4 s
+  per-prompt cost, flat from 2.6K to 7.1K tokens, independent of bucketing. Config reverted
+  to step 2048. Superseded by Q07c.)
+- **Q07c fixed per-prompt prefill cost >2K (draft prefill KV fill)** — `READY` (root cause
+  found). Hypothesis CONFIRMED by source: the draft prompt-KV fill
+  (`_hpu_spec_fill_draft_kv`, hpu_model_runner.py ~7476) calls the draft model with
+  `bypass_hpu_graphs` - but the draft model is NEVER graph-wrapped
+  (`_shares_target_modules` excludes it from the runner adapter), so the draft prefill pass
+  is ALWAYS EAGER. Its ~1.2-1.4 s floor is host-side lazy dispatch of the same ~40 ops
+  regardless of token count (matches the flat wall across 2.6K-7.1K prompts). The bypass
+  flag is a no-op for our unwrapped draft.
+  Bottleneck: PP/TTFT/MTP. Expected gain (ESTIMATE): warm TTFT at 3-8K drops ~1.2 s;
+  prefill t/s at 3.5-7K roughly doubles (2,696 -> ~5,000), closing the Q07 gap; the same
+  fix helps the TP4 deployment shape disproportionately (Q14).
+  Evidence: EXP-Q07/Q07b walls; the bypass source; the flat-floor signature.
+  Risk: prefill metadata plumbing (attn-mode machinery); capture cost per bucket shape.
+  Dependencies: none (builds on the Q01 split-core machinery).
+  Next action: extend the Q01 split-mode draft cores to prefill shapes ([1, N, H], N from
+  the lin prompt bucket set, ~4 shapes). The abotsis warning against graphing prefill-shaped
+  draft calls (fresh recipe per novel length) applies to UNBUCKETED serving; with lin
+  bucketing the shape set collapses and the compile is paid once per bucket.
 - **Q08 KDA anchored-MME at short prompts (C015 re-measure at 512-2K)** — `READY`. Hypothesis:
   C015 showed no TTFT change at 2K-16K, but the upstream 3.23x evidence was at 507-3099 tokens
   where the diagonal decay-dot dominates prefill compute; the win should appear BELOW 2K.
