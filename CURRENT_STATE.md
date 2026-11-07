@@ -9,8 +9,8 @@ Primary objectives vs the best VERIFIED, accuracy-gated measurements:
 
 | Objective | Best verified | Status |
 |---|---|---|
-| 200 t/s single-stream decode | **39.1 t/s** (MTP k=1, lin buckets, router fast path - Q18 lever 1, bit-identical) | 5.1x gap; Q01 draft graphs reach 40.9 and are accuracy-NEUTRAL vs their own control (Q01b) - re-eligible |
-| 800 t/s aggregate @ bs=16 | 213.2 t/s (non-MTP) / 126.7 (adoptable MTP) | 3.7x gap; Q01-split reaches ~168 (+33%) and is accuracy-neutral vs its own control (Q01b) - re-eligible |
+| 200 t/s single-stream decode | **38-39 t/s** (MTP k=1 + the adopted levers, bit-identical) | 5.1x gap; all cheap levers taken; the remaining host-sync time needs the deeper Q18/Q05 work |
+| 800 t/s aggregate @ bs=16 | non-MTP 213.2 / **MTP 181-185 t/s ADOPTED** (was 126.7: +46% via the Q18 levers) | 4.3x gap remains to 800; MTP now within 13-15% of non-MTP at 16 streams with the latency benefit kept |
 | 3,000-6,000 t/s prefill | 3,338-5,697 t/s warm at 0.5-2K, 6K, 8K depths | **MET at most depths** (Q07 + measurement correction); 3.5K bucket-edge point 2,696 (Q07b open) |
 | 1M context | **VERIFIED**: 1M window boots (1660 hybrid blocks ~8 GiB/card); needle retrieved exactly at ~860K depth (860,739 tokens, 523.7 s); deep prefill 1,643 t/s at that depth | **MET** (serving-validated on 8 HPUs) |
 | GLM-5.3-Flash FP8 | served as published (block FP8) | met |
@@ -53,6 +53,12 @@ Primary objectives vs the best VERIFIED, accuracy-gated measurements:
   max-num-seqs 8, KV override 1280 blocks/card, GMU 0.82, graph capture 2048, chunked prefill
   8192, prefix caching OFF (architectural: KDA stores no per-block states), reasoning/tool
   parser `glm47`.
+- **Adopted serving levers (EXP-Q18/Q19, bit-identical greedy outputs):**
+  `GLM_ROUTER_FAST=1` (skip the identity router group stage, +4.4% bs=1),
+  `GLM_SPEC_DEVICE_REJECT=1` + `GLM_EARLY_DRAFT=1` (device-side accept/reject
+  walk + draft enqueued after the sampler: aggregate @16 126.7 -> ~182-185 t/s).
+  The draft HPU graphs (VLLM_GLM_MTP_DRAFT_GRAPH) stay OFF - their replay syncs
+  defeat the early-draft pipelining (EXP-Q19).
 - Launch script: `ports/glm-5-3-flash/serving/serve_mtp.sh` in this repository (window flags
   describe the validated MTP shape; the pre-MTP production window was 262K / 32 seqs).
 - The pre-MTP production configuration (no MTP, 262K / 32 seqs) is the rollback target and the
