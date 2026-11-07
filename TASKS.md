@@ -424,3 +424,132 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   likely NET-NEGATIVE without the block-table-sharing lever (their 262K MTP-4 trial:
   decode ~6 tok/s at 219K context, each lane carrying the full block table). Plan the
   262K MTP test after A014, with the block-table-sharing lever on the list.
+
+
+---
+
+## AUTONOMOUS DISCOVERY QUEUE
+
+Continuous-discovery backlog (directive: an empty conventional task list is NOT completion).
+Entries carry: Hypothesis / Bottleneck (PP TG TTFT MTP AGG EP HBM GRAPH KERNEL SCHED KV ACC INFRA) /
+Expected gain (ESTIMATE, not measured) / Evidence / Risk / Dependencies / Status / Next action.
+Prioritize by: objective relevance, evidence the bottleneck exists, expected gain, feasibility,
+effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck move?
+
+- **Q01 Draft HPU graphs (private-storage draft cores + attention-in-graph)** — `READY`.
+  Hypothesis: the eager draft is host-launch-bound (93 ms host vs 17 ms device per draft step);
+  capturing the draft in an HPU graph with metadata tensors as inputs removes the host overhead
+  and makes MTP profitable at every batch size. Bottleneck: MTP/TG/GRAPH.
+  Expected gain (ESTIMATE): bs=1 decode +20-50% (37 -> 45-55 t/s); flips the 16-stream MTP
+  crossover from net-negative to net-positive (aggregate 213 -> 300+); unlocks k=2/k=4 (Q11).
+  Evidence: RESEARCH-001 (abotsis fork 919ec98f: private storage `_private_copy` ~0.9 GiB/rank
+  makes target/draft graphs independent; attention runs INSIDE the graph, metadata as inputs;
+  measured MTP-4 accepted 3.33 vs 2.41 bypass, aggregate 26.0 vs 20.2, parity 12/12);
+  A014/A018; B002 (decode latency/sync-bound, AIP 0-24%).
+  Risk: medium-high — graph/memory interaction with KDA candidate slots; capture-time cost per
+  shape; correctness gated by existing parity/churn suites. Dependencies: none (top priority).
+  Next action: port the draft-core pattern into `glm5_next_hpu` behind
+  `VLLM_GLM_MTP_DRAFT_GRAPH`, CPU parity first, then HPU A/B on the live config.
+- **Q02 Aggregate decode at bs=16 under the pinned-bucket config (MTP on/off)** — `READY`.
+  Hypothesis: the 42.7-vs-59.4 16-stream crossover was measured under the old MTP window, the
+  213 t/s aggregate under the production window — neither reflects the current pinned-bucket
+  config; the true MTP-on aggregate baseline is unknown. Bottleneck: AGG/SCHED.
+  Expected gain (ESTIMATE): none directly — establishes the baseline the 800 t/s target is
+  measured against and locates the real MTP crossover. Evidence: A025, E013/E014, CURRENT_STATE.
+  Risk: none. Dependencies: none. Next action: run `check_concurrent_16.py` on the live
+  (E015-A lin) server now; non-MTP comparison boot afterwards.
+- **Q03 MTP batch ladder 1/2/4/8/16** — `READY` (eager-draft regime) / re-run after Q01.
+  Hypothesis: acceptance and per-step cost scale differently with batch; the optimal MTP
+  concurrency is unknown between 1 and 16. Bottleneck: MTP/AGG.
+  Expected gain (ESTIMATE): identifies the concurrency band where MTP adds throughput.
+  Evidence: A025 measured only 8/16 with the eager draft; E002 marks 2/4 as never run.
+  Risk: none. Dependencies: parameterized concurrent bench (small addition to
+  check_concurrent_16.py). Next action: add `--streams N` and run the ladder on the live server.
+- **Q04 Decode-bs bucket pinning for the serving window** — `READY`. Hypothesis: pinning decode
+  bs to one bucket (VLLM_DECODE_BS_BUCKET_MIN/STEP) cuts graph count, boot time, and removes
+  bucket-transition replays mid-serving with decode within noise. Bottleneck: GRAPH/SCHED.
+  Expected gain (ESTIMATE): boot 13.3 min graph phase -> ~2 min; decode neutral.
+  Evidence: RESEARCH-001 addendum 2 (abotsis: warmup 13 -> ~2 min, serial-vs-concurrent parity
+  12/12); B021 (our tree has the knobs; boot measured 31.5 min total, 125 decode graphs).
+  Risk: low (config-only). Dependencies: none. Next action: fold into the next planned boot;
+  measure boot time + decode regression check.
+- **Q05 Whole-verify-step graph (sampler + draft handoff in-graph)** — `RESEARCH`.
+  Hypothesis: between verify-graph replays, sampling/metadata prep runs on host and costs
+  10-20 ms/step; capturing sampler+handoff into the graph cuts per-step time. Bottleneck:
+  GRAPH/SCHED/TG. Expected gain (ESTIMATE): +10-30% bs=1 decode; must be profiled first.
+  Evidence: B002 (latency/sync-bound), D002 (host phases dominate warm small-prompt TTFT).
+  Risk: high (vLLM sampler is outside model graphs). Dependencies: Q01 lands first (same
+  machinery); per-op profile of one verify step. Next action: after Q01, profile the step
+  timeline (torch profiler / HW trace) and quantify host gaps.
+- **Q06 AccThread busy-wait / scheduler headroom** — `RESEARCHING`. Hypothesis: prefill is
+  CPU-bound (Habana AccThread busy-waits ~100% of one core during lazy dispatch); scheduler
+  tuning (poll intervals, CPU affinity, eager-bridge flags) recovers part of an estimated ~25%
+  headroom. Bottleneck: SCHED/INFRA/PP. Expected gain (ESTIMATE): up to +25% prefill at small
+  prompts; decode effect unknown. Evidence: A017, B009, B017, D002. Risk: low-medium (runtime
+  env flags). Dependencies: host-side profile of a small-prompt prefill. Next action: profile
+  one 2K prefill (pidstat + torch profiler), then sweep the runtime knobs.
+- **Q07 Small-prompt prefill ladder 512/1K/2K/4K/8K** — `READY`. Hypothesis: warm small-prompt
+  prefill (~770 t/s) is far below the 3000-6000 t/s objective band and is host-bound, not
+  kernel-bound; the ladder quantifies where the crossover to kernel-bound happens.
+  Bottleneck: PP/TTFT. Expected gain (ESTIMATE): none directly — locates the regime where Q06/Q09
+  must act. Evidence: C001, D002, EXP-OPT-001. Risk: none. Dependencies: none.
+  Next action: extend check_ttft.py to report prefill t/s at 512-8K on the live server.
+- **Q08 KDA anchored-MME at short prompts (C015 re-measure at 512-2K)** — `READY`. Hypothesis:
+  C015 showed no TTFT change at 2K-16K, but the upstream 3.23x evidence was at 507-3099 tokens
+  where the diagonal decay-dot dominates prefill compute; the win should appear BELOW 2K.
+  Bottleneck: KERNEL/PP. Expected gain (ESTIMATE): TTFT -30-60% at 512-2K if the regime matches.
+  Evidence: C015 HPU measurement (2K: -4%, 8K: -3%, 16K: +9%); RESEARCH-001 addendum 4
+  (abotsis c860b8ea: 15.6x kernel-time reduction, TTFT up to 3.23x at 507-3099 tokens).
+  Risk: none (code already landed and verified). Dependencies: Q07 ladder tooling.
+  Next action: run the short-prompt ladder and compare against the pre-C015 recorded figures.
+- **Q09 Host-overhead reduction in the prefill path (mark-step / dispatch batching)** —
+  `RESEARCH`. Hypothesis: small-prompt prefill is dominated by per-op lazy-dispatch host work;
+  strategic mark_step batching and dispatch reduction (NOT the failed decode-side B023 knob)
+  cuts host time. Bottleneck: PP/INFRA/KERNEL. Expected gain (ESTIMATE): +20-50% small-prompt
+  prefill. Evidence: A017/B009; B023 negative result shows the decode-side knob alone was
+  inert — the new hypothesis targets the PREFILL path, a different code path. Risk: medium.
+  Dependencies: Q06/Q07 profiling. Next action: profile first; do not blind-patch.
+- **Q10 1M-context serving feasibility on 8 HPUs (KV math + boot test)** — `READY`.
+  Hypothesis: measured KV cost is ~11.5 KiB/token/card at TP8 (1.8 GiB per 163,840 tokens);
+  a 1M-token pool needs ~11.5 GiB/card — affordable next to 38.2 GiB weights; the objective
+  is capacity-blocked, not architecture-blocked, on 8 cards. Bottleneck: KV.
+  Expected gain (ESTIMATE): none directly — unlocks the 1M objective for validation.
+  Evidence: F003, F012/F013 (512K needles pass; 1M "prefill latency software-blocked"),
+  C013. Risk: medium (pool sizing overrides, warmup graph set, first-use compile stalls).
+  Dependencies: none. Next action: compute the exact block override for 1M, boot, run the
+  needle at 1M minus margin, record TTFT.
+- **Q11 MTP depth k=2/k=4 revival under draft graphs** — `BLOCKED` (on Q01). Hypothesis: with
+  the draft in-graph, deeper speculation turns net-positive (upstream MTP-4: accepted 3.33,
+  aggregate +29%); in the eager draft it was net-neutral/negative. Bottleneck: MTP/TG.
+  Expected gain (ESTIMATE): bs=1 decode 50-70 t/s if acceptance ~3.3 holds at k=4.
+  Evidence: EXP-MTP-002 (eager k=2 net-neutral), RESEARCH-001 (graphed MTP-4 numbers).
+  Risk: verify-row graph count grows with (k+1) rows x batch (capture-time cost).
+  Dependencies: Q01. Next action: after Q01 lands, sweep k=2 then k=4 with the parity suite.
+- **Q12 Vocabulary-parallel argmax in the draft head (get_top_tokens)** — `RESEARCH`.
+  Hypothesis: the draft's full-vocab argmax forces a logits gather/sync per draft step;
+  vocabulary-parallel top-1 (local argmax + cross-rank compare) removes a host sync from the
+  draft path. Bottleneck: MTP/KERNEL/GRAPH. Expected gain (ESTIMATE): part of the draft-step
+  host time; material only after Q01. Evidence: A015 (documented draft-side lever).
+  Risk: low-medium (numerically exact if implemented as max+index compare). Dependencies: Q01
+  (draft profiling). Next action: after Q01, measure the argmax share of draft time.
+- **Q13 Expert routing balance histogram** — `RESEARCH`. Hypothesis: skewed expert routing
+  inflates the slowest rank's MoE time (EP straggler); quantify imbalance from live routing
+  metadata and, if skewed, evaluate capacity-factor/placement levers. Bottleneck: EP/TG.
+  Expected gain (ESTIMATE): unknown until measured; a 10-20% straggler tail is typical when
+  imbalance exists. Evidence: B004-B008 all NOT INVESTIGATED; no routing data collected yet.
+  Risk: read-only instrumentation first. Dependencies: none. Next action: hook the router
+  histogram in the plugin (env-gated), run one decode batch, compute per-rank max/mean.
+- **Q14 TP4+EP deployment-candidate benchmark pass** — `READY` (after 8-HPU levers land).
+  Hypothesis: TP4+EP (76.5 GiB/card weights) is the final-deployment shape; it must be
+  benchmarked on all objective axes (decode/aggregate/prefill/context) to know the achievable
+  window. Bottleneck: INFRA/AGG/KV. Expected gain (ESTIMATE): none — measures the deployment
+  target and frees 4 cards for experiments. Evidence: G003 WORKING (TP4+EP boot viable).
+  Risk: KV per card doubles at TP4 (window shrinks); verify-shape graphs re-capture.
+  Dependencies: prefer after Q01/Q04 (so the levers carry over). Next action: schedule a
+  TP4+EP boot with the pinned buckets; run the full objective benchmark pass.
+
+### Queue operating rule
+
+After EVERY experiment: update the entry, ask what now limits performance, add newly discovered
+opportunities with evidence, re-prioritize, start the highest-value eligible entry. A failed or
+negative experiment stays in the file with its evidence (never delete history).
