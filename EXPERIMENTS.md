@@ -419,3 +419,21 @@ three BIT-IDENTICAL changes took one-stream decode 51.64 -> 57.78 tok/s (+12%):
 kernels 19.5 ms (slowest EP rank; mean 9.6 — imbalance, not a hot rank),
 attention 6.9, MoE-adjacent + dense 3.8, all-reduce latency 3.4 (162/step),
 host at step boundary ~5.5. 322 graph launches/step @ ~74 us host each.
+
+## EXP-Q16 — fp8-moe-gather: NEGATIVE at our shapes (2026-11-07, boots q16/q16b)
+
+**Gate diagnosis first:** with the default RATIO=0.4 the gate refused our shape
+(bs=1 k=1 verify = 2 tokens x top-8 = 16 routes vs 36 local x 0.4 = 14.4) - the
+gather never engaged and q16 measured baseline noise (36.26 vs 37.44 median).
+
+**With RATIO=0.5 (gate passes, gather engaged):** bs=1 decode median ~20.4,
+mean ~19.7 (reps 2-5: 20.19/17.13/20.59/20.72) vs the 37.44 baseline -
+**-45%, decisively negative**. The gathered path (index_select of the 16
+routed experts' weights + one native FP8 up/gate GEMM + fp32 down projection)
+costs more than the all-36-expert stock fused op saves on this stack: the
+gathered-weight copy plus the fp32 down GEMM dominate at 2-row shapes.
+
+**Verdict:** NOT adopted. `VLLM_HPU_MOE_GATHER` stays unset (stock op; the
+applied patch is inert without the env). The upstream win (vllm-gaudi #1731)
+does not transfer to GLM-5.3-Flash's 2-token verify shapes at 288 experts.
+Revisit only if a later stack changes the gather implementation's cost model.

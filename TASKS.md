@@ -572,7 +572,10 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Next action: deploy the Stage-1-era mtp.py (git 719f5bd) at TP8 and re-probe R003; then add
   decode-bs pinning; then a kda.py checkout.
 
-- **Q16 fp8-moe-gather decode expert gather** — `READY` (fix APPLIED to the deployed
+- **Q16 fp8-moe-gather decode expert gather** — `FAILED` (negative: with the ratio gate
+  opened (0.5) the gather engaged and LOST 45% at bs=1 (20.4 vs 37.44 median) - the
+  gathered-weight copy + fp32 down GEMM dominate at 2-row shapes; stock op stays.
+  Original entry: fix APPLIED to the deployed
   vllm-gaudi; env-gated OFF). Hypothesis: at decode only min(local_experts, tokens x top_k)
   distinct experts are needed; the gather path (vllm-gaudi #1731 backport, already in
   fixes/fp8-moe-gather) cuts expert weight traffic ~2.25x at bs=1 k=1 (16 of 36 local experts),
