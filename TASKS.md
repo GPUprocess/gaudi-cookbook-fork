@@ -178,6 +178,10 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
   pre-C015 elementwise form: 12/12 shapes, max rel err 5.7e-7 (CPU). HPU measurement
   (prefill ladder + TTFT + chunk re-check) pending a window. Evidence: RESEARCH-001
   addendum 4; repo `tests/cpu/check_c015_gauged_scores.py`.
+  HPU measurement (MTP k=1, warm): no clear improvement at 2K-16K depths
+  (2K: -4%, 8K: -3%, 16K: +9% - within noise). The decay-dot is a minor
+  fraction of the total TTFT at these depths; the upstream 3.23x was at
+  shorter prompts (507-3099 tokens) where it dominates the prefill compute.
 - **C006–C012** — `NOT INVESTIGATED` (MoE prefill dispatch, prefill graph capture, allocation
   overhead, tokenization overhead, prompt batching, concurrent prefill scheduling,
   prefill/decode interference).
