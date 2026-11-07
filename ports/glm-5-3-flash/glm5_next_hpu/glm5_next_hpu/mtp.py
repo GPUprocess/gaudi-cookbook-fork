@@ -77,6 +77,11 @@ def _env_flag(name: str) -> bool:
 
 _DRAFT_GRAPH = _env_flag("VLLM_GLM_MTP_DRAFT_GRAPH")
 _DRAFT_GRAPH_MODE = os.environ.get("VLLM_GLM_MTP_DRAFT_GRAPH_MODE", "split").strip().lower()
+# Q07c phase 1: also route PROMPT-shaped draft calls (the prompt KV fill) through
+# the split cores. The cores are shape-agnostic on flat [N, H]; each novel token
+# count pays a one-time graph capture, so production needs runner-side bucket
+# padding (phase 2) - default OFF.
+_DRAFT_PREFILL_GRAPH = _env_flag("VLLM_GLM_MTP_DRAFT_PREFILL_GRAPH")
 if _DRAFT_GRAPH_MODE not in ("split", "attn"):
     _DRAFT_GRAPH_MODE = "split"
 
@@ -425,17 +430,22 @@ class Glm5NextMTPModel(nn.Module):
         # ([1, prompt_len, H], once per request) would capture a fresh recipe
         # per distinct prompt length -- compile cost per novel length plus the
         # first-execution hazard each time. It stays on the eager path.
-        if (_DRAFT_GRAPH and (self.attn_graph_core is not None or
-                              (self.pre_attention_graph_core is not None and
-                               self.post_attention_graph_core is not None))
-                and hidden_states.ndim == 3 and hidden_states.shape[1] == 1
-                and inputs_embeds is None):
+        _split_ready = (self.pre_attention_graph_core is not None and
+                        self.post_attention_graph_core is not None)
+        if (_DRAFT_GRAPH and (self.attn_graph_core is not None or _split_ready)
+                and hidden_states.ndim == 3 and inputs_embeds is None
+                and (hidden_states.shape[1] == 1
+                     or (_DRAFT_PREFILL_GRAPH and _split_ready
+                         and hidden_states.shape[0] == 1))):
             md = attn_metadata
             if md is None:
                 from vllm.forward_context import get_forward_context
 
                 md = get_forward_context().attn_metadata
-            if md is not None and not getattr(md, "is_prompt", False):
+            _is_prompt = getattr(md, "is_prompt", False)
+            if md is not None and (not _is_prompt
+                                   or (_DRAFT_PREFILL_GRAPH and _split_ready
+                                       and self.attn_graph_core is None)):
                 # BOTH graph paths run the (shared) MLA attention, which reads
                 # its metadata from the forward context: the context must be
                 # active around the replay. (First split-mode boot crashed
