@@ -351,3 +351,71 @@ GiB/card max) supports ~1.2M tokens — a TP4 1M boot is plausible but untested.
 **Adoption impact:** Q01 (draft graphs, +33% aggregate @16, +9.3% bs=1) is
 RE-ELIGIBLE for adoption once Q15 establishes the proper same-config control;
 the +33% was never accuracy-blocked on its own merits.
+
+## EXP-Q15 continued — candidate exclusions and the working verdict (2026-11-07, boots q15a)
+
+Empirical exclusions on the R003 flip ("5" at Stage-1 -> "10" now):
+- (a) the Q01 mtp.py rewrite: EXCLUDED — the original 719f5bd mtp.py deployed
+  (boot q15a, pinned decode, exp buckets) answers "10" identically. The eager
+  path is line-for-line op-identical (inspection agrees).
+- (b) decode-bucket pinning: EXCLUDED — Stage-1's exact pinning env
+  (DECODE_BS_BUCKET_MIN=8/STEP=8, BLOCK_BUCKET_MIN=32) still answers "10".
+- (c) C015 kda.py: EXCLUDED — committed 11-06 06:40, before the Stage-1
+  accuracy runs (finished 06:56 on 11-07, R003="5" in both conditions'
+  artifacts, including the NON-MTP control).
+- Buckets (lin vs exp): EXCLUDED — both fail identically.
+
+**Working verdict: UNRESOLVED root cause; stack-state-sensitive item.** The
+Stage-1 night's boots (both conditions, non-MTP included) answered "5"; every
+boot since answers "10" on TP8 while current-code TP4 answers "5". No
+numerics-relevant tree difference is identifiable (deployed model.py byte-equals
+719f5bd; kda.py equals C015 = Stage-1 state). R003 sits on a knife edge between
+the intuitive ("10") and reasoned ("5") answers behind a long greedy reasoning
+trace; per-boot state (graph family, memory layout, request history) branches
+it. Item-level noise: 1/40 = 2.5 pp — the same magnitude as the gate limit.
+
+**Gate-policy consequence (recorded in DECISIONS.md):** cross-boot accuracy
+comparisons on suite v1 carry at least +/-2.5 pp item-chaos noise; same-boot
+A/B pairs (control vs treatment on the same boot family) remain valid. Q01's
+draft graphs are accuracy-NEUTRAL against their own control (byte-identical
+logprobs) — re-eligible under the same-boot policy.
+
+## GaudiGrimoire-sourced discoveries (Q16/Q17/Q18)
+
+**Q16 fp8-moe-gather (fix ALREADY IN THIS REPO, now APPLIED to the deployed
+vllm-gaudi).** The Habana `mixture_of_experts` op reads EVERY local expert's
+weights per call; at decode, tokens x top_k distinct experts <= g =
+min(local_experts, tokens*top_k) suffices. Backport of vllm-gaudi #1731
+(v0.30.0) to v0.26.0: `VLLM_HPU_MOE_GATHER=1` (static gathered count -> captures
+into HPU graphs), RATIO 0.4, VERIFY mode logs FP8-ULP differences > 2 ULP.
+Applies to block-quantized FP8 MoE with silu experts (ours: 128x128 block FP8,
+top-8 of 288; 36 local experts/rank at TP8+EP8; bs=1 k=1 verify = 2 tokens x
+top-8 = 16 routes -> g=16 of 36 = 2.25x less expert weight traffic).
+Upstream evidence: fixes/fp8-moe-gather/README.md, vllm-gaudi#1731.
+Expected gain (ESTIMATE): the expert-weight stream is the dominant single-stream
+decode cost on large EP MoEs; +20-50% bs=1 decode plausible. NEXT BOOT.
+
+**Q17 EP4xTP2 expert layout.** The cookbook's own GLM-5.3 MoE decode study
+(docs/results/moe-decode-step.md, MXFP4, same TP8+EP8 topology): fewer wider
+bins cut the balls-in-bins EP imbalance (one request: 16 routes in 8 bins ->
+busiest 4.45 vs mean 2.0; in 4 bins -> 6.3 vs 3.95). Measured +11% (v7 kernels)
+/ +5% (v8) single-stream decode, memory-neutral; quality gates held (GSM8K
+49/50, needles, top-1 agreement 0.988). Trap recorded: placement selection via
+host index_select page-faults the checkpoint (1.4-1.9x load time); read
+contiguous shares first.
+
+**Q18 router fast path + early draft + device-side rejection.** Same study:
+three BIT-IDENTICAL changes took one-stream decode 51.64 -> 57.78 tok/s (+12%):
+- router fast path (~1.7 ms/step): with 0 < num_expert_group <= topk_group the
+  grouped top-k's group stage selects every expert yet costs ~25 us/layer on
+  HPU -> go straight to the biased top-k. OUR CONFIG QUALIFIES: n_group=1,
+  topk_group=1 (verified in config.json).
+- device-side rejection sampler walk (float64-uniform-rounded-up-to-float32 =
+  identical draws) + device-side draft row indices ("last accepted row is
+  2i + accepted - 1"): removes the end-of-step host sync; 0 mismatches in 7,000
+  steps/rank in the study's check mode.
+
+**Step anatomy reference (GLM-5.3, TP8+EP8, MTP k=1, 39 ms step):** expert
+kernels 19.5 ms (slowest EP rank; mean 9.6 — imbalance, not a hot rank),
+attention 6.9, MoE-adjacent + dense 3.8, all-reduce latency 3.4 (162/step),
+host at step boundary ~5.5. 322 graph launches/step @ ~74 us host each.

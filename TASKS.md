@@ -560,7 +560,10 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Dependencies: prefer after Q01/Q04 (so the levers carry over). Next action: schedule a
   TP4+EP boot with the pinned buckets; run the full objective benchmark pass.
 
-- **Q15 TP8 accuracy drift vs Stage-1 (97.5% vs 100%, R003)** — `READY`. Hypothesis: a
+- **Q15 TP8 accuracy drift vs Stage-1 (97.5% vs 100%, R003)** — `UNRESOLVED` (all code
+  hypotheses excluded empirically: original mtp.py, Stage-1 pinning, buckets, C015
+  timeline. Stack-state-sensitive knife-edge item; TP4 answers "5". Gate policy updated:
+  same-boot A/B pairs are the valid comparison; item chaos = 2.5 pp.) Hypothesis: a
   deployed-tree change since Stage-1 (the Q01 mtp.py rewrite is the prime suspect to EXCLUDE
   first) or decode-bucket pinning differences shifted a config-chaotic item; TP4 passes and
   every TP8 variant fails identically. Bottleneck: ACC. Expected gain: restores the 100%
@@ -568,6 +571,32 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   TP8-sharding chaos -> the gate policy moves to same-boot-family controls. Dependencies: none.
   Next action: deploy the Stage-1-era mtp.py (git 719f5bd) at TP8 and re-probe R003; then add
   decode-bs pinning; then a kda.py checkout.
+
+- **Q16 fp8-moe-gather decode expert gather** — `READY` (fix APPLIED to the deployed
+  vllm-gaudi; env-gated OFF). Hypothesis: at decode only min(local_experts, tokens x top_k)
+  distinct experts are needed; the gather path (vllm-gaudi #1731 backport, already in
+  fixes/fp8-moe-gather) cuts expert weight traffic ~2.25x at bs=1 k=1 (16 of 36 local experts),
+  the dominant single-stream cost on large EP MoEs. Bottleneck: TG/HBM/KERNEL.
+  Expected gain (ESTIMATE): +20-50% bs=1 decode. Evidence: fixes/fp8-moe-gather/README.md;
+  upstream #1731; cookbook MoE anatomy (expert kernels 19.5 ms of a 39 ms step).
+  Risk: low (verify mode checks FP8-ULP; static gather count captures into graphs).
+  Dependencies: none. Next action: boot with VLLM_HPU_MOE_GATHER=1 (+VERIFY first requests),
+  bs=1 decode + 16-stream aggregate + accuracy gate vs the same-family baseline.
+- **Q17 EP4xTP2 expert layout** — `RESEARCH`. Hypothesis: fewer wider EP bins cut the
+  balls-in-bins imbalance (16 routes: busiest 6.3/4 bins vs 4.45/8 bins). Bottleneck: EP/TG.
+  Expected gain (ESTIMATE): +5-11% single-stream (measured on GLM-5.3 MXFP4, same topology,
+  memory-neutral; quality gates held, NOT bit-identical). Evidence: docs/results/moe-decode-step.md.
+  Risk: load-time trap (page-faulting placement selection — read contiguous shares first);
+  76.5->larger per-rank weights at TP2 sharding needs the memory check. Dependencies: none.
+  Next action: compute the placement offline, then a TP2-EP4 boot with the load-order fix.
+- **Q18 router fast path + early draft + device-side rejection** — `RESEARCH`. Hypothesis:
+  three bit-identical changes (router fast path: n_group=1 qualifies on OUR config, verified;
+  device-side rejection walk with float32-rounded draws; device-side draft row indices)
+  remove ~3.7 ms of a ~39 ms step and the end-of-step host sync. Bottleneck: MTP/SCHED/KERNEL.
+  Expected gain (ESTIMATE): +12% single-stream (bit-identical, measured on GLM-5.3 MXFP4).
+  Evidence: docs/results/moe-decode-step.md. Risk: medium (sampler walk port; check mode
+  available). Dependencies: none. Next action: port the router fast path first (smallest,
+  bit-identical), then the sampler walk with the check mode.
 
 ### Queue operating rule
 
