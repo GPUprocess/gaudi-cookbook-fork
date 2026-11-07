@@ -429,9 +429,18 @@ class Glm5NextMTPModel(nn.Module):
 
                 md = get_forward_context().attn_metadata
             if md is not None and not getattr(md, "is_prompt", False):
-                if self.attn_graph_core is not None:
-                    return self._forward_attn_graph(input_ids, positions, hidden_states, md)
-                return self._forward_split(input_ids, positions, hidden_states)
+                # BOTH graph paths run the (shared) MLA attention, which reads
+                # its metadata from the forward context: the context must be
+                # active around the replay. (First split-mode boot crashed
+                # here: the eager attention between the two graph cores found
+                # no context -- "Forward context is not set".)
+                vllm_config = self._vllm_config or _current_vllm_config()
+                from vllm.forward_context import set_forward_context
+
+                with set_forward_context(md, vllm_config):
+                    if self.attn_graph_core is not None:
+                        return self._forward_attn_graph(input_ids, positions, hidden_states, md)
+                    return self._forward_split(input_ids, positions, hidden_states)
 
         from vllm.forward_context import set_forward_context
 
