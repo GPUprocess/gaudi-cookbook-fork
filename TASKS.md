@@ -606,7 +606,10 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Risk: load-time trap (page-faulting placement selection — read contiguous shares first);
   76.5->larger per-rank weights at TP2 sharding needs the memory check. Dependencies: none.
   Next action: compute the placement offline, then a TP2-EP4 boot with the load-order fix.
-- **Q18 router fast path + early draft + device-side rejection** — `WORKING` (lever 1
+- **Q18 router fast path + early draft + device-side rejection** — `VERIFIED` (all three
+  levers: bs=1 38.1 median (neutral), aggregate @16 **183-185 t/s (+46% over the eager
+  draft, -13% vs non-MTP)**, acceptance 1.80 held, BYTE-IDENTICAL outputs, suite
+  unchanged. ADOPTED-CANDIDATE. Lever 1 was
   VERIFIED: router fast path +4.4% bs=1 (39.10 vs 37.44 median), bit-identical on HPU
   (byte-identical R003 logprobs), patches/router_fast.py env-gated GLM_ROUTER_FAST.
   Levers 2-3 APPLIED (ports/glm-5-3-flash/patches/decode_lean.py adapted from the mxfp4

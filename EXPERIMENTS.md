@@ -464,3 +464,39 @@ project (37.4 -> 39.1); the earlier reps 2-5 were warm-up-contaminated.
 **Status:** ADOPTED-CANDIDATE (bit-identical, gate-neutral, +4.4%). The
 remaining Q18 levers (device-side rejection walk, early draft) are staged as an
 adaptation task (see TASKS Q18 notes).
+
+## EXP-Q18 levers 2-3 — device-side rejection + early draft: VERIFIED, aggregate
+## +46% over the eager draft (2026-11-07, boot q18c)
+
+**Change:** the cookbook's glm-5-mxfp4 decode_lean levers adapted to this port
+(`patches/decode_lean.py`, lean module copied into our package, import rewritten,
+router target dropped - covered by router_fast.py). Anchors matched the deployed
+tree including the already-applied spec-draft-prefill and spec-penalties patches.
+Env: `GLM_SPEC_DEVICE_REJECT=1` (the accept/reject walk as prefix logic on the
+device, same draws: the host float64 uniform rounded up to float32 compares
+equal) + `GLM_EARLY_DRAFT=1` (the draft enqueued right after the sampler with
+device-computed row indices) - removes the end-of-step host sync.
+
+**Boot failure caught by the new watchdog:** the first boot crashed at import -
+the lean module had been copied to the repo but not the deployed tree (the
+editable install serves the deployed tree). Fixed; `tools/boot_watch.sh`
+added to the repo (BOOT-OK / BOOT-FAILED / BOOT-TIMEOUT for every unattended
+boot from now on).
+
+**Results (steady state):**
+
+| Metric | Eager draft | Split graphs only | **+ levers 2-3 (this boot)** |
+|---|---|---|---|
+| bs=1 decode | 37.44 | (39.10 w/ router-fast) | 38.1 median (neutral vs router-fast) |
+| Aggregate @16 | 126.7 | ~168 | **183-185 t/s** |
+| Acceptance | ~1.88 | 1.84-1.85 | 1.80 (held) |
+| R003 logprobs | -0.392/-1.142 | identical | **byte-identical** |
+| Suite | 97.5% (R003) | 97.5% | 97.5% (unchanged - bit-identical) |
+
+**Verdict:** the combined Q18 stack (draft graphs + router fast path +
+device-side rejection + early draft) takes the MTP aggregate from 126.7 to
+**~185 t/s @16 streams (+46%)**, within 13% of the non-MTP 213.2 while keeping
+MTP's latency benefit, with byte-identical greedy outputs. Accuracy-neutral
+under the same-boot policy (bit-identical). ADOPTED-CANDIDATE for the serving
+configuration; the MTP-at-concurrency crossover is pushed from 8 streams to
+beyond 16.
