@@ -686,6 +686,21 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   (3) PT_HPU_LAZY_ACC_PAR_MODE=0 required (custom ops on views); (4) parity vs stock +
   the accuracy gate. The kernel core swap: the mxfp4 dequant unit (E2M1+E8M0) becomes
   E4M3+scale/128-blocks - the 1Cat source is the reference.
+  STEP 2 BUILT (EXP-Q21): the extra-kernel files are staged at
+  kernels/mxfp4-moe/extra/block_fp8_dequant_glm/ and the build WORKS through the
+  TPC gate - libmxk_tpc.so carries block_fp8_dequant_glm (3254 GUIDs, gate PASS).
+  BLOCKER: libmxk_op_lazy.so fails to LOAD in this venv - the static
+  TORCH_LIBRARY_IMPL(custom_op, HPU) in mxk_op_lazy.cpp re-triggers the habana
+  dispatcher's lazy init, which re-registers the built-in kernels
+  (hpu::habana_d2d_memcpy_other, habana_operator.h:799). The STOCK glm op
+  library fails identically (not our op.cpp); both venvs; both load orders.
+  RESOLUTION PATHS: (a) build/load inside the proper serving image (the
+  framework's assumption); (b) register the ops from the plugin's own init
+  instead of a second load_library'd .so; (c) probe the dispatcher init guards;
+  (d) TEST THE SERVING-TIME LOAD ORDER FIRST - the mxfp4 installer loads the op
+  from the vllm_gaudi plugin hook DURING plugin import (a different point in the
+  dispatcher init than the gate probe); wire that installer pattern adapted to
+  our op and boot - the real serving process may not collide.
 
 ### Queue operating rule
 
