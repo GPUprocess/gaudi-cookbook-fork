@@ -27,6 +27,14 @@ export GLM5_NEXT_KDA_SCAN=1
 export GLM5_NEXT_DECODE_LAYER_GROUP=45
 export GLM5_NEXT_MHC_SINKHORN=kernel
 export OMPI_MCA_btl_vader_single_copy_mechanism=none
+# [glm-5-3-flash:decode-lean] adopted serving levers (EXP-Q18/Q19): bit-identical
+# greedy outputs; aggregate @16 126.7 -> ~185 t/s; bs=1 neutral. The draft HPU
+# graphs (VLLM_GLM_MTP_DRAFT_GRAPH) stay OFF: their replay syncs defeat the
+# early-draft pipelining (EXP-Q19).
+export GLM_ROUTER_FAST=1
+export GLM_SPEC_DEVICE_REJECT=1
+export GLM_EARLY_DRAFT=1
+
 
 python3 "$COOKBOOK/fixes/apply_all.py" --profile v0.26.0 glm47-streaming-text-markers || exit 1
 

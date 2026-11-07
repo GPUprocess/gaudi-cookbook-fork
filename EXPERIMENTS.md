@@ -500,3 +500,28 @@ MTP's latency benefit, with byte-identical greedy outputs. Accuracy-neutral
 under the same-boot policy (bit-identical). ADOPTED-CANDIDATE for the serving
 configuration; the MTP-at-concurrency crossover is pushed from 8 streams to
 beyond 16.
+
+## EXP-Q19 — the combined stack (draft graphs + all Q18 levers): no stacking;
+## the levers-only config wins (2026-11-07, boot q19)
+
+**Config:** Q18c's levers PLUS `VLLM_GLM_MTP_DRAFT_GRAPH=1` (split mode).
+
+**Results:** bs=1 median 39.51, mean 38.83 (reps 2-6: 37.91/41.02/39.51/34.84/
+40.85 - within noise of router-fast-only 39.10); aggregate @16 steady 164-173
+(median ~169) - **WORSE than the levers-only 183-185**. Acceptance 1.79, R003
+logprobs byte-identical, suite 97.5% (all unchanged - bit-identical).
+
+**Why the draft graphs stop stacking:** the graph replay discipline
+(mark_step + torch.hpu.synchronize around every replay) serializes the draft
+step, defeating the early-draft pipelining that levers 2-3 exist to enable
+(the draft enqueued immediately after the sampler, device-side, without
+host syncs). The two optimizations target the same host-sync time from
+opposite directions; the sync-free eager draft + pipelined enqueue wins.
+
+**Decision (ADOPTED serving configuration):**
+`GLM_ROUTER_FAST=1 GLM_SPEC_DEVICE_REJECT=1 GLM_EARLY_DRAFT=1`,
+draft graphs OFF (eager draft). Best aggregate (183-185 @16, +46% over the
+previous default, -13% vs non-MTP) at bs=1 parity with every other variant,
+byte-identical outputs, suite unchanged. The serve script's env block is
+updated accordingly; the draft-graph code stays available (env-gated) for
+future host-overhead work where early-draft is not enabled.
