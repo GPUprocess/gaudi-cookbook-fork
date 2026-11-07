@@ -192,3 +192,24 @@ continuously, with independent work performed concurrently where practical
 and HPU experiments scheduled to preserve measurement validity.
 
 Do not wait for user approval for ordinary engineering work.
+
+
+## Mandatory Crash Investigation Policy
+
+Before troubleshooting any significant runtime, HPU, Gaudi,
+or vLLM failure, read:
+
+docs/CRASH_INVESTIGATION_POLICY.md
+
+GaudiGrimoire MCP consultation is mandatory for Gaudi-related
+technical failures.
+
+Restarting vLLM is not considered root-cause analysis.
+
+Capture evidence, form hypotheses, investigate, and test
+corrective actions before declaring an incident resolved.
+
+An engine failure must not stop unrelated development work.
+
+There is no production workload or production maintenance
+window. The entire 8-HPU server is dedicated to development.

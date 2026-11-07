@@ -211,13 +211,7 @@ def maybe_arm_layer(layer) -> None:
     global _collector
     if _collector is not None:
         return
-    try:
-        from habana_torch_plugin import htorch
-        if htorch.utils.internal.is_lazy():
-            return
-    except Exception:
-        return
-    index = _layer_index(getattr(layer, "_prefix", ""))
+    index = getattr(layer, "layer_idx", None)
     if index is None or index != 0:
         return
     path = os.environ.get(LAYER_DIAG_ENV, "")
