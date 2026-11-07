@@ -274,3 +274,35 @@ re-bucketing of the prefill graph family.
 **Action:** config reverted to step 2048 (equal-or-better everywhere, fewer
 graphs). Q07c opened: locate the fixed ~1.2 s per-prompt cost (server-side
 phase timing for one 3.5K prompt: draft-pass wall vs target-prefill wall).
+
+## EXP-Q14 — TP4+EP deployment-candidate benchmark pass (2026-11-07, boot tp4d)
+
+**Config:** 4 cards (HABANA_VISIBLE_DEVICES=0-3), TP4+EP, MTP k=1, GMU 0.95,
+graph capture 128, 32K/8seq window, lin buckets, KV override 320 hybrid blocks
+-> 299,593-token pool (the TP4 pool semantics: ~936 tokens/block; override 1280
+auto-sized 1.2M tokens and OOM"d on a 1.44 GiB single allocation; 512 never
+booted due to a leaked-device acquire from the prior crash — clean devices first).
+
+**Results vs TP8 (same window, same benches, warm reps):**
+
+| Metric | TP4+EP (4 cards) | TP8+EP (8 cards) | TP4/TP8 |
+|---|---|---|---|
+| bs=1 decode wall tok/s | median 33.26, mean 33.44 | median 37.44 | **89%** |
+| Aggregate @16 streams | 113.5 | 126.7 | **90%** |
+| Prefill warm @2K | 1,070 t/s | 5,697 t/s | 19% |
+| Prefill warm @8K | 3,857 t/s | 5,123 t/s | 75% |
+| Acceptance | 1.81-1.95 (pos-0 81-95%) | ~1.88 (84%) | held |
+| Accuracy (40 items x 2 reps) | **100.0%** | 100.0% | PASS |
+| Boot to health | ~13 min | ~19 min | faster |
+
+**Verdict:** the 4-HPU deployment candidate is VIABLE: ~90% of the 8-card
+throughput on half the hardware, accuracy gate passed, MTP healthy. The prefill
+weakness at short prompts (19% at 2K) carries the SAME flat ~1.2-1.9 s
+per-prompt floor seen at TP8 (Q07c) — the fixed cost dominates more when the
+card count halves; fixing Q07c disproportionately helps the TP4 deployment
+shape. Deep prefill (8K) is 75% of TP8.
+
+**Caveats:** KV pool 299,593 tokens covers the 32K x 8-seq window with margin;
+larger windows at TP4 need pool re-sizing (weights leave 11.1 GiB/card free).
+The 1M-context objective was validated at TP8; at TP4 the pool budget (~9.5
+GiB/card max) supports ~1.2M tokens — a TP4 1M boot is plausible but untested.

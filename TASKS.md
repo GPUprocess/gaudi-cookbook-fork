@@ -548,7 +548,10 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   imbalance exists. Evidence: B004-B008 all NOT INVESTIGATED; no routing data collected yet.
   Risk: read-only instrumentation first. Dependencies: none. Next action: hook the router
   histogram in the plugin (env-gated), run one decode batch, compute per-rank max/mean.
-- **Q14 TP4+EP deployment-candidate benchmark pass** — `READY` (after 8-HPU levers land).
+- **Q14 TP4+EP deployment-candidate benchmark pass** — `VERIFIED` (4 cards, ~90% of TP8
+  throughput on half the hardware: decode 33.26 vs 37.44 median, agg@16 113.5 vs 126.7,
+  accuracy 100.0% PASS, acceptance held; prefill@2K 19% of TP8 — the Q07c fixed cost
+  dominates; KV pool 320 hybrid blocks = 299,593 tokens; override 1280 OOMs at TP4) (after 8-HPU levers land).
   Hypothesis: TP4+EP (76.5 GiB/card weights) is the final-deployment shape; it must be
   benchmarked on all objective axes (decode/aggregate/prefill/context) to know the achievable
   window. Bottleneck: INFRA/AGG/KV. Expected gain (ESTIMATE): none — measures the deployment
