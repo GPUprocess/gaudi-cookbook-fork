@@ -69,3 +69,62 @@ for that decode-batch shape.
 Q01 (draft graphs) is the highest-impact lever for both the 200 t/s single-stream and the
 800 t/s aggregate objectives. Non-MTP @16 under the pinned-bucket window still needs a
 comparison boot (Q02 second half).
+
+## EXP-Q01 — Draft HPU graphs (split mode): implementation iterations (2026-11-07)
+
+**Design (adapted from the reference fork 919ec98f, GaudiGrimoire-sourced):**
+- Private light-weight storage clones (`_private_copy`: shallow module copy +
+  per-tensor `.data` storage swap, preserving vLLM parameter subclasses); the
+  routed MoE is SHARED by reference (fused-MoE op registration is keyed on
+  storage identity; a cloned MoE fails with "MOE multiplexer weights were
+  partially registered" upstream).
+- `dry_run=False` is load-bearing: the draft chain consumes its own outputs;
+  upstream measured deterministic garbage from the first post-capture replay
+  under dry run.
+- Seam discipline: mark_step + `torch.hpu.synchronize()` before every replay
+  (a replay is opaque to lazy-mode dependency tracking; it launches against
+  input buffers as they are) and mark_step after (eager consumers must not
+  fuse onto the replay's output memory).
+- Two modes: `split` (pre-attention core + eager MLA + post-attention core,
+  default) and `attn` (whole step incl. attention, metadata tensors as
+  positional graph inputs). Env-gated: `VLLM_GLM_MTP_DRAFT_GRAPH=1`,
+  `VLLM_GLM_MTP_DRAFT_GRAPH_MODE=split|attn`. Default OFF.
+
+**Iteration 1 (boot q01split):** first decode request crashed all workers:
+"Forward context is not set" — the graph dispatch returned BEFORE installing
+`set_forward_context`; the split path's eager MLA reads its metadata from the
+context. Fix: both graph paths now run inside `set_forward_context(md, ...)`.
+
+**Iteration 2 (boot q01s2):** first MTP step crashed during post-attention-core
+capture: `ValueError: too many values to unpack (expected 2)` at
+`deepseek_v2.py:402` = `num_tokens, hidden_dim = hidden_states.shape` — the
+cores fed the shared MoE a 3D [batch,1,H] tensor; our vLLM's DeepseekV2MoE
+requires 2D. The eager path flattens first. Fix: all cores now operate on the
+flat [N, H] contract; the dispatch reshapes in/out. NOTE: this crash also
+PROVES the capture machinery works inside the server process (the pre core had
+already captured; the failure was our bug inside the post core's capture).
+
+**Standalone smoke-test finding (negative, documented):** outside the server
+process, `htorch.hpu.wrap_in_hpu_graph` fails to compile ANY graph containing
+an add op on this stack (1.24.1): linear-only captures and replays fine; add,
+norm+lin+residual, functional add all fail with
+`Graph compile failed. Recipe: .graph_dumps/HabanaFusedOpLazy_N_M, synStatus 26`.
+Reproduced with the server env vars replicated (PT_HPU_LAZY_MODE=1,
+PT_HPU_WEIGHT_SHARING=0, PT_HPU_ENABLE_LAZY_COLLECTIVES=true,
+RUNTIME_SCALE_PATCHING=1, FUSER_ENABLE_MULTI_THREADED_INVOCATIONS=1,
+PT_HPU_EAGER_PIPELINE_ENABLE=0/1) and after importing vllm. Root cause not
+established (the failing recipe leaves no dump); the server process captures
+the same op classes successfully at every boot, so the difference is
+process-state-level, not env-level. Consequence: HPU validation of the cores
+must happen in-engine (server boot), not in standalone scripts.
+
+**CPU contract tests (green, `tests/cpu/check_draft_graph.py`):** storage
+independence of `_private_copy`; split-core chain == eager forward (atol 1e-6)
+with position-0 zeroing held; metadata field extraction/rebuild round-trip;
+flag parsing with bad-mode fallback. The test loads the REPO copy of mtp.py
+explicitly (the venv's editable finder serves the deployed tree and meta_path
+beats sys.path).
+
+**Status:** boot q01s3 (2D fix) in flight; A/B measurement next: bs=1 decode
+(baseline median 37.44), 16-stream aggregate (baseline 126.7), acceptance
+(baseline ~1.88), accuracy (baseline 100.0%).

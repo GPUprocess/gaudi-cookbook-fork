@@ -162,6 +162,8 @@ class _DraftPreAttentionGraphCore(nn.Module):
 
     def forward(self, input_ids: torch.Tensor, positions: torch.Tensor,
                 hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        # 2D contract: [N, H] in, [N, H] out -- the shared MoE downstream
+        # requires 2D (its forward unpacks `num_tokens, hidden_dim = x.shape`).
         embedding = self.embed_tokens(input_ids)
         embedding = torch.where(positions.unsqueeze(-1) == 0, 0, embedding)
         residual = self.eh_proj(torch.cat([self.enorm(embedding), self.hnorm(hidden_states)], dim=-1))
@@ -218,9 +220,12 @@ class _DraftAttnGraphCore(nn.Module):
         if len(md_tensors) != len(self._md_fields):
             raise ValueError("draft attention graph: metadata tensor count does not match the field list")
         md = _md_replace(self._md_base, **dict(zip(self._md_fields, md_tensors)))
+        # 2D contract throughout: the shared MoE requires 2D and the eager
+        # path feeds the attention flat [N, H] with flat positions.
+        hidden = hidden_states.reshape(-1, hidden_states.shape[-1])
         embedding = self.embed_tokens(input_ids)
         embedding = torch.where(positions.unsqueeze(-1) == 0, 0, embedding)
-        residual = self.eh_proj(torch.cat([self.enorm(embedding), self.hnorm(hidden_states)], dim=-1))
+        residual = self.eh_proj(torch.cat([self.enorm(embedding), self.hnorm(hidden)], dim=-1))
         # The caller's forward context is active around this call; swap its
         # attention metadata for the rebuilt one while the attention layer
         # runs (the MLA layer reads it from the context).
@@ -374,18 +379,20 @@ class Glm5NextMTPModel(nn.Module):
         core._md_base = md
         md_tensors = [getattr(md, n) for n in names]
         self._graph_replay_seam()
-        out = core(input_ids.reshape(batch, 1), positions.reshape(batch, 1), hidden_states, *md_tensors)
+        out = core(input_ids.reshape(-1)[:batch], positions.reshape(-1)[:batch], hidden_states, *md_tensors)
         self._graph_output_seam()
         return out.reshape(hidden_states.shape)
 
     def _forward_split(self, input_ids, positions, hidden_states) -> torch.Tensor:
-        batch = hidden_states.shape[0]
-        if input_ids.numel() != batch or positions.numel() != batch:
+        lead = hidden_states.shape[:-1]
+        n = hidden_states.numel() // hidden_states.shape[-1]
+        if input_ids.numel() != n or positions.numel() != n:
             raise ValueError("MTP split graph requires one input id and position per decode lane.")
-        input_ids = input_ids.reshape(batch, 1)
-        positions = positions.reshape(batch, 1)
+        input_ids = input_ids.reshape(-1)[:n]
+        positions = positions.reshape(-1)[:n]
+        hidden = hidden_states.reshape(n, -1)
         self._graph_replay_seam()
-        residual, attention_input = self.pre_attention_graph_core(input_ids, positions, hidden_states)
+        residual, attention_input = self.pre_attention_graph_core(input_ids, positions, hidden)
         self._graph_output_seam()
         attention = self.mtp.self_attn(positions=positions, hidden_states=attention_input)
         if attention.numel() != residual.numel():
@@ -394,7 +401,7 @@ class Glm5NextMTPModel(nn.Module):
         self._graph_replay_seam()
         output = self.post_attention_graph_core(residual, attention)
         self._graph_output_seam()
-        return output
+        return output.reshape(*lead, -1)
 
     def forward(
         self,

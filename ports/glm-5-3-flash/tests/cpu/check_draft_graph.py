@@ -94,33 +94,35 @@ def _core_parity():
     pre = _DraftPreAttentionGraphCore(mtp, embed)
     post = _DraftPostAttentionGraphCore(mtp)
 
+    # 2D contract: flat ids/positions and [N, H] hidden (what the shared MoE
+    # and the eager attention receive at serving time).
     bs = 4
-    ids = torch.randint(0, V, (bs, 1))
-    pos = torch.randint(0, 50, (bs, 1))
-    pos[0, 0] = 0
-    h = torch.randn(bs, 1, Hd)
+    ids = torch.randint(0, V, (bs,))
+    pos = torch.randint(0, 50, (bs,))
+    pos[0] = 0
+    h = torch.randn(bs, Hd)
 
     def attention(positions, hidden_states):
         # Stand-in for the eager MLA: a deterministic linear map.
-        return (hidden_states * 0.5).flatten(0, 1).unflatten(0, positions.shape)
+        return hidden_states * 0.5
 
     def eager(ids, pos, h):
         emb = embed(ids)
         emb = torch.where(pos.unsqueeze(-1) == 0, 0, emb)
         residual = mtp.eh_proj(torch.cat([mtp.enorm(emb), mtp.hnorm(h)], dim=-1))
-        attn = attention(pos, mtp.input_layernorm(residual)).reshape_as(residual)
+        attn = attention(pos, mtp.input_layernorm(residual))
         states = residual + attn
         return mtp.shared_head_norm(states + mtp.mlp(mtp.post_attention_layernorm(states)))
 
     residual, attention_input = pre(ids, pos, h)
-    attn = attention(pos, attention_input).reshape_as(residual)
+    attn = attention(pos, attention_input)
     got = post(residual, attn)
     want = eager(ids, pos, h)
     assert torch.allclose(got, want, atol=1e-6), f"core chain != eager: max|d|={(got - want).abs().max()}"
     # Position-0 zeroing is inside the core: verify the core zeroes it.
     emb_direct = pre.embed_tokens(ids)
     zeroed = torch.where(pos.unsqueeze(-1) == 0, 0, emb_direct)
-    assert torch.equal(zeroed[0, 0], torch.zeros(Hd)), "position 0 must be zeroed inside the core"
+    assert torch.equal(zeroed[0], torch.zeros(Hd)), "position 0 must be zeroed inside the core"
     print("PASS core parity: split-core chain == eager forward (atol 1e-6), position-0 zeroing held")
 
 
