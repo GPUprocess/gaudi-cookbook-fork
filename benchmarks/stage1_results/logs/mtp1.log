@@ -1725,3 +1725,132 @@ CPU RAM       : 125 GB
 (APIServer pid=2369068) INFO 11-07 03:14:45 [loggers.py:310] Engine 000: Avg prompt throughput: 112.3 tokens/s, Avg generation throughput: 21.7 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
 (APIServer pid=2369068) INFO 11-07 03:14:45 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.94, Accepted throughput: 9.60 tokens/s, Drafted throughput: 10.20 tokens/s, Accepted: 96 tokens, Drafted: 102 tokens, Per-position acceptance rate: 0.941, Avg Draft acceptance rate: 94.1%
 (APIServer pid=2369068) INFO 11-07 03:14:55 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO:     127.0.0.1:49188 - "GET /health HTTP/1.1" 200 OK
+(Worker_TP2_EP2 pid=2369746) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(Worker_TP3_EP3 pid=2369770) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(Worker_TP6_EP6 pid=2369846) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(Worker_TP7_EP7 pid=2369872) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(Worker_TP5_EP5 pid=2369818) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(Worker_TP1_EP1 pid=2369723) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(Worker_TP0_EP0 pid=2369713) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(Worker_TP4_EP4 pid=2369795) WARNING 11-07 03:19:39 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 256, 0) was not warmed-up!
+(APIServer pid=2369068) INFO 11-07 03:19:45 [loggers.py:310] Engine 000: Avg prompt throughput: 15.1 tokens/s, Avg generation throughput: 0.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.5%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO:     127.0.0.1:48466 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(Worker_TP2_EP2 pid=2369746) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(Worker_TP7_EP7 pid=2369872) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(Worker_TP0_EP0 pid=2369713) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(Worker_TP1_EP1 pid=2369723) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(Worker_TP3_EP3 pid=2369770) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(Worker_TP4_EP4 pid=2369795) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(Worker_TP6_EP6 pid=2369846) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(Worker_TP5_EP5 pid=2369818) WARNING 11-07 03:19:48 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 2048, 0) was not warmed-up!
+(APIServer pid=2369068) INFO 11-07 03:19:55 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 6.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO 11-07 03:19:55 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.85, Accepted throughput: 0.09 tokens/s, Drafted throughput: 0.11 tokens/s, Accepted: 28 tokens, Drafted: 33 tokens, Per-position acceptance rate: 0.848, Avg Draft acceptance rate: 84.8%
+(Worker_TP0_EP0 pid=2369713) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(Worker_TP7_EP7 pid=2369872) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(Worker_TP6_EP6 pid=2369846) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(Worker_TP3_EP3 pid=2369770) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(Worker_TP4_EP4 pid=2369795) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(Worker_TP1_EP1 pid=2369723) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(Worker_TP2_EP2 pid=2369746) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(Worker_TP5_EP5 pid=2369818) WARNING 11-07 03:20:01 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 32) was not warmed-up!
+(APIServer pid=2369068) INFO:     127.0.0.1:37580 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=2369068) INFO 11-07 03:20:05 [loggers.py:310] Engine 000: Avg prompt throughput: 356.7 tokens/s, Avg generation throughput: 7.8 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.7%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO 11-07 03:20:05 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.69, Accepted throughput: 3.10 tokens/s, Drafted throughput: 4.50 tokens/s, Accepted: 31 tokens, Drafted: 45 tokens, Per-position acceptance rate: 0.689, Avg Draft acceptance rate: 68.9%
+(APIServer pid=2369068) INFO:     127.0.0.1:41052 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(Worker_TP7_EP7 pid=2369872) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(Worker_TP2_EP2 pid=2369746) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(Worker_TP3_EP3 pid=2369770) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(Worker_TP1_EP1 pid=2369723) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(Worker_TP4_EP4 pid=2369795) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(Worker_TP6_EP6 pid=2369846) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(Worker_TP5_EP5 pid=2369818) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(Worker_TP0_EP0 pid=2369713) WARNING 11-07 03:20:07 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 0) was not warmed-up!
+(APIServer pid=2369068) INFO 11-07 03:20:15 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 5.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO 11-07 03:20:15 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.89, Accepted throughput: 2.40 tokens/s, Drafted throughput: 2.70 tokens/s, Accepted: 24 tokens, Drafted: 27 tokens, Per-position acceptance rate: 0.889, Avg Draft acceptance rate: 88.9%
+(APIServer pid=2369068) INFO 11-07 03:20:25 [loggers.py:310] Engine 000: Avg prompt throughput: 706.4 tokens/s, Avg generation throughput: 0.1 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.4%, Prefix cache hit rate: 0.0%
+(Worker_TP7_EP7 pid=2369872) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(Worker_TP3_EP3 pid=2369770) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(Worker_TP5_EP5 pid=2369818) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(Worker_TP0_EP0 pid=2369713) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(Worker_TP2_EP2 pid=2369746) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(Worker_TP1_EP1 pid=2369723) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(Worker_TP6_EP6 pid=2369846) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(Worker_TP4_EP4 pid=2369795) WARNING 11-07 03:20:32 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 128) was not warmed-up!
+(APIServer pid=2369068) INFO:     127.0.0.1:41058 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=2369068) INFO 11-07 03:20:35 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 6.3 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO 11-07 03:20:35 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.83, Accepted throughput: 1.45 tokens/s, Drafted throughput: 1.75 tokens/s, Accepted: 29 tokens, Drafted: 35 tokens, Per-position acceptance rate: 0.829, Avg Draft acceptance rate: 82.9%
+(APIServer pid=2369068) INFO:     127.0.0.1:48144 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(Worker_TP6_EP6 pid=2369846) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP7_EP7 pid=2369872) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP0_EP0 pid=2369713) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP1_EP1 pid=2369723) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP4_EP4 pid=2369795) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP2_EP2 pid=2369746) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP3_EP3 pid=2369770) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP5_EP5 pid=2369818) WARNING 11-07 03:20:40 [hpu_model_runner.py:3703] Configuration: ('prompt', 1, 8192, 100) was not warmed-up!
+(Worker_TP4_EP4 pid=2369795) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(Worker_TP1_EP1 pid=2369723) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(Worker_TP3_EP3 pid=2369770) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(Worker_TP6_EP6 pid=2369846) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(Worker_TP0_EP0 pid=2369713) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(Worker_TP7_EP7 pid=2369872) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(Worker_TP2_EP2 pid=2369746) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(Worker_TP5_EP5 pid=2369818) WARNING 11-07 03:20:44 [hpu_model_runner.py:3703] Configuration: ('decode', 2, 1, 256) was not warmed-up!
+(APIServer pid=2369068) INFO 11-07 03:20:45 [loggers.py:310] Engine 000: Avg prompt throughput: 2122.0 tokens/s, Avg generation throughput: 6.7 tokens/s, Running: 1 reqs, Waiting: 0 reqs, GPU KV cache usage: 2.3%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO 11-07 03:20:45 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.83, Accepted throughput: 3.00 tokens/s, Drafted throughput: 3.60 tokens/s, Accepted: 30 tokens, Drafted: 36 tokens, Per-position acceptance rate: 0.833, Avg Draft acceptance rate: 83.3%
+(APIServer pid=2369068) INFO:     127.0.0.1:48150 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=2369068) INFO:     127.0.0.1:47716 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=2369068) INFO 11-07 03:20:55 [loggers.py:310] Engine 000: Avg prompt throughput: 1419.3 tokens/s, Avg generation throughput: 12.5 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO 11-07 03:20:55 [metrics.py:120] SpecDecoding metrics: Mean acceptance length: 1.76, Accepted throughput: 5.40 tokens/s, Drafted throughput: 7.10 tokens/s, Accepted: 54 tokens, Drafted: 71 tokens, Per-position acceptance rate: 0.761, Avg Draft acceptance rate: 76.1%
+(APIServer pid=2369068) INFO 11-07 03:21:05 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=2369068) INFO 11-07 03:21:25 [launcher.py:100] [shutdown] API server: shutdown triggered
+(APIServer pid=2369068) INFO 11-07 03:21:25 [launcher.py:116] [shutdown] API server: stopping engine client mode=abort timeout=0s
+(APIServer pid=2369068) INFO 11-07 03:21:25 [core_client.py:655] [shutdown] MPClient: start timeout=0s
+(APIServer pid=2369068) INFO 11-07 03:21:25 [core_client.py:657] [shutdown] MPClient: stopping engine manager
+(APIServer pid=2369068) WARNING 11-07 03:21:25 [utils.py:626] [shutdown] Process manager: force killing remaining processes count=1
+(EngineCore pid=2369494) INFO 11-07 03:21:25 [core.py:1313] [shutdown] EngineCore: trigger received signal=SIGTERM
+(EngineCore pid=2369494) INFO 11-07 03:21:25 [core.py:1432] [shutdown] EngineCore: start mode=abort timeout=0s
+(EngineCore pid=2369494) INFO 11-07 03:21:25 [core.py:1463] [shutdown] EngineCore: request processing complete; starting resource teardown
+(EngineCore pid=2369494) INFO 11-07 03:21:25 [core.py:1326] [shutdown] EngineCore: exiting busy loop
+(Worker_TP0_EP0 pid=2369713) INFO 11-07 03:21:25 [multiproc_executor.py:793] Parent process exited, terminating worker queues
+(EngineCore pid=2369494) INFO 11-07 03:21:25 [multiproc_executor.py:429] [shutdown] Executor: waiting for worker exit count=8
+(APIServer pid=2369068) INFO 11-07 03:21:25 [core_client.py:659] [shutdown] MPClient: engine manager stopped
+(APIServer pid=2369068) INFO 11-07 03:21:25 [core_client.py:660] [shutdown] MPClient: cleaning up background resources
+(APIServer pid=2369068) INFO 11-07 03:21:25 [core_client.py:662] [shutdown] MPClient: complete
+(APIServer pid=2369068) INFO 11-07 03:21:25 [launcher.py:125] [shutdown] API server: engine client stopped
+(APIServer pid=2369068) INFO 11-07 03:21:25 [launcher.py:128] [shutdown] API server: signalling HTTP server shutdown
+(APIServer pid=2369068) INFO 11-07 03:21:25 [launcher.py:149] [shutdown] API server: shutting down FastAPI HTTP server
+(APIServer pid=2369068) INFO:     Shutting down
+(APIServer pid=2369068) INFO:     Waiting for application shutdown.
+(APIServer pid=2369068) INFO:     Application shutdown complete.
+nanobind: leaked 4 instances!
+nanobind: leaked 64 types!
+ - leaked type "triton._C.libtriton.ir.location"
+ - leaked type "TMEM_LOAD_REDUCE_MODIFIER"
+ - leaked type "triton._C.libtriton.ir.block"
+ - leaked type "triton._C.libtriton.gluon_ir.GluonOpBuilder"
+ - leaked type "triton._C.libtriton.ir.builder"
+ - leaked type "triton._C.libtriton.nvidia.cublas.CublasLt"
+ - leaked type "triton._C.libtriton.ir.integer_attr"
+ - leaked type "ATOMIC_OP"
+ - leaked type "PROPAGATE_NAN"
+ - leaked type "METRIC_TYPE"
+ - ... skipped remainder
+nanobind: leaked 514 functions!
+ - leaked function "get_before"
+ - leaked function "create_memdesc_index"
+ - leaked function "get_nvidia_cache_policy"
+ - leaked function "add_flag"
+ - leaked function "arg"
+ - leaked function "run"
+ - leaked function "add_fn_attr"
+ - leaked function "call"
+ - leaked function "create_bitcast"
+ - leaked function "param_types"
+ - ... skipped remainder
+nanobind: this is likely caused by a reference counting issue in the binding code.
+See https://nanobind.readthedocs.io/en/latest/refleaks.html/usr/lib/python3.12/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 8 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+/usr/lib/python3.12/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked shared_memory objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
