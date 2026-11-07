@@ -255,3 +255,22 @@ document (word estimates undercount ~14%); the window itself is validated to
 1,048,576 by config and the pool holds 1,062,400. A needle at the full 1,048,576
 depth is queued as a follow-up (needs a ~1.19M-word document; HTTP request
 ~4.8 MB).
+
+## EXP-Q07b — 4K bucket-edge hypothesis: NEGATIVE (2026-11-07)
+
+Boot with VLLM_PROMPT_QUERY_BUCKET_STEP=1024 (finer prompt buckets), warm rep3:
+2,657 tok -> 2,154 t/s; 3,514 -> 2,475 (baseline at step 2048: 2,696 — no gain,
+slightly worse); 5,267 -> 3,998; 7,148 -> 4,839. The bucket step is NOT the
+cause of the 3.5K dip.
+
+**New signature:** warm wall time is ~0.31 s up to ~1.8K-token prompts, then
+JUMPS to a ~1.2-1.4 s FLOOR that is flat from 2.6K through 7.1K tokens
+(independent of prompt size and bucket step). A fixed per-prompt cost in that
+regime, not a throughput limit. Prime suspect: the draft prompt-KV fill pass
+(prefill_cache_only), documented prompt-proportional (D012) but possibly with a
+large fixed component at these depths; second suspect: KDA chunk-alignment
+re-bucketing of the prefill graph family.
+
+**Action:** config reverted to step 2048 (equal-or-better everywhere, fewer
+graphs). Q07c opened: locate the fixed ~1.2 s per-prompt cost (server-side
+phase timing for one 3.5K prompt: draft-pass wall vs target-prefill wall).

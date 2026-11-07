@@ -495,7 +495,9 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Bottleneck: PP/TTFT. Expected gain (ESTIMATE): none directly — locates the regime where Q06/Q09
   must act. Evidence: C001, D002, EXP-OPT-001. Risk: none. Dependencies: none.
   Next action: extend check_ttft.py to report prefill t/s at 512-8K on the live server.
-- **Q07b 4K-bucket prefill step** — `READY`. Hypothesis: the 2048->4096 lin-bucket edge
+- **Q07b 4K-bucket prefill step** — `FAILED` (negative: step 1024 does not recover the 3.5K
+  point - 2,475 vs 2,696 t/s; the dip is a FIXED ~1.2-1.4 s per-prompt cost flat from 2.6K
+  to 7.1K tokens, independent of bucketing. Superseded by Q07c.) Hypothesis: the 2048->4096 lin-bucket edge
   step (0.31 s -> 1.30 s wall) is a graph-family or chunk-pipeline artifact; aligning
   the bucket step (e.g. 1024) or the chunk size recovers ~5,000 t/s at 3.5-4K.
   Bottleneck: PP/GRAPH. Expected gain (ESTIMATE): 2,696 -> ~5,000 t/s at 3.5-4K.
