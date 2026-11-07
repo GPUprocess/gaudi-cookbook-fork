@@ -15,7 +15,7 @@ Primary objectives vs the best VERIFIED, accuracy-gated measurements:
 | 1M context | **VERIFIED**: 1M window boots (1660 hybrid blocks ~8 GiB/card); needle retrieved exactly at ~860K depth (860,739 tokens, 523.7 s); deep prefill 1,643 t/s at that depth | **MET** (serving-validated on 8 HPUs) |
 | GLM-5.3-Flash FP8 | served as published (block FP8) | met |
 | <= 0.5 pp accuracy regression | 100.0% on the adopted config | met for the adopted config; Q01-split at 97.5% NOT adopted |
-| Final deployment on 4 HPUs | TP4+EP boots (G003); benchmark pass pending | Q14 |
+| Final deployment on 4 HPUs | **VERIFIED (Q14)**: TP4+EP holds ~90% of TP8 throughput on half the hardware (decode 33.26 vs 37.44 median; agg@16 113.5 vs 126.7), accuracy 100.0% PASS | **deployment candidate validated**; short-prompt prefill gated on Q07c |
 
 ## Session findings (this session)
 

@@ -39,7 +39,7 @@ exec vllm serve "$GLM53_MODEL_PATH" \
   --dtype bfloat16 \
   --max-model-len 32768 \
   --max-num-seqs 8 \
-  --num-gpu-blocks-override 320 \
+  --num-gpu-blocks-override 1280 \
   --max-num-batched-tokens 8192 \
   --max-cudagraph-capture-size 128 \
   --enable-chunked-prefill \
