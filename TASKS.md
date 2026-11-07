@@ -609,7 +609,10 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
 - **Q18 router fast path + early draft + device-side rejection** — `WORKING` (lever 1
   VERIFIED: router fast path +4.4% bs=1 (39.10 vs 37.44 median), bit-identical on HPU
   (byte-identical R003 logprobs), patches/router_fast.py env-gated GLM_ROUTER_FAST.
-  Levers 2-3 (device-side rejection walk, early draft) adaptation staged - see notes.) Hypothesis:
+  Levers 2-3 APPLIED (ports/glm-5-3-flash/patches/decode_lean.py adapted from the mxfp4
+  port: lean module copied into our package, import rewritten, router target dropped;
+  anchors matched our deployed tree including the already-applied spec-draft-prefill and
+  spec-penalties patches; measured in EXP-Q18 lever 2-3).) Hypothesis:
   three bit-identical changes (router fast path: n_group=1 qualifies on OUR config, verified;
   device-side rejection walk with float32-rounded draws; device-side draft row indices)
   remove ~3.7 ms of a ~39 ms step and the end-of-step host sync. Bottleneck: MTP/SCHED/KERNEL.
