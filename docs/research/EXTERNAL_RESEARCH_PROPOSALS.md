@@ -254,7 +254,12 @@ PROPOSED — or closed — only when their open questions are answered.
 
 ### RA-001 — Enable the HPU-graph decode tensor cache under MTP
 
-**Status:** PROPOSED · **Priority:** 2 · **Complexity:** Low · **Owner (suggested):** primary agent
+**Status:** MEASURED - ADOPTED (EXP-RA001, 2026-11-08: ZERO code changes - the vendor wrapper
+already reads PT_HPUGRAPH_DISABLE_TENSOR_CACHE at replay time; setting it to 0 at boot enables
+the cache for all wrapped graphs. bs=1 +8-10 percent (41.4 vs 38.3 median - the conservative
+estimate CONFIRMED); aggregate @16 neutral (~257). Host RSS 0.73-0.88 GB/worker (the 0.7 GB
+estimate CONFIRMED). Adopted into the boot script.) · **Priority:** 2 · **Complexity:** Low ·
+**Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -411,7 +416,11 @@ removes that objection (DERIVED size above + 83 GB free host RAM measured today)
 
 ### RA-002 — Routing-aware fused block-FP8 dequant GEMV MoE kernel (sharpening Q21)
 
-**Status:** PROPOSED · **Priority:** 1 · **Complexity:** High (weeks) · **Owner (suggested):** primary agent
+**Status:** IN PROGRESS (= Q21: the 1Cat block_fp8_dequant core compiled + gated into our variant
+library, TPC gate PASS 3254 GUIDs; the torch-op shim blocked by the v0.26.0 registrar collision -
+the weak-symbol per-library registry architecture, EXP-Q21; the PT2 custom-op API discovered as
+the DSV4.1-proven loading mechanism, the adaptation staged) · **Priority:** 1 · **Complexity:**
+High (weeks) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -669,7 +678,11 @@ weight streaming bytes on our tree.
 
 ### RA-003 — max-num-seqs 16 (32 verify rows): the aggregate unlock
 
-**Status:** PROPOSED · **Priority:** 3 · **Complexity:** Low–Medium · **Owner (suggested):** primary agent
+**Status:** MEASURED - ADOPTED (EXP-NS16/NS32/NS64: the implementation agent ran this
+independently - the max-num-seqs lever delivered 183 -> ~258 @16 (ns16) -> 396-401 @32 (ns32)
+-> 392-452 @64 (ns64). The doc's 260-400 prediction CONFIRMED; the lever is EXHAUSTED at
+400-420 (the saturation curve recorded). Adopted: max-num-seqs 32 in serve_mtp.sh.) ·
+**Priority:** 3 · **Complexity:** Low-Medium · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -802,7 +815,10 @@ math (DERIVED above).
 
 ### RA-004 — MTP k=4 as one graphed draft chain (without early-draft)
 
-**Status:** PROPOSED · **Priority:** 4 · **Complexity:** Medium–High · **Owner (suggested):** primary agent
+**Status:** IN REVIEW (our EXP-Q11 refuted k=2 under the EAGER draft with the levers — -11%
+bs=1 / -29% @16 — consistent with this proposal's premise that the draft chain must be graphed;
+gated on RA-002's in-graph draft) · **Priority:** 4 · **Complexity:** Medium-High ·
+**Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -967,7 +983,9 @@ graph *without* early-draft — the only untried cell of the {eager, split-graph
 
 ### RA-005 — 4-HPU target physics audit and deployment plan (decision document)
 
-**Status:** PROPOSED · **Priority:** 5 (do immediately — no HPU time) · **Complexity:** None (doc)
+**Status:** MEASURED (the 4-HPU point: EXP-Q14 — bs=1 33.26, @16 113.5, accuracy 100%, reproduced
+by this doc's model to <1%) · the owner memo DELIVERED (the dedicated-dev-box directive confirms
+Phase A active) · **Priority:** 5 · **Complexity:** None (doc)
 
 #### 1. Executive summary
 
@@ -1043,7 +1061,9 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 
 ### RA-006 — Graph-shape consolidation: pad-and-mask verify graph, padding-aware prefill buckets, recipe cache, dynamic-shape probe
 
-**Status:** PROPOSED · **Priority:** 5 · **Complexity:** Low–Medium (B/C: days; A: days–week) · **Owner (suggested):** primary agent
+**Status:** IN REVIEW (the sites verified: extension/bucketing/padding_aware.py +
+common.py l.118-123; VLLM_BUCKETING_STRATEGY=pad unset; features.py l.106 D10; untested) ·
+**Priority:** 5 · **Complexity:** Low-Medium · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
