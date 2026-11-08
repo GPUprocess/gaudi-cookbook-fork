@@ -928,3 +928,28 @@ earlier probes missed by using the wrong import order).
 **The qualification path is otherwise clear:** once the op is Python-visible, the
 dequant qualification runs on-device against a GLM weight shard (the kernel is
 compiled and gated), then the fused GEMV variants.
+
+## EXP-Q21 probe addendum — both probe orders collide at the mxk library;
+## the serving WORKER context is the difference (2026-11-08)
+
+Two fresh probes of libmxk_op_lazy.so (with our restored TORCH_LIBRARY def -
+the schema string verified in the binary):
+- probe order A (torch -> habana_frameworks -> load_library): COLLIDES at load.
+- probe order B (torch -> vllm_gaudi -> load_library, cwd the cookbook root):
+  COLLIDES at load.
+- the serving WORKERS: load the SAME .so WITHOUT collision (NOT registered
+  only - load_library succeeded, the op Python-invisible).
+
+**The worker context is the difference** - vLLM v1 spawns the workers with the
+full config/plug state, and in that context the mxk library's static
+TORCH_LIBRARY_IMPL(custom_op, HPU) registration does not trip the registrar
+collision. The probes cannot reproduce the worker context cheaply (vLLM v1
+spawn + the config stack).
+
+**Next-session opener (the minimal repro):** patch a tiny debug print into
+mxk_op_lazy.cpp's TORCH_LIBRARY_IMPL block (or run the qualification INSIDE a
+worker via the existing step-profiler-style hook), load the library in the
+worker context, and check torch.ops.custom_op.block_fp8_dequant_glm from
+inside the worker process. If visible there, the dequant qualification runs
+in-worker (a debug endpoint or a warmup call), unblocking the whole Q21
+qualification without any stack change.
