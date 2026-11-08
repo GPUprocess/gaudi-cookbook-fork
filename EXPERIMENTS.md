@@ -1038,3 +1038,30 @@ for our op library — or serve our kernel from the DSV41-style isolated image.
 **Session state:** the kernel is compiled and gated; the PT2 op shim is built
 (and its registration API understood); the load-context study is the remaining
 gate. All staged in the repo for the next session.
+
+## EXP-Q21 symbol analysis - the descriptor call is the load-collision trigger;
+## the serving WORKERS load the op library cleanly (2026-11-08)
+
+The include/link bisection (five isolated .so builds):
+- hpu_custom_op.h alone: loads clean.
+- torch/extension.h alone: loads clean.
+- op.cpp with the body EMPTIED (the descriptor call removed): loads clean.
+- op.cpp with ONLY the REGISTER line removed (the descriptor call kept):
+  COLLIDES.
+- the full op.cpp: COLLIDES.
+
+**The offender: the compiled presence of the
+HabanaCustomOpDescriptor::getCustomOpDescriptor call** - its symbol chain
+(habana::custom_op::registerKernel, an UND reference resolved from the plugin)
+triggers a registration at .so load in the probe context.
+
+**The serving WORKERS load the SAME library without collision** (the q21q boot:
+load_library succeeded, NOT registered only) - the worker context (vLLM v1
+spawn, the config/plug state) differs from the probe context. The collision is
+probe-specific; the workers are the qualification environment.
+
+**Next-session opener (unchanged, now with the mechanism):** the in-worker
+visibility check - if the op is visible in the worker (the schema may register
+fine there; the q21q NOT registered lines may predate the rebuilt library - the
+q21q boot loaded the PRE-restore build), the dequant qualification runs
+in-worker via a debug hook.
