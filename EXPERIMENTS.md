@@ -735,3 +735,32 @@ on the stock ops. No production risk at any point.
 
 **Session close:** the server runs the adopted config (the hooks are installed
 but inert without GLM_FP8_MXK=1 - subsequent boots are unaffected).
+
+## EXP-Q11 — MTP k=2 under the fast draft path: REFUTED (2026-11-08, boot q11)
+
+**Hypothesis tested:** the adopted levers made the draft cheap enough that a
+second speculation depth (k=2: 3-row verify + 2 draft passes/step, acceptance
+2.04-2.52 of 3.0 historically) turns net-positive - reopening A011/A013.
+
+**Setup:** serve_mtp_k2.sh (the adopted config, num_speculative_tokens=2, all
+levers kept). Same window, lin buckets.
+
+**Results (steady state):**
+
+| Metric | k=1 (adopted) | k=2 + levers | Delta |
+|---|---|---|---|
+| bs=1 decode | 38.0-39.1 | 33.4-34.6 (median 34.25) | **-11%** |
+| Aggregate @16 | 181-185 | 130-133 | **-29%** |
+| Acceptance | 1.80-1.85 of 2.0 | 2.25 of 3.0 | +22% as expected |
+
+**Arithmetic:** the k=2 step runs ~36% slower (20.7 -> 15.2 steps/s: 3-row
+verify + a SECOND full draft pass per step) while acceptance gains only +22%
+(1.85 -> 2.25). The second draft pass costs a full eager draft traversal per
+step - the levers made each draft pass cheap but did not make the SECOND one
+free.
+
+**Verdict: k=2 REFUTED under the levers; k=1 remains optimal.** A011/A013
+stay closed unless the draft pass becomes near-free (the Q21 kernel track:
+an in-graph draft would change this arithmetic - the draft replay would add
+~device-time only, making the k=2 draft marginal cost ~2x device instead of
+2x (device + host), which could flip the balance).

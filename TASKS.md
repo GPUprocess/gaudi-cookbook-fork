@@ -47,7 +47,10 @@ write-up; **repo** = files under `ports/glm-5-3-flash/` in this repository.
 - **A010 Investigate MTP=2 feasibility** — `VERIFIED`. The checkpoint has a single MTP head;
   depth 2 works by chaining the same head (per-step metadata, S=4 candidate columns, 3-row
   verify). Correctness held across the full sweep. Evidence: EXP-MTP-002.
-- **A011 Implement MTP=2 if supported** — `WORKING`. Functionally complete and correct; net
+- **A011 Implement MTP=2 if supported** — `WORKING` (functionally complete; k=2 under
+  the adopted levers REFUTED: bs=1 -11%, @16 -29% (EXP-Q11) - the second eager draft
+  pass dominates. Revisit only under the Q21 in-graph draft, where the marginal draft
+  cost drops to device-time.) Functionally complete and correct; net
   decode throughput is neutral-to-worse in the eager-draft configuration (30.2–34.1 vs 36.8
   tok/s bs=1), so k=1 remains the default. Retained as a supported capability. Evidence:
   EXP-MTP-002.
