@@ -749,6 +749,33 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   an isolated image. The kernel + installer + runtime remain in the repo, inert
   without GLM_FP8_MXK=1.
 
+### EXTERNAL_RESEARCH_PROPOSALS (the research architect's handoff, 2026-11-07 rev 1)
+
+The full document: docs/research/EXTERNAL_RESEARCH_PROPOSALS.md (committed; all six Status
+fields updated per our review — RA-003 MEASURED/ADOPTED via EXP-NS16, RA-002 IN PROGRESS = Q21,
+RA-005 memo delivered, RA-001/RA-004/RA-006 IN REVIEW). The prescribed order: D1+D2+D6
+profiling window -> RA-001 -> RA-003 (done) -> RA-006-B/C -> RA-002 -> RA-004.
+
+- **RA-001 HPU-graph decode tensor cache** — `IN REVIEW`. Hypothesis: the per-call tensor-cache
+  policy port (PT_HPUGRAPH_DISABLE_TENSOR_CACHE, hpu_model_runner.py ~l.1134) cuts the host
+  floor 30-60 percent under MTP. Bottleneck: GRAPH/SCHED. Evidence: the doc's A/B design; the
+  mxfp4 study's 322-launch/74us host pattern. Next: port + A/B per doc section 10.
+- **RA-002 block-FP8 routed-expert GEMV kernel** — `IN PROGRESS` (= Q21; the five sharpenings
+  accepted: byte target, full-card row-parallel, in-kernel intermediate, single op library,
+  MTP-depth table). Bottleneck: KERNEL/TG. Gate: D4 micro-bench (>= 2.0 TB/s at 25.17 MB
+  experts). Blocked on the op-shim registrar collision (EXP-Q21) or the stack upgrade.
+- **RA-003 max-num-seqs 16** — `MEASURED/ADOPTED` (= EXP-NS16: ~258 t/s @16, +42 percent).
+  Residual: the KV pool for long-sequence concurrency (the doc's point 2) + the 32-row graph
+  pre-warm (D003).
+- **RA-004 MTP k=4 graphed chain** — `IN REVIEW`, gated on RA-002 (our EXP-Q11 refuted the
+  EAGER k=2; the graphed chain is the open design). Bottleneck: MTP/TG.
+- **RA-005 4-HPU decision memo** — `DELIVERED` to the owner (the gated-stretch-goal
+  recommendation for 200@4HPU; Phase A/B recorded). Evidence: EXP-Q14 + the doc's byte model.
+- **RA-006 graph-shape consolidation** — `IN REVIEW`. B: VLLM_BUCKETING_STRATEGY=pad prefill
+  A/B (the padding-aware bucketing exists unused in our tree); C: the recipe-cache warmup
+  measurement; A: the pad-and-mask 10-row verify graph (gated on byte-identity parity, after
+  RA-001). Bottleneck: GRAPH/INFRA.
+
 ### Research-folder status files (theory-agent feedback, 2026-11-08)
 
 The research sources live in the workspace at glm53_optimize/research/ with

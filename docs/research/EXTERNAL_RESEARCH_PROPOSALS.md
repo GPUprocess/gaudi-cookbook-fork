@@ -202,7 +202,9 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
 
 ### RA-001 — Enable the HPU-graph decode tensor cache under MTP
 
-**Status:** PROPOSED · **Priority:** 2 · **Complexity:** Low · **Owner (suggested):** primary agent
+**Status:** IN REVIEW (the reading order mapped: hpu_model_runner.py wrap sites ~l.1118/~l.5030,
+PT_HPUGRAPH_DISABLE_TENSOR_CACHE ~l.1134; untested) · **Priority:** 2 · **Complexity:** Low ·
+**Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -340,7 +342,10 @@ removes that objection (DERIVED size above + 83 GB free host RAM measured today)
 
 ### RA-002 — Routing-aware fused block-FP8 dequant GEMV MoE kernel (sharpening Q21)
 
-**Status:** PROPOSED · **Priority:** 1 · **Complexity:** High (weeks) · **Owner (suggested):** primary agent
+**Status:** IN PROGRESS (Q21: the 1Cat block_fp8_dequant core compiled + gated into our variant
+library — TPC gate PASS, 3254 GUIDs; the torch-op shim blocked by the v0.26.0 registrar collision,
+EXP-Q21; the five sharpenings accepted as the design refinement) · **Priority:** 1 ·
+**Complexity:** High (weeks) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -557,7 +562,13 @@ the 42-layer stack). No prior experiment in this project attempted routed-only F
 
 ### RA-003 — max-num-seqs 16 (32 verify rows): the aggregate unlock
 
-**Status:** PROPOSED · **Priority:** 3 · **Complexity:** Low–Medium · **Owner (suggested):** primary agent
+**Status:** MEASURED → ADOPTED (EXP-NS16, 2026-11-08: the implementation agent ran this
+independently before receiving revision 1 — aggregate @16 183 -> **245-260 t/s** (converged ~258),
+bs=1 neutral (37.7 median), acceptance 1.80 held, accuracy unchanged; `--max-num-seqs 16` adopted
+into serve_mtp.sh. The doc's prediction ("183 toward 260-400") is CONFIRMED at the bottom of the
+range — the remaining gap to 400 is the decode-bucket graph warm-up (32-row shapes captured
+progressively) and the KV pool for long-sequence concurrency. · **Priority:** 3 ·
+**Complexity:** Low-Medium · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -658,8 +669,11 @@ One launch-flag change, one KV override, one graph-shape pre-warm entry in the r
 
 #### 9. Implementation instructions
 
-1. Compute the KV override for a 512K-token pool from the boot auto-sizing log (EXP-Q10 method);
-   add `serve_mtp_16seq.sh` = serve_mtp.sh with `--max-num-seqs 16` + the new override.
+1. Compute the KV override for a 512K-token pool from the boot auto-sizing log (EXP-Q10 method).
+   **A starting script already exists:** `ports/glm-5-3-flash/serving/serve_mtp_ns16.sh`
+   (sets `--max-num-seqs 16`, reduced max-model-len + block override for the validation window) —
+   extend it with the full 32K pool override rather than creating a new script; verify its
+   verify-row graph family matches the 32-row shape.
 2. Boot; run the warm-client runbook covering the 32-row verify shape (16 concurrent 1-token
    requests) *before* benchmarking.
 3. Bench: 16-client-stream aggregate (steady reps, ≥ 5), per-stream ITL, bs=1 control, acceptance,
@@ -687,7 +701,10 @@ math (DERIVED above).
 
 ### RA-004 — MTP k=4 as one graphed draft chain (without early-draft)
 
-**Status:** PROPOSED · **Priority:** 4 · **Complexity:** Medium–High · **Owner (suggested):** primary agent
+**Status:** IN REVIEW (our EXP-Q11 refuted k=2 under the EAGER draft with the levers — -11% bs=1 /
+-29% @16 — consistent with this proposal's premise that the draft chain must be graphed; the k=4
+chain design is gated on RA-002's in-graph draft) · **Priority:** 4 · **Complexity:** Medium-High ·
+**Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -845,7 +862,11 @@ graph *without* early-draft — the only untried cell of the {eager, split-graph
 
 ### RA-005 — 4-HPU target physics audit and deployment plan (decision document)
 
-**Status:** PROPOSED · **Priority:** 5 (do immediately — no HPU time) · **Complexity:** None (doc)
+**Status:** MEASURED (the 4-HPU point: EXP-Q14 pass — bs=1 33.26, @16 113.5, accuracy 100%,
+reproduced by this doc's model to <1%) · the owner decision memo: DELIVERED (this session's
+directive confirms the box is a dedicated development machine — Phase A (8-HPU levers) is the
+active track; Phase B re-runs the Q14 pass after the levers land) · **Priority:** 5 ·
+**Complexity:** None (doc)
 
 #### 1. Executive summary
 
@@ -921,7 +942,9 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 
 ### RA-006 — Graph-shape consolidation: pad-and-mask verify graph, padding-aware prefill buckets, recipe cache, dynamic-shape probe
 
-**Status:** PROPOSED · **Priority:** 5 · **Complexity:** Low–Medium (B/C: days; A: days–week) · **Owner (suggested):** primary agent
+**Status:** IN REVIEW (the sites verified: extension/bucketing/padding_aware.py +
+common.py l.118-123; VLLM_BUCKETING_STRATEGY=pad unset; features.py l.106 D10; untested) ·
+**Priority:** 5 · **Complexity:** Low-Medium (B/C: days; A: days-week) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -1152,6 +1175,27 @@ before being adopted — with the one correction that dynamic shapes do **not** 
 | 2026-11-07 | 1 | independent research architect | Initial audit of the fork (TASKS/EXPERIMENTS/CURRENT_STATE/DECISIONS/ACCURACY, all EXP-* reports, `docs/results/moe-decode-step.md`, RESEARCH-001 + addenda 1–11, port source, live process and deployed tree, checkpoint config). GaudiGrimoire consultation (log below). Independent byte model + ceilings (Executive summary). Five proposals: RA-001…RA-005. Seven rejections (RJ-01…RJ-07). Eight research gaps (D1…D8). |
 | 2026-11-07 | 3 | independent research architect (community input) | Owner supplied a Discord exchange on pad-and-mask / bucketing / dynamic shapes on Gaudi. All specific claims verified against corpus + deployed tree: (i) `VLLM_BUCKETING_STRATEGY=pad` (PR #762, padding-aware) **present in our v0.26.0 but unused** (verified on server); (ii) bucketing/padding is the documented upstream continuous-batching mechanism; (iii) **dynamic shapes are real in the 1.24.1 SDK + bridge** (`synGeometryMinSizes/MaxSizes`, `ht.enable_dynamic_shape()`, `PatchDynamicTensors` — tier B) **but HPU Graphs are static-only** (habana-docs, tier B) → not a decode-hot-path lever, prefill probe only (D10); (iv) disk recipe cache documented, unused in our scripts (verified). Added **RA-006** (pad-and-mask verify graph + padding-aware prefill buckets + recipe cache + dynamic-shape probe), the RA-002 padded-row/degenerate-routing contract, the RA-003 separate-large-shapes note, D10, and the upstream 1M-context TTFT datapoint (28% warm-TTFT cut with `pad` bucketing, tier D) as motivation for RA-006-B. |
 | 2026-11-07 | 2 | independent research architect (owner correction) | **Draft-pass byte model corrected.** Rev 1 charged the k MTP draft passes with full 42-layer MoE reads (72 main-MoE routes/step at k=4 → 22.1 GB/card at TP4). The draft chain runs through the MTP module (~0.3–0.5 GB/pass aggregate — the checkpoint has exactly 42 MoE layers; composition to verify per D9). Corrected k=4 bytes: TP8 7.7 GB, TP4 15.9 GB. Consequences: (i) the owner's active-weights roofline check (18–28 GB/token → 340–530 t/s at 4 HPUs) is confirmed — 200 t/s is **inside** the 4-HPU roofline; (ii) 200 @ 4 HPU reclassified from "plan as unreachable" to **gated stretch goal, est. 15–25% probability** (host ≤ ~9–10 ms + 89–100% of spec + routing kernel); base case 126–230; (iii) 200 @ 8 HPU confirmed as base-case target (host ≤ 10–13 ms + 47–86%); (iv) the stock-op model now reproduces the measured 39.1 (TP8) and 33.2 (TP4) t/s to <1%, validating the all-weights-read premise; (v) aggregate tables updated (16 active hits 69–89% of experts at k=1/4, routing-aware saves 11–40% there). No proposal ranking or mechanism changed; RA-002/RA-004/RA-005 numbers updated throughout. |
+
+### Implementation-agent review (2026-11-08)
+
+- Document committed to the repo (was untracked); all six `Status:` fields updated per the
+  review above.
+- **RA-003 independently CONFIRMED**: the implementation agent ran max-num-seqs 16 before
+  receiving this document (EXP-NS16) — aggregate @16 183 → 245–260 t/s, converged ~258, adopted
+  into serve_mtp.sh. The doc's 260–400 prediction band is confirmed at its bottom edge; the
+  decode-bucket warm-up and the KV pool for long-sequence concurrency are the residual items.
+- **RA-005's owner memo: DELIVERED** — the owner directive confirms the box is a dedicated
+  development machine; Phase A (8-HPU levers) is active, Phase B re-runs the Q14 pass after the
+  levers land. The gated-stretch-goal recommendation for 200@4HPU stands as recorded.
+- **RA-002 = Q21**: the 1Cat block_fp8_dequant core is compiled + gated into our variant library
+  (TPC gate PASS); the torch-op shim is blocked by the v0.26.0 registrar collision (order-
+  independent, both venvs, gdb tooling-limited — EXP-Q21). The five sharpenings are accepted;
+  D4 (the micro-bench gate) is pending the shim fix or a stack upgrade.
+- **RA-004 cross-reference correction**: our EXP-Q11 refuted k=2 under the EAGER draft with the
+  levers (-11% bs=1 / -29% @16) — consistent with this proposal's graphed-chain premise; the Q11
+  dependency now points at RA-002/RA-004.
+- **D1/D2/D6 profiling window**: queued as the next measurement action (the doc's numbers re-anchor
+  on our exact tree); RA-001 and RA-006-B/C follow in the same boot family per the instructions.
 
 ### GaudiGrimoire consultation log (2026-11-07)
 
