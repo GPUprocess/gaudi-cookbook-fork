@@ -636,6 +636,17 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   os/re/time/torch only). Remaining Q17(a) work: copy the module into our package
   + write the config patch (re-anchor to our flatten_tp_across_dp_and_pcp layout)
   + wire load_fused at the loader point + GLM_MOE_TP=2 boot.
+  TARGET MAP (our tree, verified): (1) vllm/model_executor/layers/fused_moe/
+  config.py - the EP branch is at ~1231-1253 (assert use_ep at 1232; insert the
+  group-layout check after it, before ep_size = tp_size; the anchor drifted from
+  the mxfp4 patch - our make() has flatten_tp_across_dp_and_pcp between);
+  (2) vllm/.../fused_moe/routed_experts.py - the per-weight loader at ~585 has a
+  gpt_oss_mxfp4 branch; our FP8 path takes the GENERIC branch - wire load_fused
+  as a glm_fp8_layout branch there (the module handles [E, d1, d2] + the w13/w2
+  dim discrimination); (3) the router mapping (select_experts_from_routed in
+  vllm_gaudi/ops/hpu_fused_moe.py ~485/576) - map_ids no-ops without a placement
+  file, wire it for the later static-placement step. The module copies into our
+  package self-contained.
 - **Q18 router fast path + early draft + device-side rejection** — `VERIFIED` (all three
   levers: bs=1 38.1 median (neutral), aggregate @16 **183-185 t/s (+46% over the eager
   draft, -13% vs non-MTP)**, acceptance 1.80 held, BYTE-IDENTICAL outputs, suite
