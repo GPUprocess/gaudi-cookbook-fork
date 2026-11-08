@@ -48,3 +48,20 @@ No verified performance figures have been entered yet.
 Only update the verified figures after all applicable requirements in docs/BENCHMARK_POLICY.md have passed.
 
 Preserve prior baseline entries in Git history and document any replacement baseline with a new experiment report and rationale.
+
+
+## Physics feasibility of the objectives (EXP-PHYS, 2026-11-08)
+
+The stock fused-MoE op reads EVERY local expert's weights at every step:
+38.1 GB/card/step (304 GB total, FP8) -> a 15.5 ms/step weight-read floor,
+batch-independent. Physics-max (floor only, acceptance 1.85): ~1,900 t/s
+aggregate @bs=16; ~119 t/s single-stream.
+
+- **800 t/s aggregate @16: feasible** - 10.5x step-inefficiency headroom
+  (162 ms measured vs 15.5 ms floor); the Q21 kernel track + batch
+  efficiency attack it.
+- **200 t/s single-stream: IMPOSSIBLE with the stock op** - it needs a
+  9.3 ms step, below the floor. Requires reading fewer expert bytes:
+  the Q21 fused routed-expert kernel (16 of 288 experts -> ~0.9 ms floor)
+  is the prerequisite; it also unlocks the aggregate headroom.
+  Both objectives converge on the Q21 track.

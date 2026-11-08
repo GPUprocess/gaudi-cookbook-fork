@@ -67,11 +67,11 @@ independent of row count because bucketing pads to fixed shapes).
 `mixture_of_experts` op consumes *all* local experts' weights per call (36/rank at TP8+EP8; the
 Q16 gather experiment was designed and measured against exactly this premise, and the op's signature
 takes the full per-expert weight lists [GG: habana_eager/ops/mixture_of_experts.cpp, tier B]).
-At bs=1 the step's tokens route to 8–72 of 288 experts → 1.0–3.0 experts actually touched per rank
-(Poisson expectation 36 × R/288, R = total routes: 8 at k=0, 24 at k=1, 72 at k=4). The op therefore
-streams **~6.6×–13× more expert bytes than the routing needs** at bs=1 (41.3 GB vs 6.3 GB per step
-per card at k=1; 40.0 vs 3.0 at k=0; table below). This is the dominant device-side waste, and it is
-why bs=1 sits at 30–39 tok/s while the hardware can stream 1.9–2.2 TB/s of GEMV weights.
+At bs=1 the step's tokens route to 8–40 main-MoE experts plus a small MTP-module footprint → the
+routed set is 3.2 GB (k=0) to 15.9 GB (k=4) per card at TP4. The stock op therefore streams
+**~5.4×–12.5× more expert bytes than the routing needs** at bs=1 (41.3 vs 7.7 GB per step per card
+at k=4, TP8; 81.4 vs 15.9 at TP4). This is the dominant device-side waste, and it is why bs=1 sits
+at 30–39 tok/s while the hardware can stream 1.9–2.2 TB/s of GEMV weights.
 
 **Gaudi 2 weight-streaming capability (cited, not measured on this project):**
 - Spec 2.45 TB/s aggregate HBM [GG: whitepaper, tier B]; compiler cost model 1,945 GB/s
@@ -86,10 +86,14 @@ why bs=1 sits at 30–39 tok/s while the hardware can stream 1.9–2.2 TB/s of G
 
 ### Target physics (theoretical ceilings)
 
-Bytes per step per card (DERIVED; model = expert 25.17 MB incl. scales; TP8: MoE 38.2 GB,
-attn+dense 1.9 GB, lm_head 0.16 GB, shared_head 1.27 GB under MTP; TP4: MoE 76.3 GB, attn+dense 3.7 GB,
-lm_head 0.32 GB). "Routed" = kernel reads only the experts actually hit by the step's routing table
-(expected distinct local experts = L × (1 − (1−1/288)^R), R = total routes).
+Bytes per step per card (DERIVED; expert 25.17 MB incl. scales; per-card non-MoE: TP8 2.1 GB,
+TP4 4.2 GB, incl. shared_head; **draft passes run through the MTP module (~0.3–0.5 GB/pass
+aggregate — 1 layer + shared expert + shared head, NOT the 42-layer MoE stack**; the checkpoint
+contains exactly 42 MoE layers, D9 verifies the composition). "Routed" = kernel reads only the
+experts actually hit by the step's routing table (reads = routes × expert size; a verification
+forward with R rows issues R×8 routes through the main MoE, read once per weight regardless of
+rows). Rev-1 note: the previous revision charged the k draft passes with full-stack MoE reads
+(72 main-MoE routes/step at k=4); corrected here.
 
 bs=1 ceilings (tok/s = tokens-per-step ÷ (bytes ÷ BW); pure HBM streaming, **excludes** host/AR
 overhead — so real numbers will be below these):
@@ -99,23 +103,33 @@ overhead — so real numbers will be below these):
 | TP8+EP8 | stock (all 36) | k=0 | 40.0 | 42 | 49 | 54 | 61 |
 | TP8+EP8 | stock | k=1 (1.88 tok) | 41.3 | 77 | 89 | 98 | 111 |
 | TP8+EP8 | stock | k=4 (3.33 tok) | 41.3 | 137 | 157 | 173 | **197** |
-| TP8+EP8 | routed | k=0 (8 routes) | 3.0 | 559 | 642 | 708 | 808 |
-| TP8+EP8 | routed | k=1 (24 routes) | 6.3 | 506 | 580 | 640 | 731 |
-| TP8+EP8 | routed | k=4 (72 routes) | 11.7 | 483 | 554 | 612 | 698 |
+| TP8+EP8 | routed | k=0 (8 routes) | 3.2 | 533 | 612 | 675 | 770 |
+| TP8+EP8 | routed | k=1 (16 routes + 1 draft pass) | 4.3 | 740 | 845 | 929 | 1,058 |
+| TP8+EP8 | routed | k=4 (40 routes + 4 draft passes) | 7.7 | 733 | 837 | 917 | 1,042 |
 | TP4+EP4 | stock (all 72) | k=0 | 80.1 | 21 | 24 | 27 | 31 |
 | TP4+EP4 | stock | k=1 | 81.4 | 39 | 45 | 50 | 57 |
 | TP4+EP4 | stock | k=4 | 81.4 | 69 | 80 | 88 | 100 |
-| TP4+EP4 | routed | k=0 | 6.1 | 280 | 321 | 354 | 404 |
-| TP4+EP4 | routed | k=1 | 11.3 | 281 | 322 | 356 | 406 |
-| TP4+EP4 | routed | k=4 | 22.1 | 255 | 293 | 323 | 369 |
+| TP4+EP4 | routed | k=0 | 6.4 | 267 | 306 | 338 | 386 |
+| TP4+EP4 | routed | k=1 | 8.7 | 365 | 415 | 455 | 516 |
+| TP4+EP4 | routed | k=4 | 15.9 | 356 | 405 | 444 | 504 |
 
-Aggregate @16 active sequences (32 verify + 16 draft rows = 48 tokens × 8 routes = 384 routes →
-**all** local experts hit; routing-aware buys nothing here; 28.8 tokens/step at k=1):
+**Active-weights roofline check (owner arithmetic, 2026-11-07):** 18–28 GB of active weights per
+token (owner's 18 GB assumes 1 byte/param; the BF16 attention and per-token lm_head bring it to
+~28) over 9.6 TB/s aggregate (4 × 2.45) → **340–530 t/s at zero host, 100% of spec. The 200 t/s
+target is inside the 4-HPU roofline.** What excludes it today is not HBM capacity: it is (a) the
+stock op reading all 82 GB/card per step (measured 33.3 t/s matches the all-weights model to
+<1%) and (b) the 12–26 ms host floor. RA-002 removes (a); RA-001 attacks (b).
 
-| Layout | GB/step | @1,696 | @1,945 | @2,147 | @2,450 |
-|---|---:|---:|---:|---:|---:|
-| TP8+EP8 | 41.3 | 1,182 | 1,356 | 1,497 | 1,708 |
-| TP4+EP4 | 81.4 | 600 | 689 | 760 | 867 |
+Aggregate @16 active sequences (verify rows: 32 at k=1 / 80 at k=4 → 256–640 routes → 69–89% of
+local experts hit; the table shows conservative all-experts bytes — a routing-aware kernel would
+save up to ~40% there at k=1, ~11% at k=4; draft passes ~3 GB/card):
+
+| Layout | MTP | GB/step | tok/step | @1,696 | @1,945 | @2,147 | @2,450 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| TP8+EP8 | k=1 | 41.9 | 28.8 | 1,166 | 1,342 | 1,479 | 1,682 |
+| TP8+EP8 | k=4 | 41.9 | 53.3 | 2,158 | 2,483 | 2,723 | 3,105 |
+| TP4+EP4 | k=1 | 83.8 | 28.8 | 583 | 671 | 740 | 840 |
+| TP4+EP4 | k=4 | 83.8 | 53.3 | 1,079 | 1,247 | 1,377 | 1,575 |
 
 **Consequences (DERIVED; these are the load-bearing conclusions of this document):**
 
@@ -126,30 +140,34 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
 1. **200 tok/s single-stream on 8 HPUs is physically impossible on the stock MoE op** — even MTP-4 at
    100% of spec bandwidth caps at 197 tok/s (table row 3, host excluded, so real is lower). This
    confirms and sharpens the DECISIONS.md rejection with a tighter ceiling.
-2. **200 tok/s on 8 HPUs needs the routing-aware kernel AND deep MTP AND a host cut — all three.**
-   The BW-only roofline is generous (24–27% of spec at k=0/1), but the measured host floor dominates:
-   at the current H, k=1 caps at ~70–129 tok/s and k=4 at ~113–191 tok/s. Reaching 200 requires
-   k=4 (RA-004) + host ≤ ~10 ms (RA-001 must cut the ~26 ms MTP floor ~60%) + kernel effective
-   ≥ ~72% of spec BW (11.7 GB ÷ 6.65 ms device budget = 1.76 TB/s). k=1 alone would need host ≤ 6.5 ms
-   *and* ~88% of spec — a harsher joint requirement. The three levers are not substitutes for each other.
-3. **200 tok/s single-stream on 4 HPUs is a stretch target, not a base case.** BW-only it needs
-   49–54% of spec (k=1/4); host-inclusive it is reachable only in the joint best case: k=4 + host
-   ≤ ~10 ms + kernel ≥ ~89% of spec (22.1 GB ÷ 6.3 ms). The realistic 4-HPU bs=1 after the full lever
-   stack is **~140–250 tok/s (expected ~180)**; stock-op 4-HPU ceiling is 31–100 even at spec BW.
-4. **800 tok/s @16 on 4 HPUs is impossible at k=1 and comfortably feasible at k=4.** k=1: 28.8 tok/step
-   over 81.4 GB needs ≥ 92% of spec BW *with zero host* (table) — above the best measured GEMV
-   streaming (90%, B10). k=4: 53.3 tok/step over ~80 GB in a 66.8 ms step budget needs only
-   **60–80% of spec BW** at host 12–26 ms — inside demonstrated capability (79–90% measured at M=1;
-   the 48+ row shapes remain streaming-dominated). So the 4-HPU aggregate target **requires RA-004
-   (k=4) and RA-003 (16 active)**; it does not require the routing kernel (all experts are hit at
-   16 active). **An owner decision is required (RA-005).**
+2. **200 tok/s on 8 HPUs is a base-case target — it needs all three levers at mid levels, not
+   any one of them at the extreme.** The BW-only roofline is very generous (k=1: 4.3 GB ÷ 9.4 ms
+   budget = 458 GB/s = 19% of spec; k=4: 7.7 ÷ 16.65 = 462 = 19%). Host-inclusive: k=4 needs
+   host ≤ 13 ms + 86% of spec, or host ≤ 10 ms + 47% of spec — the RA-001 mid-estimate (host
+   10–16 ms) plus a kernel at 47–86% of spec (B10 measured 79–90%) is inside the feasible region.
+   k=1 alone is the harsher joint requirement (host ≤ 6–7.7 ms *and* 52–100% of spec). The levers
+   are not substitutes: stock op → 197 max; stock + RA-001 → ~130 max; kernel + current host →
+   ~120–220 depending on k.
+3. **200 tok/s single-stream on 4 HPUs is inside the roofline (267–504 t/s BW-only, table) but
+   reachable only in the joint best case of the two big levers:** k=4 (RA-004) + host ≤ ~9–10 ms
+   (a 62–65% cut of the measured 26 ms — beyond RA-001's 30–60% estimate) + kernel ≥ 89–100% of
+   spec (15.9 GB ÷ 6.3–7.65 ms device budget). Estimated probability ~15–25%: treat as a **gated
+   stretch goal**, not a base case (gate: declare only if D1 + RA-001 show bs=1 host ≤ 12 ms).
+   Base-case 4-HPU bs=1 after the full lever stack: **130–250 tok/s** (k=4, H 7–16 ms); stock-op
+   ceiling 31–100 even at spec BW.
+4. **800 tok/s @16 on 4 HPUs is impossible at k=1 and feasible at k=4.** k=1: 28.8 tok/step over
+   83.8 GB needs ≥ 92% of spec BW *with zero host* — above the best measured GEMV streaming (90%,
+   B10). k=4: 53.3 tok/step over 83.8 GB in a 66.8 ms budget → **800–885 t/s at current host and
+   85–100% of spec** (53.3 ÷ (40.3+26) ms @ 2.08 TB/s = 804); comfortable once RA-001 lands.
+   The 4-HPU aggregate target **requires RA-003 (16 active) and RA-004 (k=4)**; the routing kernel
+   is optional there (saves 11–40% at 16 active). **An owner decision is required (RA-005).**
 5. **The aggregate target at high batch is host-bound, not bandwidth-bound, today — and the
    multi-row host cost is larger than the bs=1 host cost.** Measured: 8 active streams run a
    ~82 ms step (183 tok/s ÷ 15 tok/step) against ~21 ms of device byte-time — an unexplained ~61 ms
    host-side term that is ~2.5× the bs=1 host floor. D1 must decompose it (sampler/scheduler/logprob
    work scales with rows; the 322×74 µs launch model was derived at bs=1). RA-003 (16 active) is
    expected to move the aggregate to ~330–400 tok/s on today's host; closing the gap to 800 @ 8 HPUs
-   (BW-feasible at 66–92% of spec) additionally requires cutting that multi-row host term.
+   (BW-feasible at 67–86% of spec with H 12–16 ms) additionally requires cutting that multi-row host term.
 
 ---
 
@@ -157,11 +175,11 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
 
 | Rank | ID | Title | One-line mechanism | Expected impact (theoretical) | Effort | Status |
 |---|---|---|---|---|---|---|
-| 1 | **RA-002** | Routing-aware fused block-FP8 dequant GEMV MoE kernel (Q21 sharpened) | TPC kernel reads only the routed experts, dequantizes in the load pipe, row-parallel across all 24 TPCs | 6.6× expert-byte cut at bs=1 (k=1); the only path to the 200 tok/s roofline on 8 HPUs and to any competitive bs=1 on 4 HPUs | High (weeks) | PROPOSED |
-| 2 | **RA-001** | Decode tensor cache under MTP (port the per-call cache policy) | Re-enable the HPU-graph tensor cache for decode shapes; removes per-replay re-allocation host work from ~322 replays/step | host floor −30–60% (the binding constraint on 200 @ 8 HPU k=4 and on 800 @16); bs=1 +10–40%, aggregate @16 +15–50% | Low (days) | PROPOSED |
+| 1 | **RA-002** | Routing-aware fused block-FP8 dequant GEMV MoE kernel (Q21 sharpened) | TPC kernel reads only the routed experts, dequantizes in the load pipe, row-parallel across all 24 TPCs | 5.4–12.5× expert-byte cut at bs=1; the only path into the 200 tok/s roofline on 8 HPUs and the only competitive bs=1 path on 4 HPUs | High (weeks) | PROPOSED |
+| 2 | **RA-001** | Decode tensor cache under MTP (port the per-call cache policy) | Re-enable the HPU-graph tensor cache for decode shapes; removes per-replay re-allocation host work from ~322 replays/step | host floor −30–60% (binding constraint on 200 at both 8 and 4 HPUs and on 800@16); bs=1 +10–40%, aggregate @16 +15–50% | Low (days) | PROPOSED |
 | 3 | **RA-003** | max-num-seqs 16 (32 verify rows) aggregate unlock | Host cost is per-step not per-row; double active rows under the same launch budget | aggregate @16 183 → 330–400 (expected); required for any 800@16 on 4 HPUs | Low–Medium (days) | PROPOSED |
-| 4 | **RA-004** | MTP k=4 as one graphed draft chain (no early-draft) | The 4-step draft chain becomes a single HPU graph replay; deep speculation on the post-RA-002 device floor | bs=1 3.33 tok/step: 113–191 on 8 HPUs at current host, ~200+ with RA-001; **required for 800@16 on 4 HPUs** (k=1 is BW-infeasible there) | Medium–High | PROPOSED |
-| 5 | **RA-005** | 4-HPU target physics audit and deployment plan | Decision document: which targets are reachable on 4 cards and what each requires | no direct perf; forces the 800@16-TP4 scoping decision | None (doc) | PROPOSED |
+| 4 | **RA-004** | MTP k=4 as one graphed draft chain (no early-draft) | The 4-step draft chain becomes a single HPU graph replay; deep speculation on the post-RA-002 device floor (draft passes cost ~0.3–0.5 GB each, not full-stack MoE) | bs=1 3.33 tok/step: 106–207 on 8 HPUs at current host, 155–300 with RA-001; **required for 800@16 on 4 HPUs and for the 200 stretch goal** | Medium–High | PROPOSED |
+| 5 | **RA-005** | 4-HPU target physics audit and deployment plan | Decision document: which targets are reachable on 4 cards and what each requires | no direct perf; forces the 4-HPU 200-t/s stretch-goal gate and the 800@16 k=4 config decision | None (doc) | PROPOSED |
 
 **Suggested execution order** (dependencies, not ranks):
 1. Diagnostic D1 (8-rank profile of the *current* FP8 step) — sizes RA-001 and RA-002 host/device
@@ -333,18 +351,18 @@ fix for the Q21 step-2 blocker (§6), and the MTP-depth interaction table (§5).
 
 #### 2. Current limitation
 
-- MEASURED: bs=1 38.3 tok/s (26.1 ms/step); the step-anatomy study's device span shows the expert
-  kernels as the largest device term (19.5 ms slowest rank, 9.6 ms mean — EP imbalance from the
-  all-experts read + balls-in-bins).
-- DERIVED (byte model, §Executive summary): the stock op streams 40–41.3 GB/step/card at bs=1 (TP8)
-  while the routing table needs 3.0 GB (k=0) to 11.7 GB (k=4) — a **6.6× excess at k=1, 13× at k=0**
-  (41.3 vs 6.3 GB). The Q16 experiment (gather 16 of 36 experts) confirms the stock path reads all
-  local experts and shows *why* naive gather loses: materializing a dequantized copy (index_select +
-  fp32 down-GEMM) costs more than the savings.
+- MEASURED: bs=1 38.3 tok/s (26.1 ms/token; step ≈ 48.4 ms at 1.88 tok/step); the step-anatomy
+  study's device span shows the expert kernels as the largest device term (19.5 ms slowest rank,
+  9.6 ms mean — EP imbalance from the all-experts read + balls-in-bins).
+- DERIVED (byte model, §Executive summary): the stock op streams 40–41.3 GB/step/card at bs=1
+  (TP8) while the routing table needs 3.2 GB (k=0) to 15.9 GB (k=4) per card — a **12.5× excess at
+  k=0, 9.6× at k=1, 5.4× at k=4**. The Q16 experiment (gather 16 of 36 experts) confirms the stock
+  path reads all local experts and shows *why* naive gather loses: materializing a dequantized
+  copy (index_select + fp32 down-GEMM) costs more than the savings.
 - MEASURED (cited): a plain M=1 GEMV streams 16.8 MB of weights at 1.94 TB/s (79% of spec) [GG:
-  gaudi2-hbm-engine-bandwidth B10, tier D] — the hardware can serve the routed-only byte budget in
-  ~1.5–2 ms/step at bs=1; the stock path cannot get there at any bandwidth because it moves 13× the
-  bytes.
+  gaudi2-hbm-engine-bandwidth B10, tier D) — the hardware can serve the routed-only byte budget in
+  ~1.5–4 ms/step at bs=1; the stock path cannot get there at any bandwidth because it moves
+  5.4–12.5× the bytes.
 - The cookbook's own MXFP4 MoE kernels (v7/v8, `kernels/mxfp4-moe/`) prove the decode-sized
   routed-expert TPC pattern on this model family: 66 tok/s vs ~37 stock (moe-decode-step.md).
 
@@ -415,33 +433,37 @@ flowchart LR
 #### 5. Expected performance impact (all theoretical until measured)
 
 Per-expert time at card stream (DERIVED): 25.17 MB → 11.7 µs @2.147 TB/s, 14.8 µs @1.696 TB/s.
-Total step bytes from the Executive summary table (MoE routed + non-MoE 1.9/3.7 GB); step =
+Total step bytes from the Executive summary table (verify-pass routed reads + non-MoE + MTP-module
+draft passes; draft passes are ~0.3–0.5 GB aggregate each — D9 verifies the composition). Step =
 bytes ÷ BW + host floor H (H = 12–26 ms current tree, 7–16 ms with RA-001; tok/step 1.88 at k=1,
 3.33 at k=4):
 
-| Config | bs=1 (routes, distinct/rank) | Total GB/step/card | MoE device time | Step (H 12–26) | tok/s | Step (H 7–16, RA-001) | tok/s |
+| Config | bs=1 (verify rows/routes) | Total GB/step/card | MoE device time | Step (H 12–26) | tok/s | Step (H 7–16, RA-001) | tok/s |
 |---|---|---:|---:|---:|---:|---:|---:|
-| TP8+EP8, k=1 | 24, ~3.0 | 6.3 | 1.5–1.9 ms | 14.9–29.7 ms | 63–126 | 9.9–19.7 ms | 95–190 |
-| TP8+EP8, k=4 | 72, ~9.0 | 11.7 | 4.4–5.6 ms | 17.5–32.9 ms | 101–191 | 12.5–22.9 ms | 145–267 |
-| TP4+EP4, k=1 | 24, ~6.0 | 11.3 | 3.0–3.8 ms | 17.3–32.7 ms | 57–109 | 12.3–22.7 ms | 83–153 |
-| TP4+EP4, k=4 | 72, ~18 | 22.1 | 8.8–11.2 ms | 22.3–39.0 ms | 85–149 | 17.3–29.0 ms | 115–193 |
+| TP8+EP8, k=1 | 2 rows / 16 | 4.3 | 1.1–1.5 ms (2.1 GB routed) | 13.8–28.5 ms | 66–136 | 8.8–18.5 ms | 102–214 |
+| TP8+EP8, k=4 | 5 rows / 40 + 4 draft passes | 7.7 | 2.1–3.1 ms (5.3 GB routed) | 15.1–30.5 ms | 109–220 | 10.1–20.5 ms | 162–329 |
+| TP4+EP4, k=1 | 2 rows / 16 | 8.7 | 2.2–3.1 ms (4.2 GB routed) | 15.6–31.1 ms | 60–120 | 10.6–21.1 ms | 89–177 |
+| TP4+EP4, k=4 | 5 rows / 40 + 4 draft passes | 15.9 | 4.1–6.0 ms (10.6 GB routed) | 18.5–35.4 ms | 94–180 | 13.5–25.4 ms | 131–247 |
 
-(Stock-op rows for contrast, same method: TP8 41.3 GB → 37–60 tok/s (k=1, H 12–26) — the measured
-38.3 sits at the bottom of that range, consistent with the host estimate; TP4 81.4 GB → 25–38 —
-the measured 33.3 sits mid-range.)
+(Stock-op rows, same method, for contrast: TP8 42.2 GB incl. MTP module @ 2.0 TB/s + 27 ms host =
+48.1 ms → **39.1 t/s vs measured 38.3–39.1**; TP4 83.3 GB + 15 ms = 56.7 ms → **33.2 t/s vs
+measured 33.26** — the all-weights-read model reproduces both measurements to <1%.)
 
-- **Target metric:** bs=1 decode 38.3 → **95–190 tok/s (8 HPUs, k=1, with RA-001)** and **145–267
-  (k=4)**; pure-BW ceilings 506–731 (k=1) and 483–698 (k=4). Aggregate @16 is unchanged by the
-  kernel (all experts already touched at 16 active) — that is RA-001/RA-003's job.
-- **Best case:** bs=1 ≥ 200 tok/s on 8 HPUs — requires the joint condition of Consequence 2:
-  k=4 + RA-001 host ≤ ~10 ms + kernel ≥ ~1.76 TB/s effective (72% of spec).
-- **Conservative:** 95–130 tok/s (per-route overhead at v7 level + RA-001 partial).
+- **Target metric:** bs=1 decode 38.3 → **102–214 tok/s (8 HPUs, k=1, with RA-001)** and
+  **162–329 (k=4)**; pure-BW ceilings 740–1,058 (k=1) and 733–1,042 (k=4). Aggregate @16 is
+  dominated by the all-experts verify read (all 72 local experts hit at 16 active) — the kernel
+  saves 11–40% there; the aggregate is RA-001/RA-003/RA-004's job.
+- **200 t/s @ 8 HPUs:** inside the feasible region — k=4 + host ≤ 10–13 ms (RA-001 mid-estimate)
+  + kernel 47–86% of spec; k=1 + host ≤ 6–7.7 ms + 52–100%.
+- **200 t/s @ 4 HPUs (stretch):** k=4 + host ≤ ~9–10 ms (62–65% cut — beyond RA-001's estimate) +
+  89–100% of spec. Gated stretch goal (RA-005); base case 131–247.
+- **Conservative:** 102–177 tok/s (per-route overhead at v7 level + RA-001 partial).
 - **Worst case:** +20–40% (kernel only reaches ~600–800 GB/s effective and host dominates) — still
-  the largest single lever, and the only path to any competitive 4-HPU decode number (115–193 with
-  k=4 + RA-001).
+  the largest single lever, and the only path to any competitive 4-HPU decode number.
 - Uncertainty drivers: per-route fixed cost (staging the input row, scale loads — v7 paid 47 µs/route
   at half the bytes); EP straggler (the slowest rank carries ~2× the mean routes at bs=1 — the
-  Q13 histogram will size this); TPC-vs-MME stream share at small per-TPC footprints (1.05 MB/TPC).
+  Q13 histogram will size this); TPC-vs-MME stream share at small per-TPC footprints (1.05 MB/TPC);
+  MTP-module draft-pass composition (D9, ±50% on 1–2 GB/step at k=4).
 
 #### 6. Implementation complexity — High
 
@@ -517,8 +539,9 @@ lacks: (i) the byte/ceiling model that states *what the kernel must achieve* (24
 distribution as an explicit requirement (the v7/v8 per-route cost of 47/25/17.7 µs is the measured
 barrier, and it comes from not using the whole card per expert); (iii) the in-kernel intermediate as
 the Q16-lesson formalization; (iv) the single-op-library integration fix for the Q21 step-2 blocker;
-(v) the MTP-depth byte interaction (k=4 reads 72 routes → 8.0 experts/rank, still 4.5× less than
-all-36). No prior experiment in this project attempted routed-only FP8 weight streaming.
+(v) the MTP-depth byte interaction (k=4 verify reads 40 main-MoE routes → ~5 experts/rank, 2.5×
+the k=1 set, plus 4 MTP-module draft passes of ~0.3–0.5 GB each — draft passes do NOT traverse
+the 42-layer stack). No prior experiment in this project attempted routed-only FP8 weight streaming.
 
 ---
 
@@ -672,9 +695,13 @@ slower stack, tier D).
 - MEASURED (reference, tier D): MTP-4 attention-in-graph: accepted 3.33, aggregate 26.0 vs 20.2
   bypass, single-stream 20.9, parity 12/12; their 80-lane (16 seqs × 5 rows) concurrency is
   near-linear.
-- DERIVED: with RA-002's routing-aware kernel the verify step streams 11.7 GB/step (k=4, TP8) —
-  the device floor for k=4 is *lower* than for k=1's 6.3 GB + the draft's 4 eager forwards; the
-  bottleneck moves to "one cheap graphed chain," which this proposal provides.
+- DERIVED: with RA-002's routing-aware kernel the k=4 step streams 7.7 GB/step/card at TP8 (5.3 GB
+  verify routed reads + 4 MTP-module draft passes at ~0.3–0.5 GB each + 2.1 GB non-MoE; 15.9 at
+  TP4) — the four extra draft tokens cost only ~1.3–2.0 GB because the draft passes run through the
+  MTP module, not the 42-layer stack. On today's eager stack those 4 draft forwards each cost
+  ~1–2 ms of host+device; the graphed chain replaces them with one replay (~1 ms) plus those
+  bytes. The bottleneck for deep speculation moves from "device time per draft token" to "one
+  cheap graphed chain".
 
 #### 3. Proposed architecture
 
@@ -714,25 +741,26 @@ slower stack, tier D).
 
 #### 5. Expected performance impact (theoretical)
 
-Bytes/step from the Executive summary table (routed k=4: TP8 11.7 GB, TP4 22.1 GB; 16 active: all
-experts, 41.3/81.4 GB). Step = bytes ÷ BW + H + ~1 ms chain replay; H = 12–26 ms current, 7–16 with
-RA-001; tok/step = 3.33 bs=1, 53.3 at 16 active:
+Bytes/step from the Executive summary table (routed k=4: TP8 7.7 GB, TP4 15.9 GB — the 4 draft
+passes cost ~0.3–0.5 GB aggregate each through the MTP module, not full-stack MoE; 16 active:
+all-experts verify, 41.9/83.8 GB). Step = bytes ÷ BW + H + ~1 ms chain replay; H = 12–26 ms
+current, 7–16 with RA-001; tok/step = 3.33 bs=1, 53.3 at 16 active:
 
 | Config | tok/step | Step (H 12–26) | tok/s | Step (H 7–16, RA-001) | tok/s |
 |---|---:|---:|---:|---:|---:|
-| 8 HPU bs=1 (TP8, 11.7 GB) | 3.33 | 18.4–33.9 ms | 98–181 | 13.4–23.9 ms | 139–248 |
-| 8 HPU @16 active (RA-003, 41.3 GB) | 53.3 | BW-ceiling 20–26 ms → 2,040–2,660; realistic with the measured multi-row host term (~61 ms at 8 active, D1) 80–90 ms | 590–665 | 56–61 ms | 870–950 |
-| 4 HPU bs=1 (TP4, 22.1 GB) | 3.33 | 23.3–40.0 ms | 83–143 | 18.3–29.9 ms | 111–182 |
+| 8 HPU bs=1 (TP8, 7.7 GB) | 3.33 | 16.1–31.5 ms | 106–207 | 11.1–21.5 ms | 155–300 |
+| 8 HPU @16 active (RA-003, 41.9 GB) | 53.3 | BW-ceiling 34–43 ms → 1,240–1,560; realistic with the measured multi-row host term (~61 ms at 8 active, D1) 78–88 ms | 605–682 | 54–62 ms | 860–990 |
+| 4 HPU bs=1 (TP4, 15.9 GB) | 3.33 | 19.5–36.4 ms | 91–171 | 14.5–26.4 ms | 126–230 |
 
-- **Target:** bs=1 on 8 HPUs 38.3 → 98–181 tok/s with RA-002 at the current host, 139–248 with
+- **Target:** bs=1 on 8 HPUs 38.3 → 106–207 tok/s with RA-002 at the current host, 155–300 with
   RA-001. Standalone on the current stack (stock op, k=4): ~68 tok/s (same step as k=1, 3.33 vs 1.88
-  tok/step: 38.3 × 3.33/1.88). **Conservative:** 80–120 (chain-replay sync costs 10–15 ms,
+  tok/step: 38.3 × 3.33/1.88). **Conservative:** 90–150 (chain-replay sync costs 10–15 ms,
   acceptance 3.0). **Worst case:** 40–60 (chain capture fails to stay graphable → falls back to k=1;
   the investment survives as the k=2 capability, which is the Q11 minimum).
-- Note: Consequence 2 shows k=1 + RA-001 + RA-002 caps at ~126–190 on 8 HPUs — **k=4 is not optional
-  margin for the 200 target, it is required** (with host ≤ 10 ms + kernel ≥ 72% of spec it reaches
-  200–248). And it is the *only* path to 800@16 on 4 HPUs (Consequence 4: k=1 is BW-infeasible there
-  at any host level).
+- Note: k=1 + RA-001 + RA-002 reaches 102–214 on 8 HPUs — 200 is inside that range but only at
+  host ≤ 6–7.7 ms + 52–100% of spec (both near-extreme). **k=4 is the robust configuration**: at
+  host ≤ 10–13 ms it needs only 47–86% of spec. And k=4 is the *only* path to 800@16 on 4 HPUs
+  (Consequence 4: k=1 is BW-infeasible there at any host level).
 
 #### 6. Implementation complexity — Medium–High
 
@@ -822,16 +850,17 @@ KV pool 299,593 tokens (320 hybrid blocks; weights leave 11.1 GiB/card free).
 
 | Target | BW-only (H = 0) | Host-inclusive (H 12–26 ms) | Feasibility |
 |---|---|---|---|
-| 200 bs=1, stock op, k=1 | 81.4 GB ÷ 9.4 ms = 8.7 TB/s (354% of spec) | — | **Impossible** (measured 33.3) |
-| 200 bs=1, stock op, k=4 | 81.4 GB ÷ 16.65 ms = 4.9 TB/s (200%) | — | **Impossible** (BW-only ceiling 100; measured-class 68) |
-| 200 bs=1, routed k=1 (RA-002) | 11.3 GB ÷ 9.4 ms = 1.20 TB/s (**49%**) | step budget 9.4 ms < host floor 12 ms — device budget ≤ 0 | **Impossible at k=1**: the host floor alone exceeds the step budget |
-| 200 bs=1, routed k=4 (RA-002+RA-004) | 22.1 GB ÷ 16.65 ms = 1.33 TB/s (**54%**) | needs H ≤ ~7 ms (75% host cut) **and** ≥ 2.29 TB/s (93% of spec) simultaneously | **Stretch — plan as unreachable.** Realistic 4-HPU bs=1 after the full lever stack: 83–182 (RA-002/RA-004 tables) |
-| 800 @16, k=1 (RA-003) | 81.4 GB ÷ 36 ms = 2.26 TB/s (**92%**) — above the best measured GEMV streaming (90%, B10), with zero host | — | **Impossible at k=1** on 4 HPUs at any host level |
-| 800 @16, k=4 (RA-003+RA-004) | 80 GB ÷ 66.8 ms = 1.20 TB/s (49%) | 1.46–1.96 TB/s (**60–80% of spec**) at H 26→12 | **Feasible** — inside demonstrated capability (79–90% measured at M=1); routing kernel not needed (all experts hit at 16 active) |
-| 800 @16 on 8 HPUs (contrast), k=1 | 41.3 GB ÷ 36 ms = 1.15 TB/s (47%) | 1.61–3.55 TB/s depending on H; BW-feasible | BW-feasible; the binding constraint today is the measured multi-row host term (~61 ms at 8 active, unexplained — D1) |
+| 200 bs=1, stock op, k=1 | 83.3 GB ÷ 9.4 ms = 8.9 TB/s (362% of spec) | — | **Impossible** (measured 33.3 — reproduced by the all-weights model to <1%) |
+| 200 bs=1, stock op, k=4 | 83.3 GB ÷ 16.65 ms = 5.0 TB/s (204%) | — | **Impossible** (BW-only ceiling 100; measured-class 68) |
+| 200 bs=1, routed k=1 (RA-002) | 8.7 GB ÷ 9.4 ms = 0.93 TB/s (38%) | H ≤ 9.4 − 3.55 = 5.9 ms required — below the measured 12–26 ms floor | **Impossible at k=1** (host floor alone exceeds the step budget) |
+| 200 bs=1, routed k=4 (RA-002+RA-004) | 15.9 GB ÷ 16.65 ms = 0.96 TB/s (**39% of spec** — the roofline contains the target; owner arithmetic 18 GB/token → 533 t/s confirms) | feasible region: H ≤ 10.2 ms @ 2.45 TB/s, ≤ 8.7 @ 2.0, ≤ 7.3 @ 1.7 — i.e. **host ≤ ~9–10 ms (62–65% cut) and 89–100% of spec** | **Joint best case of both levers — gated stretch goal, est. 15–25% probability.** Base case 126–230 tok/s (RA-002/RA-004 tables, H 7–16) |
+| 800 @16, k=1 (RA-003) | 83.8 GB ÷ 36 ms = 2.33 TB/s (**95%**) — above the best measured GEMV streaming (90%, B10), with zero host | — | **Impossible at k=1** on 4 HPUs at any host level |
+| 800 @16, k=4 (RA-003+RA-004) | 83.8 GB ÷ 66.8 ms = 1.25 TB/s (51%) | 1.65–2.05 TB/s (**67–84% of spec**) at H 16→26 | **Feasible at current host** (800–885 t/s @ 85–100% of spec); routing kernel optional (saves 11–40%) |
+| 800 @16 on 8 HPUs (contrast), k=1 | 41.9 GB ÷ 36 ms = 1.16 TB/s (47%) | 1.75 TB/s (71%) @ H 12; 2.10 (86%) @ H 16; infeasible @ H 26 | BW-feasible for H ≤ 16 ms; today's binding constraint is the measured multi-row host term (~61 ms at 8 active, unexplained — D1) |
 
 Host/AR overheads (3.4 ms AR + host floor) apply to every row; the "BW-only" column is the best
-possible case. tok/step: k=1 = 28.8 (16 × 1.88), k=4 = 53.3 (16 × 3.33) at 16 active.
+possible case. tok/step: k=1 = 28.8 (16 × 1.88), k=4 = 53.3 (16 × 3.33) at 16 active. Stock-op
+bytes include the MTP module (draft passes read its own weights: +1.8 GB/card at TP4).
 
 #### 4. Deployment plan (if the owner confirms the targets)
 
@@ -847,17 +876,20 @@ Q14 caveat).
 
 **Recommendation to the owner (the decision RA-005 exists to force):**
 
-- **200 tok/s single-stream on 4 HPUs: plan as unreachable; re-scope it.** It requires host ≤ ~7 ms
-  (a 75% cut of the current ~26 ms MTP floor) **and** ≥ 93% of spec HBM bandwidth simultaneously —
-  the extreme of both at once. Realistic 4-HPU bs=1 after the full lever stack (RA-001+RA-002+RA-004):
-  **83–182 tok/s (expected ~140)**. Options: (a) re-scope the 200 target to 8 HPUs only — it is
-  reachable there (k=4 + host ≤ 10 ms + 72% of spec, Consequence 2); (b) keep 200 @ 4 HPUs as a
-  stretch goal conditioned on RA-001 beating its best-case estimate by ≥ 2×. **Research
-  recommendation: (a)** — the 4-HPU latency target becomes "≥ 150 tok/s bs=1 (2× today's 33.3)".
-- **800 tok/s @16 on 4 HPUs: confirm as a k=4 target.** Impossible at k=1 (needs 92% of spec with
-  zero host); **feasible at k=4** (60–80% of spec at realistic host, inside the 79–90% measured
-  range) — but it *requires* RA-003 (16 active) and RA-004 (k=4) to land; the routing kernel is not
-  in its dependency chain.
+- **200 tok/s single-stream on 4 HPUs: keep as a gated stretch goal — the roofline contains it, but
+  only in the joint best case of the two big levers.** Inside the roofline: BW-only 267–504 t/s
+  (the owner's 18 GB/token → 533 t/s arithmetic is confirmed by the corrected byte model; the
+  measured 33.3 t/s sits at the all-weights-read floor, reproduced by the model to <1%). Reaching
+  200 requires the routing kernel (83.3 → 15.9 GB/card/step) + host ≤ ~9–10 ms (a 62–65% cut of the
+  measured 26 ms — beyond RA-001's 30–60% estimate) + 89–100% of spec BW. Estimated probability
+  ~15–25%. **Gate:** declare 200@4HPU only if (i) D1 + RA-001 show bs=1 host ≤ 12 ms, and
+  (ii) RA-002's micro-bench shows ≥ 2.0 TB/s at 25.17 MB experts. **Base case** 4-HPU bs=1 after
+  the full lever stack: **126–230 tok/s (expected ~170)** — 4× today's 33.3. On 8 HPUs, 200 is a
+  **base-case target** (k=4 + host ≤ 10–13 ms + 47–86% of spec — RA-001's mid-estimate suffices).
+- **800 tok/s @16 on 4 HPUs: confirm as a k=4 target.** Impossible at k=1 (needs 95% of spec with
+  zero host); **feasible at k=4** (67–84% of spec at current host — inside the 79–90% measured
+  range, 800–885 t/s) — but it *requires* RA-003 (16 active) and RA-004 (k=4) to land; the routing
+  kernel is not in its dependency chain (optional, saves 11–40%).
 - **800 tok/s @16 on 8 HPUs: confirm as the development target.** BW-feasible at k=1 (47% of spec
   BW-only); the binding constraint is the measured multi-row host term (~61 ms at 8 active,
   2.5× the bs=1 host floor — unexplained, D1). RA-001's A/B must measure it at 16 rows, not just bs=1.
@@ -893,6 +925,7 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 | D6 | Why 162 all-reduces per step (45 layers × 2 = 90 expected; mHC mixing is local — verified in `mhc.py` source) | 3.4 ms/step; if ~72 of them are avoidable by an op-class change, that is free at bs=1 | 8-rank trace, AR count per op class (moe-decode-step.md §2 method) | with D1 |
 | D7 | `PT_HPU_LAZY_ACC_PAR_MODE` 0 vs 1 with view-based custom ops | RA-002 build constraint (Q21 playbook says 0; serve script pins 1) | Two boots, custom op parity check | included |
 | D8 | The 128 vs 640 tokens/hybrid-block KV semantics (F003 says 128, EXP-Q10 says 640) | RA-003's KV sizing and every future pool math | Read the auto-sizing log at one boot; record the formula | 5 min |
+| D9 | MTP-module weight composition and per-draft-pass bytes: which tensors does one draft forward read (own attention? the shared expert? `shared_head`? the main `lm_head`?) | Sizes the k=4 byte budget (this doc assumes 0.3–0.5 GB/pass aggregate, ±50%); the checkpoint contains exactly 42 MoE layers, so the draft MoE is shared or absent — verify, don't assume | Checkpoint weight-name inspection + one draft-pass profiler window (fold into D2) | included |
 
 ## Implementation agent instructions (next actions, in order)
 
@@ -919,6 +952,7 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 | Date | Rev | Author | Findings / changes |
 |---|---|---|---|
 | 2026-11-07 | 1 | independent research architect | Initial audit of the fork (TASKS/EXPERIMENTS/CURRENT_STATE/DECISIONS/ACCURACY, all EXP-* reports, `docs/results/moe-decode-step.md`, RESEARCH-001 + addenda 1–11, port source, live process and deployed tree, checkpoint config). GaudiGrimoire consultation (log below). Independent byte model + ceilings (Executive summary). Five proposals: RA-001…RA-005. Seven rejections (RJ-01…RJ-07). Eight research gaps (D1…D8). |
+| 2026-11-07 | 2 | independent research architect (owner correction) | **Draft-pass byte model corrected.** Rev 1 charged the k MTP draft passes with full 42-layer MoE reads (72 main-MoE routes/step at k=4 → 22.1 GB/card at TP4). The draft chain runs through the MTP module (~0.3–0.5 GB/pass aggregate — the checkpoint has exactly 42 MoE layers; composition to verify per D9). Corrected k=4 bytes: TP8 7.7 GB, TP4 15.9 GB. Consequences: (i) the owner's active-weights roofline check (18–28 GB/token → 340–530 t/s at 4 HPUs) is confirmed — 200 t/s is **inside** the 4-HPU roofline; (ii) 200 @ 4 HPU reclassified from "plan as unreachable" to **gated stretch goal, est. 15–25% probability** (host ≤ ~9–10 ms + 89–100% of spec + routing kernel); base case 126–230; (iii) 200 @ 8 HPU confirmed as base-case target (host ≤ 10–13 ms + 47–86%); (iv) the stock-op model now reproduces the measured 39.1 (TP8) and 33.2 (TP4) t/s to <1%, validating the all-weights-read premise; (v) aggregate tables updated (16 active hits 69–89% of experts at k=1/4, routing-aware saves 11–40% there). No proposal ranking or mechanism changed; RA-002/RA-004/RA-005 numbers updated throughout. |
 
 ### GaudiGrimoire consultation log (2026-11-07)
 

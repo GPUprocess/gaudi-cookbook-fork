@@ -9,8 +9,8 @@ Primary objectives vs the best VERIFIED, accuracy-gated measurements:
 
 | Objective | Best verified | Status |
 |---|---|---|
-| 200 t/s single-stream decode | **38-39 t/s** (MTP k=1 + the adopted levers, bit-identical) | 5.1x gap; all cheap levers taken; the remaining host-sync time needs the deeper Q18/Q05 work |
-| 800 t/s aggregate @ bs=16 | non-MTP 213.2 / **MTP 181-185 t/s ADOPTED** (was 126.7: +46% via the Q18 levers) | 4.3x gap remains to 800; MTP now within 13-15% of non-MTP at 16 streams with the latency benefit kept |
+| 200 t/s single-stream decode | **38-39 t/s** (MTP k=1 + the adopted levers, bit-identical) | 5.1x gap; IMPOSSIBLE with the stock op per EXP-PHYS (the 15.5 ms weight-read floor caps single-stream at ~119 t/s): REQUIRES the Q21 fused routed-expert kernel (16 of 288 experts -> 0.9 ms floor); both objectives converge there |
+| 800 t/s aggregate @ bs=16 | non-MTP 213.2 / **MTP 181-185 t/s ADOPTED** (was 126.7: +46% via the Q18 levers) | feasible per EXP-PHYS: the weight-read floor allows ~1,900 @16 (10.5x step-inefficiency headroom); the Q21 kernel track + batch efficiency are the levers |
 | 3,000-6,000 t/s prefill | 3,338-5,697 t/s warm at 0.5-2K, 6K, 8K depths | **MET at most depths** (Q07 + measurement correction); 3.5K bucket-edge point 2,696 (Q07b open) |
 | 1M context | **VERIFIED**: 1M window boots (1660 hybrid blocks ~8 GiB/card); needle retrieved exactly at ~860K depth (860,739 tokens, 523.7 s); deep prefill 1,643 t/s at that depth | **MET** (serving-validated on 8 HPUs) |
 | GLM-5.3-Flash FP8 | served as published (block FP8) | met |

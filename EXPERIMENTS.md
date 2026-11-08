@@ -832,3 +832,41 @@ the halved per-rank GEMM widths cost more than the reduced balls-in-bins
 imbalance saves. The adaptation itself is validated and stays in the repo
 (inert without GLM_MOE_TP); it becomes relevant again if the Q21 custom
 kernels land (their cost model would resemble the mxfp4 kernels').
+
+## EXP-PHYS — the weight-read floor and objective feasibility (2026-11-08)
+
+From the verified geometry (K=4096, I=2048/expert, 288 routed experts, 42 MoE
+layers, FP8 1 B/weight; the 306 GiB checkpoint IS the experts):
+
+- Expert weights: 25.2 MB/expert/layer; all 288 experts x 42 layers = 304 GB
+  total = **38.1 GB per card per step** (EP8; the stock fused op reads every
+  local expert's weights at EVERY step, any batch size).
+- **Weight-read floor: 15.5 ms/step** (38.1 GB @ 2.45 TB/s/card peak) -
+  batch-independent while the stock op reads all experts.
+- Physics-max (weight-read floor only, acceptance 1.85):
+  - aggregate @bs=16: **~1,900 t/s**
+  - single-stream: **~119 t/s**
+
+**Objective feasibility verdicts:**
+1. **800 t/s aggregate @16: feasible in principle** - the floor allows ~1,900;
+   we measure 183 (a 162 ms step vs the 15.5 ms floor = **10.5x step
+   inefficiency**: small-M GEMMs, launch pattern, collectives, the eager draft
+   at 16 streams). The Q21 kernel track + batch-efficiency work attack exactly
+   this.
+2. **200 t/s single-stream: IMPOSSIBLE with the stock all-experts-read op** -
+   200 t/s needs a 9.3 ms step, BELOW the 15.5 ms weight-read floor. It
+   REQUIRES reading fewer expert bytes per step:
+   a. the routed-expert gather done RIGHT (Q16's gather lost to its
+      implementation; a fused in-register dequant GEMV - the Q21 kernel -
+      reads only the ~16 routed experts: 38.1 -> ~2.1 GB/step, floor 0.9 ms),
+   b. or a narrower quantization (MXFP4-class: half the bytes, floor 7.8 ms -
+      still above 9.3 ms at acceptance 1.85; marginal), so (a) is THE path.
+3. The k-depth lever compounds with (a): with the expert reads at ~0.9 ms/step,
+   deeper speculation (k=2/k=4) re-enters (the draft+verify cost dominates
+   instead), per the mxfp4 study's MTP-4 arithmetic (accepted 3.33/step).
+
+**Planning conclusion:** the 800 t/s aggregate is an efficiency problem (10.5x
+headroom); the 200 t/s single-stream is a BYTES problem (the stock op's
+all-experts read makes it physically impossible) - the Q21 fused routed-expert
+kernel is the prerequisite for the single-stream objective, and it also unlocks
+the aggregate headroom. Both objectives converge on the same next step.
