@@ -870,3 +870,38 @@ headroom); the 200 t/s single-stream is a BYTES problem (the stock op's
 all-experts read makes it physically impossible) - the Q21 fused routed-expert
 kernel is the prerequisite for the single-stream objective, and it also unlocks
 the aggregate headroom. Both objectives converge on the same next step.
+
+## EXP-NS16 — max-num-seqs 16: the biggest aggregate win of the project
+## ADOPTED (2026-11-08, boot ns16)
+
+**Hypothesis:** the 16-stream benchmark time-shares max-num-seqs 8 slots; the
+38.1 GB/card expert-weight read per step amortizes over only 16 verify rows.
+Raising max-num-seqs to 16 runs all 16 streams concurrently (32 rows/step) -
+the same weight read amortizes over twice the tokens.
+
+**Results (steady state, graphs warmed over ~6 reps):**
+
+| Metric | max-num-seqs 8 (adopted) | **max-num-seqs 16** | Delta |
+|---|---|---|---|
+| Aggregate @16 streams | 181-185 | **245-260 t/s (converged ~258)** | **+40-42%** |
+| bs=1 decode | 38.0-39.1 | 37.0-38.0 | neutral (within noise) |
+| Acceptance | 1.80-1.85 | 1.80 | held |
+| Accuracy suite | 97.5% (R003) | 97.5% (unchanged) | bit-identical numerics |
+| vs non-MTP same-window (~154) | +18-20% | **+68%** | |
+| vs the historical non-MTP 213 (old window) | -14% | **+22%** | |
+
+**Verdict: ADOPTED** - max-num-seqs 16 is written into serve_mtp.sh as the
+default. The physics framing (EXP-PHYS) predicted exactly this: the weight-read
+floor is batch-independent, so doubling the rows per step halves the
+per-token weight cost. The aggregate now stands at **~258 t/s @16 streams** -
+above the historical non-MTP production figure for the first time, with the
+MTP latency benefit kept.
+
+**Notes:**
+- The KV pool (1280 blocks, 163,840 tokens) covers the benchmark's short
+  sequences at 16 concurrent; production long-sequence concurrency (16 x 32K =
+  512K tokens) needs the pool raised (~4096 blocks) - a config note, not
+  measured here.
+- The decode-bucket graphs for bs up to 16 capture on first use (the warm-up
+  reps paid ~30-60 s per new shape; production should pre-warm, D003).
+- The bs=1 path is unchanged (the bs-1 graphs are the same shapes).

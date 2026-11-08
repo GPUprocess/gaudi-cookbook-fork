@@ -36,6 +36,10 @@ GLM-5.3-Flash (`glm5_next`) is a hybrid decoder. From `/data/models/GLM-5.3-Flas
 Serving stack (live process verified): vllm-gaudi v0.26.0 (b059f9c), Gaudi SW 1.24.1, lazy mode,
 TP8+EP8 dev / TP4+EP4 deployment candidate, MTP k=1 + the adopted Q18 levers
 (`GLM_ROUTER_FAST=1`, `GLM_SPEC_DEVICE_REJECT=1`, `GLM_EARLY_DRAFT=1`, byte-identical greedy).
+Graph population: 144 prompt + 16 decode shapes from a hand-tamed bucket file (`bucketing_file.txt`,
+file strategy); the upstream `VLLM_BUCKETING_STRATEGY=pad` (padding-aware) mode exists in our tree
+(verified, `extension/bucketing/padding_aware.py`) but is unused, as is the disk recipe cache
+(`PT_HPU_RECIPE_CACHE_CONFIG`) — see RA-006.
 
 Best verified numbers (8 HPUs): bs=1 decode **38.3–39.1 tok/s**; aggregate @16 **181–185 tok/s**;
 prefill 3.3–5.7K tok/s warm at 0.5–8K (objective band met at most depths); 1M context serving-validated
@@ -179,7 +183,8 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
 | 2 | **RA-001** | Decode tensor cache under MTP (port the per-call cache policy) | Re-enable the HPU-graph tensor cache for decode shapes; removes per-replay re-allocation host work from ~322 replays/step | host floor −30–60% (binding constraint on 200 at both 8 and 4 HPUs and on 800@16); bs=1 +10–40%, aggregate @16 +15–50% | Low (days) | PROPOSED |
 | 3 | **RA-003** | max-num-seqs 16 (32 verify rows) aggregate unlock | Host cost is per-step not per-row; double active rows under the same launch budget | aggregate @16 183 → 330–400 (expected); required for any 800@16 on 4 HPUs | Low–Medium (days) | PROPOSED |
 | 4 | **RA-004** | MTP k=4 as one graphed draft chain (no early-draft) | The 4-step draft chain becomes a single HPU graph replay; deep speculation on the post-RA-002 device floor (draft passes cost ~0.3–0.5 GB each, not full-stack MoE) | bs=1 3.33 tok/step: 106–207 on 8 HPUs at current host, 155–300 with RA-001; **required for 800@16 on 4 HPUs and for the 200 stretch goal** | Medium–High | PROPOSED |
-| 5 | **RA-005** | 4-HPU target physics audit and deployment plan | Decision document: which targets are reachable on 4 cards and what each requires | no direct perf; forces the 4-HPU 200-t/s stretch-goal gate and the 800@16 k=4 config decision | None (doc) | PROPOSED |
+| 5 | **RA-006** | Graph-shape consolidation: pad-and-mask verify graph + padding-aware prefill buckets + recipe cache (+ dynamic-shape probe) | One max-width masked verify graph for the ≤2-seq regime; `VLLM_BUCKETING_STRATEGY=pad` for prefill (upstream 1M-context measurement: 28% warm-TTFT cut); disk recipe cache (warmup ÷8 workers); dynamic shapes verified real but NOT in HPU graphs | decode shapes 16→1–2, ladder −2–4 GiB, warmup −3–5 min, 1M-TTFT class fix; medium host value | Low–Medium (B/C days, A days-week) | PROPOSED |
+| 6 | **RA-005** | 4-HPU target physics audit and deployment plan | Decision document: which targets are reachable on 4 cards and what each requires | no direct perf; forces the 4-HPU 200-t/s stretch-goal gate and the 800@16 k=4 config decision | None (doc) | PROPOSED |
 
 **Suggested execution order** (dependencies, not ranks):
 1. Diagnostic D1 (8-rank profile of the *current* FP8 step) — sizes RA-001 and RA-002 host/device
@@ -401,6 +406,11 @@ flowchart LR
   (int64/bf16, exactly the kernel's inputs) and then calls `_gaudi_fix_moe_gather_apply` (l.283, the
   Q16 fix, inert without env). Branch there: decode shape + `GLM_FP8_MXK=1` → custom op; else stock.
   The Q16 gather path can be retired (it is dominated by design — see Rejected).
+- **Padded-row contract (RA-006 interaction):** pad-and-mask verify graphs feed padding rows whose
+  `topk_ids` are all-8 to one fixed dummy local expert with zero weights (host-side, before the
+  hook). The kernel must treat such rows as one extra expert read (≈25 MB, usually already in the
+  routed set) and never fan them out — otherwise padding to a wider graph erases the routed-byte
+  savings (2 rows → 10 rows would otherwise mean 5× the routed experts).
 - **Build/integration:** `kernels/mxfp4-moe/build.sh --variant glm --extra-kernel
   extra/block_fp8_dequant_glm` (pipeline proven in Q21 step 2: TPC gate PASS, 3254 GUIDs).
   **Op-library fix:** do NOT ship a second op `.so` — the Q21 step-2 blocker (commit 16685a3) is
@@ -591,6 +601,12 @@ Config + graph family only; no code change:
    verify shape and, if bucketed separately, the 48-row combined shape). First-use capture per new
    shape costs 30–60 s (MEASURED, EXP-Q02 rep1 @16) — pre-warm both shapes in the warm-client
    runbook (RESEARCH-001 addendum 9 already mandates warming decode buckets *as verify batches*).
+   **Do not fold the 8/16-active shapes into the small-regime graph by padding:** padding 2 verify
+   rows up to 16–32 rows adds ~11–40% expert-byte reads at TP8 (13→21 distinct experts/rank, DERIVED
+   from the routing model) — the upstream padding-aware strategy exists precisely because unbounded
+   padding approaches ~50% relative overhead at large buckets [GG: vllm-gaudi PR #762, tier D].
+   Keep the large-active shapes as separate recipes (the "6–20% per token vs 1–2 s one-time compile"
+   trade is the other way around at these row counts).
 4. `--max-num-batched-tokens` stays 8192 (decode steps are row-limited, not token-limited, at these
    shapes).
 
@@ -901,6 +917,182 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 
 ---
 
+---
+
+### RA-006 — Graph-shape consolidation: pad-and-mask verify graph, padding-aware prefill buckets, recipe cache, dynamic-shape probe
+
+**Status:** PROPOSED · **Priority:** 5 · **Complexity:** Low–Medium (B/C: days; A: days–week) · **Owner (suggested):** primary agent
+
+#### 1. Executive summary
+
+The decode graph family grows one captured shape per (k, active-sequences) combination: 16 decode
+shapes today, +1–2 from RA-003, +1–2 from RA-004. Each shape carries its own HBM ladder share,
+13–15 s first-use compile (30–60 s stalls measured at 16-stream), and its own replay+sync. A
+community exchange on Gaudi (owner-supplied, 2026-11-07) points at the standard consolidation —
+**compile one graph at the largest size, pad smaller requests, mask the extra rows** — and this
+research verified the underlying mechanisms in the corpus and in our deployed tree:
+
+- **Pad-and-mask is the documented upstream vLLM-Gaudi mechanism.** The plugin pads forward passes
+  into pre-warmed buckets over batch/query/context-block dims; "batch padding does not create
+  requests", padding is transparent to users [GG: gaudi2-practical-inference EVIDENCE.md, tier D].
+  Upstream PR #762 added a **padding-aware** bucketing strategy (`VLLM_BUCKETING_STRATEGY=pad` +
+  `VLLM_{phase}_{dim}_BUCKET_PAD_MAX/PERCENT`) because default exponential bucketing's relative
+  padding "towards 50% for large bucket max" causes real per-token overhead [GG: vllm-gaudi PR #762,
+  tier D]. **Our v0.26.0 tree contains `padding_aware.py` and the strategy switch (verified on the
+  server) but the serve scripts set no bucketing strategy (verified) — this is an unused lever.**
+- **A measured 1M-context datapoint motivates the prefill side:** on a 27B-FP8/TP4/1M-context Gaudi
+  deployment, default `exp` bucketing paid "a silent end-of-prefill stall worth roughly four-fifths
+  of the ~1M-token TTFT"; switching to `pad` "dissolves the stall to ~3–4% of TTFT and cuts warm
+  TTFT at ~1M context by 28%, and improves 262K warm TTFT by 14–20%" [GG: vllm-gaudi issue (Qwen4Exp
+  port), tier D]. Our Q07c finding (fixed per-prompt cost dominates short prefill at 4 cards) is the
+  same problem class; 1M warm TTFT on our stack is unmeasured (1M was serving-validated, not
+  TTFT-benchmarked).
+- **Disk recipe cache:** `PT_HPU_RECIPE_CACHE_CONFIG` — "only one process compiles the recipe, and
+  other processes read it from disk" [GG: habana-docs Runtime_Flags, tier B]. Our 8 workers
+  currently each compile the full 160-shape population; the cache is unset in our scripts (verified).
+- **Dynamic shapes are real but NOT a decode-hot-path lever.** `synGeometryMinSizes`/
+  `synGeometryMaxSizes` exist in the **1.24.1 SDK headers** (verified in corpus:
+  `habanalabs-graph/usr/include/habanalabs/synapse_api_types.h`) and in our venv's Python bridge
+  (`ht.enable_dynamic_shape()`, verified on the server); the bridge implements launch-time shape
+  patching (`PatchDynamicTensors`, `dynamic_shape_t{min,max}` — tier B source). **But vendor docs are
+  explicit: "HPU Graphs can only be used to capture and replay static graphs. Dynamic shapes are not
+  supported" [GG: habana-docs Inference_Using_HPU_Graphs, tier B].** Dynamic shapes therefore apply
+  only to non-graphed recipe execution (prefill warmup, or a future non-graphed decode) — a probe
+  (D10), not a plan. The g2-opt-manual's "there are no dynamic shapes — requests are turned into
+  static compilation" [tier D] is consistent with this reading for the graph path.
+
+Proposed components: **(A)** one pad-and-mask max-width verify graph for the ≤2-seq regime;
+**(B)** `VLLM_BUCKETING_STRATEGY=pad` for prefill buckets; **(C)** disk recipe cache; **(D)**
+dynamic-shape patch-cost probe.
+
+#### 2. Current limitation
+
+- MEASURED: 144 prompt + 16 decode graph shapes; 25.5 GiB HBM graph ladder (first reclaimable block,
+  OPT-002); first-use compile 13–15 s/shape (EXP-Q02 rep1 @16: 30–60 s stalls); the warm-client
+  runbook must enumerate every shape (RESEARCH-001 addendum 9).
+- MEASURED: hand-tamed bucket file (`bucketing_file.txt`) — bucketing is manual, not strategy-driven.
+- DERIVED: RA-003 + RA-004 add 2–4 decode shapes (32/40/48/80-row verify) → ~20 decode shapes and a
+  longer warmup; the ≤2-seq regime (bs=1, 2 streams; k=0..4) spans 1–10 verify rows and would need
+  up to 5 separate shapes without padding.
+- Unused (verified on server): `padding_aware.py` + `VLLM_BUCKETING_STRATEGY` (v0.26.0),
+  `PT_HPU_RECIPE_CACHE_CONFIG` (docs tier B), `ht.enable_dynamic_shape()` (1.24.1 bridge).
+
+#### 3. Proposed architecture
+
+- **A — pad-and-mask verify graph (small regime):** capture ONE decode verify graph at 10 rows
+  (2 seqs × 5 verify rows, k=4 max). Smaller requests pad with dummy rows: (i) `topk_ids` all-8 →
+  one fixed dummy local expert, zero weights (the RA-002 padded-row contract); (ii) slot-mapping /
+  block-table entries for padding rows point at a reserved scratch KV/KDA region (the Q01 port
+  already feeds block tables, slot mappings, and attn bias as graph inputs — the metadata-as-inputs
+  pattern the community post describes); (iii) padding rows masked out at the sampler (existing
+  verify-mask machinery). The 40-row (8 active) and 80-row (16 active) shapes stay **separate**
+  (RA-003 §3: padding there costs 11–40% expert bytes).
+- **B — padding-aware prefill buckets:** `VLLM_BUCKETING_STRATEGY=pad` with
+  `VLLM_PROMPT_QUERY_BUCKET_PAD_PERCENT` ≈ 10–20 (caps relative padding where the exp strategy
+  approaches 50% at large buckets). Accept the higher bucket count (upstream: 284 vs 120 prompt
+  buckets for their 32K/256 config) — component C absorbs the warmup cost.
+- **C — disk recipe cache:** `PT_HPU_RECIPE_CACHE_CONFIG=/var/tmp/hpu_recipe_cache,true,4096,false`
+  (DELETE=true during dev to avoid stale recipes across SW bumps; NFS=false).
+- **D — dynamic-shape probe (D10, measurement only):** micro-bench the per-launch patch cost
+  (`ht.enable_dynamic_shape()`, a 2-size-range GEMM micro-graph in non-graphed lazy) to know whether
+  it can ever beat padding for prefill bucket counts. Not for the decode hot path (HPU graphs are
+  static-only, tier B).
+
+#### 4. Technical feasibility
+
+- Padding + mask into pre-warmed buckets is the upstream plugin's documented continuous-batching
+  mechanism (tier D evidence above) — it is how vLLM-Gaudi serves variable workloads today.
+- The metadata-as-inputs plumbing (block tables, slot mappings, bias as graph inputs) is **already in
+  our tree and CPU-verified** (Q01 port, `mtp.py` `_DraftAttnGraphCore` family).
+- Recipe cache is vendor-documented behavior (tier B) — no mechanism risk, only staleness hygiene.
+- Dynamic-shape patching is vendor bridge code (tier B) — exists in our exact SW (1.24.1, verified).
+- **Unsupported assumptions:** (i) padding rows stay inert through mHC Sinkhorn mixing and KDA
+  candidate-state writes (scratch slots must cover *state* writes, not just KV — CPU parity test is
+  the gate); (ii) the stock op reads all local experts so padding is device-free on today's stack
+  (D2 confirms the read pattern — if the op skips unread experts, A needs degenerate routing even
+  pre-RA-002, which the contract already provides); (iii) the 1M-TTFT stall exists on our stack
+  (Q07c-class evidence, unmeasured at 1M on TP8).
+
+#### 5. Expected performance impact (theoretical)
+
+| Component | Metric | Effect (theoretical) |
+|---|---|---|
+| A | decode graph shapes | 16 → 1–2 (small regime) + RA-003/004's large shapes (≈ 20 → 6–8 total) |
+| A | HBM ladder | −2–4 GiB (decode share of the 25.5 GiB ladder; frees headroom for RA-003's KV +5.5 GiB/card) |
+| A | warmup | −3–5 min (13–15 s × ~13 fewer shapes) |
+| A | bs=1/2-stream decode | neutral ±5% (padding rows: ~0 bytes stock-op, trivial GEMV FLOPs; −1–3 replay/sync boundaries per step — B023 showed boundaries are cheap here, so no big host expectation) |
+| B | 1M warm TTFT | upstream band: +14–28% (262K→1M); our Q07c-class fixed cost suggests the low end at TP8, more at TP4 |
+| B | prefill bucket count | up (e.g. ~2–3×); per-token padding overhead at large buckets down (50%→≤20% relative) |
+| C | boot warmup (8 workers) | ÷4–8 (one compile, seven disk reads): 160 shapes × 13–15 s ≈ 35–40 min → ~5 min + reads |
+| D | — | unknown; probe |
+
+#### 6. Implementation complexity — Low–Medium
+
+B and C are env-var experiments (one boot each). A is mask/slot plumbing + parity tests (no kernel,
+no model math): the scratch region, degenerate routing table, and output mask, on top of Q01's
+existing metadata-as-inputs cores. D is a micro-bench.
+
+#### 7. Risks
+
+- **Correctness (A, the main one):** padding-row leakage — via attention (a padding row's garbage
+  K/V must land in scratch, never in a real sequence's block table), via KDA/mHC state writes, via
+  the sampler (mask completeness). Defense: CPU parity gate (padded 10-row graph vs unpadded
+  1/2/5/10-row graphs → real-row logprobs byte-identical) + the R003 logprob probe on HPU. This is
+  the same near-tie/chaos class the accuracy gate already covers, but the parity test is a hard
+  gate, not a statistical one.
+- **B:** more buckets → longer warmup (C mitigates); PAD_PERCENT mistuning re-creates the 50%-
+  relative-padding problem at the other extreme (too few buckets).
+- **C:** stale recipes across vllm-gaudi/SW upgrades — DELETE=true in dev; pin the cache dir
+  version in the launch script.
+- **Memory (A):** scratch region = 10 rows × (KV per row + KDA state) — KB-scale, negligible.
+- **Interaction:** A is orthogonal to RA-001 (tensor cache) but should land after it so the A/B
+  attribution stays clean; A's degenerate-routing contract is a hard requirement for RA-002's
+  padding economics.
+
+#### 8. Dependencies
+
+- A: Q01 machinery (in-tree, CPU-verified), D2 (stock op read pattern), R003 probe, RA-002 contract
+  (for post-RA-002 economics; A works on the stock op today).
+- B: Q07c context (prefill fixed-cost analysis). C: none. D: none.
+
+#### 9. Implementation instructions
+
+1. **B (1 boot):** `VLLM_BUCKETING_STRATEGY=pad` + `VLLM_PROMPT_QUERY_BUCKET_PAD_PERCENT=15` (start);
+   record bucket count, warmup wall time, prefill warm band (Q07 method), and — if a 1M-context
+   window is available — warm TTFT vs the current config. Keep or revert per the gate below.
+2. **C (1 boot):** `PT_HPU_RECIPE_CACHE_CONFIG=/var/tmp/hpu_recipe_cache,true,4096,false`; measure
+   boot warmup wall time with 8 workers (cached vs cold) and confirm all workers load from the
+   cache (bridge log lines).
+3. **A (days–week, after RA-001):** add the padding-row plumbing to the Q01 verify cores: scratch
+   slot/block region, degenerate `topk_ids` (all-8 → dummy local expert 0), output mask for padding
+   rows; capture one 10-row graph; CPU parity gate (byte-identity vs unpadded 1/2/5/10-row, all
+   k≤4, incl. the 639/640/641 block-boundary set); HPU A/B: bs=1 + 2-stream, R003 probe, ladder
+   HBM, warmup time, 40-item suite (same-boot family).
+4. **D (D10):** dynamic-shape micro-bench per §3-D; report per-launch patch cost in µs and whether
+   patched sizes execute correctly in non-graphed lazy on 1.24.1.
+
+#### 10. Validation criteria
+
+- **A:** real-row logprobs byte-identical between padded-10-row and unpadded graphs at every k≤4
+  (CPU + HPU); ladder −2 GiB or better; warmup −3 min or better; bs=1 within ±5% of the
+  same-boot control.
+- **B:** 1M warm TTFT improved ≥ 10% (target: the upstream 14–28% band) with warmup growth ≤ 2×;
+  prefill warm band not regressed at 0.5–8K.
+- **C:** 8-worker boot warmup ÷ 4 or better; zero cache-miss recompiles on the second boot.
+- **D:** a number (µs/launch) in EXPERIMENTS.md — decision deferred until it exists.
+
+#### 11. Novelty assessment
+
+Never investigated in this project. Distinct from B023 (removing a recipe *boundary* — neutral),
+RJ-07 (draft *mode* stacking — non-stacking), and RA-001 (per-replay *allocation*): this changes the
+**shape space** (fewer, wider, masked graphs) and the bucket *strategy*. The pad-and-mask pattern is
+upstream-documented and partially already ours (`bucketing_file.txt` = the file strategy; `pad`
+present but unused); the community post's specific claims were verified against corpus evidence
+(bucketing mechanism, PR #762, dynamic-shape headers/bridge, HPU-graphs static-only, recipe cache)
+before being adopted — with the one correction that dynamic shapes do **not** extend to HPU graphs.
+
+---
+
 ## Rejected ideas (investigated, not pursued — with reasons)
 
 | ID | Idea | Why rejected | What would reopen it |
@@ -926,6 +1118,7 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 | D7 | `PT_HPU_LAZY_ACC_PAR_MODE` 0 vs 1 with view-based custom ops | RA-002 build constraint (Q21 playbook says 0; serve script pins 1) | Two boots, custom op parity check | included |
 | D8 | The 128 vs 640 tokens/hybrid-block KV semantics (F003 says 128, EXP-Q10 says 640) | RA-003's KV sizing and every future pool math | Read the auto-sizing log at one boot; record the formula | 5 min |
 | D9 | MTP-module weight composition and per-draft-pass bytes: which tensors does one draft forward read (own attention? the shared expert? `shared_head`? the main `lm_head`?) | Sizes the k=4 byte budget (this doc assumes 0.3–0.5 GB/pass aggregate, ±50%); the checkpoint contains exactly 42 MoE layers, so the draft MoE is shared or absent — verify, don't assume | Checkpoint weight-name inspection + one draft-pass profiler window (fold into D2) | included |
+| D10 | Dynamic-shape per-launch patch cost on our 1.24.1 bridge (`ht.enable_dynamic_shape()`, 2-size-range micro-graph, non-graphed lazy); and whether the 1M-context end-of-prefill stall (upstream `exp`-bucketing finding, ~4/5 of 1M TTFT on a 27B/TP4 box) exists on our stack | RA-006-D decision (dynamic shapes vs padding for prefill bucket counts); RA-006-B sizing. Note: dynamic shapes are NOT available in HPU graphs (tier B docs) — this is a prefill/warmup question only | Micro-bench (no full model) + one 1M warm-TTFT window under `VLLM_BUCKETING_STRATEGY=pad` vs default | 1 boot |
 
 ## Implementation agent instructions (next actions, in order)
 
@@ -940,6 +1133,11 @@ project — DECISIONS.md had the 8-HPU roofline only.)
    cut; independent of everything else.
 5. **RA-003** (days, can share RA-001's boot family): max-num-seqs 16 + KV sizing + 32-row verify
    graph pre-warm. The aggregate target moves here, not in the kernels.
+5b. **RA-006-B/C** (env experiments, share the RA-001/RA-003 boot family):
+   `VLLM_BUCKETING_STRATEGY=pad` prefill A/B (incl. 1M warm TTFT if a window allows) and
+   `PT_HPU_RECIPE_CACHE_CONFIG` warmup measurement (8 workers, cached vs cold).
+   **RA-006-A** (pad-and-mask 10-row verify graph + scratch slots + degenerate routing) after
+   RA-001, gated on the byte-identity parity test.
 6. **RA-002** (weeks, continues Q21 step 3): implement with the five sharpenings (byte target,
    full-card row-parallel, in-kernel intermediate, single op library, MTP-depth table); D4 is its
    first gate.
@@ -952,6 +1150,7 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 | Date | Rev | Author | Findings / changes |
 |---|---|---|---|
 | 2026-11-07 | 1 | independent research architect | Initial audit of the fork (TASKS/EXPERIMENTS/CURRENT_STATE/DECISIONS/ACCURACY, all EXP-* reports, `docs/results/moe-decode-step.md`, RESEARCH-001 + addenda 1–11, port source, live process and deployed tree, checkpoint config). GaudiGrimoire consultation (log below). Independent byte model + ceilings (Executive summary). Five proposals: RA-001…RA-005. Seven rejections (RJ-01…RJ-07). Eight research gaps (D1…D8). |
+| 2026-11-07 | 3 | independent research architect (community input) | Owner supplied a Discord exchange on pad-and-mask / bucketing / dynamic shapes on Gaudi. All specific claims verified against corpus + deployed tree: (i) `VLLM_BUCKETING_STRATEGY=pad` (PR #762, padding-aware) **present in our v0.26.0 but unused** (verified on server); (ii) bucketing/padding is the documented upstream continuous-batching mechanism; (iii) **dynamic shapes are real in the 1.24.1 SDK + bridge** (`synGeometryMinSizes/MaxSizes`, `ht.enable_dynamic_shape()`, `PatchDynamicTensors` — tier B) **but HPU Graphs are static-only** (habana-docs, tier B) → not a decode-hot-path lever, prefill probe only (D10); (iv) disk recipe cache documented, unused in our scripts (verified). Added **RA-006** (pad-and-mask verify graph + padding-aware prefill buckets + recipe cache + dynamic-shape probe), the RA-002 padded-row/degenerate-routing contract, the RA-003 separate-large-shapes note, D10, and the upstream 1M-context TTFT datapoint (28% warm-TTFT cut with `pad` bucketing, tier D) as motivation for RA-006-B. |
 | 2026-11-07 | 2 | independent research architect (owner correction) | **Draft-pass byte model corrected.** Rev 1 charged the k MTP draft passes with full 42-layer MoE reads (72 main-MoE routes/step at k=4 → 22.1 GB/card at TP4). The draft chain runs through the MTP module (~0.3–0.5 GB/pass aggregate — the checkpoint has exactly 42 MoE layers; composition to verify per D9). Corrected k=4 bytes: TP8 7.7 GB, TP4 15.9 GB. Consequences: (i) the owner's active-weights roofline check (18–28 GB/token → 340–530 t/s at 4 HPUs) is confirmed — 200 t/s is **inside** the 4-HPU roofline; (ii) 200 @ 4 HPU reclassified from "plan as unreachable" to **gated stretch goal, est. 15–25% probability** (host ≤ ~9–10 ms + 89–100% of spec + routing kernel); base case 126–230; (iii) 200 @ 8 HPU confirmed as base-case target (host ≤ 10–13 ms + 47–86%); (iv) the stock-op model now reproduces the measured 39.1 (TP8) and 33.2 (TP4) t/s to <1%, validating the all-weights-read premise; (v) aggregate tables updated (16 active hits 69–89% of experts at k=1/4, routing-aware saves 11–40% there). No proposal ranking or mechanism changed; RA-002/RA-004/RA-005 numbers updated throughout. |
 
 ### GaudiGrimoire consultation log (2026-11-07)
@@ -971,6 +1170,12 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 | `hpu graph capture memory GiB warmup vllm gaudi` | warmup/graph-capture docs (HPU Graph Capture section); no per-graph HBM figure beyond the project's own 25.5 GiB ladder measurement | D / docs | RA-003/RA-004 HBM budgeting (project MEASURED values used) |
 | `hpu_custom_op TORCH_LIBRARY_IMPL already registered` | the DSV4.1 sinkhorn `op.cpp` (TORCH_LIBRARY_FRAGMENT + TORCH_LIBRARY_IMPL pattern) and the mxfp4-moe build interface (single `libmxk_op_lazy.so` per process, op gate) — matches the project's Q21 step-2 root-cause analysis (commit 16685a3) | D / `ports/deepseek-v4-1-flash/kernels/dsv41_sinkhorn/op.cpp`, `kernels/mxfp4-moe/README.md` | RA-002 §3 (single-op-library fix) |
 | `Gaudi 2 MME peak FLOPS` | MME 432 TFLOPS BF16 + TPC 11 TFLOPS (arxiv Gaudi2 analysis); GEMM fp8 546 TFLOPS (community bench) | D | context (compute not the decode constraint; used to dismiss the 1M-indexer idea, RJ-06) |
+| `synGeometryMinSizes synGeometryMaxSizes dynamic shape` | **1.24.1 SDK headers** carry `synTensorSetGeometry` with `synGeometryMinSizes`/`synGeometryMaxSizes`; bridge implements `dynamic_shape_t{min,max}`, `ShapeInference::GetMinMaxShape` (MIN/MAX compile passes), `PatchDynamicTensors` (per-launch host→device shape patch), `ht.enable_dynamic_shape()` (off by default); **but habana-docs: "HPU Graphs can only be used to capture and replay static graphs. Dynamic shapes are not supported"** | B / `habanalabs-graph/usr/include/habanalabs/synapse_api_types.h` (1.24.1-482 debs), gaudi-pytorch-bridge source (create_tensor.cpp, graph_exec.cpp, hpu_shape_inference.cpp), habana-docs (Python_Packages, Inference_Using_HPU_Graphs) | RA-006-D, D10 (dynamic shapes = recipe-level feature, NOT a decode-graph lever); server-verified present in our venv, unused by our stack |
+| `VLLM_BUCKETING_STRATEGY pad padding-aware PR 762` | `PaddingAwareBucketingStrategy` (v0.21.0+, `VLLM_BUCKETING_STRATEGY=exp\|lin\|pad` + `VLLM_{phase}_{dim}_BUCKET_PAD_MAX/PERCENT`); exp's relative padding "towards 50% for large bucket max" → "large overhead especially for long sequences"; pad: 284 prompt/222 decode buckets with bounded padding (vs exp 120/81) | D / vllm-gaudi PR #762 + `extension/bucketing/padding_aware.py` + release notes v0.21.0 | RA-006-B; **present in our v0.26.0 tree, unset in serve scripts (verified on server 2026-11-08)** |
+| `bucketing continuous batching padding transparent Gaudi` | "Gaudi graph compilation is sensitive to input shapes, so the plugin pads forward passes into pre-warmed buckets across three dimensions — batch size, query length, context length in blocks... sequence-length padding is never returned to users and batch padding does not create requests"; over-bucket requests execute unpadded → forced compile + latency spikes | D / gaudi2-practical-inference `context/EVIDENCE.md` (bucketing-and-continuous-batching) | RA-006-A (padding is the documented serving mechanism) |
+| `PT_HPU_RECIPE_CACHE_CONFIG` | Disk recipe cache: "only one process compiles the recipe, and other processes read it from disk"; path/delete/size/NFS config; scale-up scenario | B / habana-docs Runtime_Flags | RA-006-C (8-worker warmup ÷4–8); verified unset in our scripts |
+| `1M context TTFT prefill stall bucketing pad` | Qwen4Exp port (27B-FP8, TP4, 1M, chunked prefill 8192): default `exp` bucketing pays "a silent end-of-prefill stall worth roughly four-fifths of the ~1M-token TTFT" (deferred host-side materialization on the sampling path); `pad` dissolves it to ~3–4% of TTFT, −28% warm TTFT @1M, +14–20% @262K (4/4 runs) | D / vllm-gaudi issue "Compiled-plane (HPU-graph) numerics + plan findings on the Qwen4Exp port" | RA-006-B motivation (same problem class as our Q07c fixed per-prompt cost); D10 second half |
+| `there are no dynamic shapes shape set padding bucketing normal` | "Every tensor shape is baked into the compiled graph. Asking for dynamic shapes does not produce a shape-polymorphic graph — the request is turned into static compilation... padding and bucketing are normal engineering techniques here rather than hacks" (marked ASSUMED vendor in a community manual) | D / g2-opt-manual §1.4.1 | RA-006 framing; consistent with the tier-B "HPU graphs static-only" doc |
 
 **Cross-checks performed outside the corpus:** checkpoint `config.json` (model dimensions → byte
 model, cross-checked to the 328.3 GB total within 1.4%); deployed tree
