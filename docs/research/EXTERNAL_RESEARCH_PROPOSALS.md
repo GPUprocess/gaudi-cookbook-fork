@@ -122,9 +122,10 @@ retained as saturation evidence only). Material changes in this revision:
    the Synapse compiler does **not** fuse the gather into the GEMM's DMA on this stack (the rev-4
    "best case" is empirically excluded). The custom TPC kernel is the primary byte-reduction path,
    not a fallback.
-3. **RA-001 ADOPTED (EXP-RA001):** `PT_HPUGRAPH_DISABLE_TENSOR_CACHE=0` at boot — zero code
-   changes; bs=1 41.4 (+8–10%, conservative estimate confirmed); aggregate @16 neutral (~257);
-   host RSS 0.73–0.88 GB/worker. The host floor estimates in this document shift by the measured
+3. **RA-001 ADOPTED (EXP-RA001 proper):** the CAPTURE-TIME implementation (the one-line patch:
+   disable_tensor_cache False in _maybe_wrap_in_hpu_graph) outperforms the env-var approach:
+   bs=1 **42.4 tok/s** (+10.7%, between the conservative and the expected); aggregate @16
+   neutral (~257); RSS 7.4 GB total. The env-var approach delivered +8.1% as a stepping stone. The host floor estimates in this document shift by the measured
    delta; D1 still re-derives them on the FP8 tree.
 4. **RA-003 ADOPTED with the owner's scoping note:** ns16 adopted (183 → ~258 @16); the batch
    lever is **exhausted** (396–401 @32, 392–452 @64 — saturation, not a recommendation; bs=1
