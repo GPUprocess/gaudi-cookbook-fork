@@ -1065,3 +1065,32 @@ visibility check - if the op is visible in the worker (the schema may register
 fine there; the q21q NOT registered lines may predate the rebuilt library - the
 q21q boot loaded the PRE-restore build), the dequant qualification runs
 in-worker via a debug hook.
+
+## EXP-NS32 — max-num-seqs 32: the aggregate TRIPLED from the session start
+## (2026-11-08, boot ns32)
+
+**Config:** the adopted stack + max-num-seqs 32 (the KV pool unchanged:
+723,155 tokens — covers the bench's short sequences; production long-sequence
+concurrency needs more, per the EXP-NS16 note).
+
+**Results (32 streams, converged):** **396–401 t/s aggregate** (362.5 → 396.2 →
+394.7 → 401.1 — still climbing slightly). The RA-003 doc's prediction band
+(260–400) is CONFIRMED AT THE TOP EDGE.
+
+| Config | Aggregate @16 | Aggregate @32 |
+|---|---|---|
+| Session start (max-num-seqs 8, eager draft) | 126.7 | — |
+| + the Q18 levers (max-num-seqs 8) | 183 | — |
+| + max-num-seqs 16 (EXP-NS16) | ~258 | — |
+| + max-num-seqs 32 (this experiment) | — | **~400** |
+
+**Arithmetic:** at 32 active sequences the step runs 64 verify + 32 draft rows;
+the 38.1 GB/card expert-weight read amortizes over 3× the tokens vs the
+8-active baseline. The per-step time grew sub-linearly (the weight reads are
+batch-independent; the GEMV compute grows with rows at AIP 0-24% — plenty of
+headroom).
+
+**Verdict: the max-num-seqs lever is the dominant aggregate knob.** The
+remaining gap to the 800 t/s objective (2×) is the per-step efficiency (the
+Q21 kernel track + the multi-row host term D1 will quantify). The bs=1
+single-stream is unaffected (the bs-1 graphs are unchanged).

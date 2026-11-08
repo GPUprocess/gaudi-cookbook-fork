@@ -3,7 +3,7 @@
 #
 # Differences from the stock launch (see ../../README.md "Serve" and the MTP docs page):
 #   * --speculative-config with the port mtp draft head (k=1)
-#   * --max-num-seqs 16 (verify rows = 8*(k+1) = 16; raise together with graph capture)
+#   * --max-num-seqs 32 (verify rows = 8*(k+1) = 16; raise together with graph capture)
 #   * reduced max-model-len and --num-gpu-blocks-override for the validation window
 # Requires: the spec patches from ../../patches applied (install.sh chain) and the
 # plugin mtp module (part of this port).
@@ -44,7 +44,7 @@ exec vllm serve "$GLM53_MODEL_PATH" \
   --enable-expert-parallel \
   --dtype bfloat16 \
   --max-model-len 32768 \
-  --max-num-seqs 16 \
+  --max-num-seqs 32 \
   --num-gpu-blocks-override 1280 \
   --max-num-batched-tokens 8192 \
   --max-cudagraph-capture-size 2048 \
