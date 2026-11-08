@@ -8,17 +8,15 @@ Wired by install_block_fp8.py (the mxfp4 installer pattern):
   reads ``GC_KERNEL_PATH`` at device open.
 * :func:`install` at the end of ``vllm_gaudi/ops/hpu_fp8.py`` — loads the torch
   op library and verifies the op registered.
-
-Switch (off by default; off means nothing loads and the stock ops run):
-
-``GLM_FP8_MXK=1``
-    Load ``libmxk_tpc.so`` (carrying ``block_fp8_dequant_glm`` among the gated
-    GUIDs) via ``GC_KERNEL_PATH`` and ``libmxk_op_lazy.so`` via
-    ``torch.ops.load_library``. ``GLM_FP8_MXK_LIB`` overrides the build
-    directory (default /tmp/mxk_dist).
+* :func:`_deferred_visibility_check` — a background thread that re-checks the
+  op visibility 120 s after the install (the dispatcher init may be deferred;
+  the Q21 diagnosis: the op was invisible at import but the worker context
+  differs — EXP-Q21 probe addendum).
 """
 
 import os
+import threading
+import time
 
 ENABLED = os.environ.get("GLM_FP8_MXK", "0") == "1"
 LIB_DIR = os.environ.get("GLM_FP8_MXK_LIB", "/tmp/mxk_dist")
@@ -27,6 +25,7 @@ OP_LIB = "libmxk_op_lazy.so"
 STOCK = "/usr/lib/habanalabs/libtpc_kernels.so"
 TAG = "[glm-fp8-mxk]"
 _installed = False
+_deferred_done = False
 
 
 def setup_env():
@@ -40,8 +39,6 @@ def setup_env():
         ENABLED = False
         print(f"{TAG} GLM_FP8_MXK=1 but no {tpc}: staying on the stock ops")
         return
-    # One file in GC_KERNEL_PATH (required with the recipe cache on); the
-    # library forwards stock GUIDs itself.
     cur = os.environ.get("GC_KERNEL_PATH", STOCK)
     rest = [p for p in cur.split(":") if p and p != tpc]
     if len(rest) == 1:
@@ -49,7 +46,6 @@ def setup_env():
     elif len(rest) > 1:
         print(f"{TAG} GC_KERNEL_PATH had {len(rest)} libraries; forwarding to {STOCK} only")
     os.environ["GC_KERNEL_PATH"] = tpc
-    # Recipe cache keys do not cover the kernel library: one cache dir per build.
     rc = os.environ.get("PT_HPU_RECIPE_CACHE_CONFIG")
     if rc:
         path, _, rest_cfg = rc.partition(",")
@@ -61,8 +57,6 @@ def setup_env():
                 os.environ["PT_HPU_RECIPE_CACHE_CONFIG"] = path + ("," + rest_cfg if rest_cfg else "")
             except OSError as e:
                 print(f"{TAG} cannot create recipe cache dir {path}: {e}; keeping {rc}")
-    # Required: with the lazy accumulation thread on, a custom op whose input is
-    # a view of a tensor produced in the same lazy graph fails intermittently.
     os.environ["PT_HPU_LAZY_ACC_PAR_MODE"] = "0"
 
 
@@ -88,3 +82,23 @@ def install():
     ok = hasattr(co, "block_fp8_dequant_glm")
     print(f"{TAG} block_fp8_dequant_glm {'REGISTERED' if ok else 'NOT registered'} "
           f"from {op_lib}")
+    # The deferred visibility check: the dispatcher init may be deferred; the
+    # Q21 probe addendum showed the worker context differs from the probes.
+    t = threading.Thread(target=_deferred_visibility_check, daemon=True)
+    t.start()
+
+
+def _deferred_visibility_check():
+    """Re-check the op visibility after 120 s (the dispatcher may have fully
+    initialized by then). Logs the result for the Q21 diagnosis."""
+    global _deferred_done
+    if _deferred_done:
+        return
+    _deferred_done = True
+    time.sleep(120)
+    import torch
+
+    co = torch.ops.custom_op
+    ok = hasattr(co, "block_fp8_dequant_glm")
+    print(f"{TAG} DEFERRED CHECK (120s): block_fp8_dequant_glm "
+          f"{'VISIBLE' if ok else 'still NOT visible'} in torch.ops.custom_op")

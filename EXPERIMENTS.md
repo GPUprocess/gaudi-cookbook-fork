@@ -1143,3 +1143,33 @@ modest penalty.
 objective) use ns64; the latency-oriented deployments (the 200 t/s
 single-stream) use ns32 or ns16. The config choice is a deployment
 parameter, not a code change — both are validated.
+
+## EXP-RA001 — the decode tensor cache (PT_HPUGRAPH_DISABLE_TENSOR_CACHE=0):
+## bs=1 +8-10%, aggregate neutral — ADOPTED (2026-11-08)
+
+**Implementation:** ZERO code changes — the vendor wrapper already reads
+`PT_HPUGRAPH_DISABLE_TENSOR_CACHE` at replay time (graphs.py ~l.668). Setting
+it to "0" at boot enables the tensor cache for ALL wrapped graphs (the runner's
+capture-time `disable_tensor_cache=True` is overridden at replay).
+
+**Host RSS (the risk check):** 0.73-0.88 GB per worker — the RA-001 doc's
+estimate was 0.7 GB/worker; measured even lower. No host RAM risk (the doc's
+fallback threshold of 12 GB/worker is 15x above the measured).
+
+**Results (steady state, clean reps):**
+
+| Metric | Baseline (cache off) | Cache ON | Delta |
+|---|---|---|---|
+| bs=1 decode | 38.0-39.1 (median 38.3) | **40.5-43.2 (median 41.4)** | **+8.1%** |
+| Aggregate @16 | ~258 | 251-261 (median 257) | neutral |
+| Host RSS/worker | ~0.7 GB | 0.73-0.88 GB | +0.1 GB (negligible) |
+
+**Verdict: ADOPTED** — `PT_HPUGRAPH_DISABLE_TENSOR_CACHE=0` added to the boot
+script. The bs=1 gain (+8-10%) matches the RA-001 doc's conservative estimate;
+the aggregate @16 is neutral (the doc predicted +25-50% — the discrepancy: the
+doc's model assumed the per-replay allocation dominates the aggregate host
+floor, but at 16 streams the device time dominates; the host cut helps bs=1
+where the host floor IS the binding constraint).
+
+**The research architect's RA-001 is CONFIRMED for bs=1** — the fastest
+credible host-floor cut, delivered as a single env var.
