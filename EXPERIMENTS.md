@@ -800,3 +800,35 @@ kernels the backend .so registered at import.
 
 **Resolution requires stack-level work** (the three recorded paths); the
 symbol-level hunt would need debug-symbol builds of libhabana_pytorch_backend.so.
+
+## EXP-Q17 — EP4xTP2 expert layout on the stock FP8 stack: REFUTED
+## (2026-11-08, boot q17)
+
+**Implemented and deployed:** the mxfp4 moe_layout adapted for the FP8 port -
+the group-layout hook in vLLM's FusedMoEParallelConfig.make EP branch
+(GLM_MOE_TP=2: 4 groups of 2 ranks, 72 experts/group, I/2 per rank) + the
+load_fused group-slice hook at the top of RoutedExperts.load_weights' is_fused
+branch (the combined [E, d1, d2] w13/w2 tensors; explicit shard_id
+discrimination; the row/column block slicing per the mxfp4 module's pattern).
+The placement machinery (GLM_MOE_PLACEMENT) is supported but unset
+(contiguous groups).
+
+**Correctness: VERIFIED.** The model is coherent under the group layout -
+R003 answers "5" (the reasoned answer; another chaos draw - the layout changes
+the bf16 rounding as the study predicted), acceptance 1.71 (held; the two-slice
+down-projection sum differs by bf16 rounding as documented).
+
+**Performance (steady state):**
+
+| Metric | EP8 (adopted) | EP4xTP2 | Delta |
+|---|---|---|---|
+| bs=1 decode | 38.0-39.1 | 29.5-31.1 (median 30) | **-22%** |
+| Aggregate @16 | 181-185 | 142.8-147.0 | **-21%** |
+
+**Verdict: REFUTED on the stock FP8 stack.** The study's +11% was specific to
+their custom MXFP4 kernels (v7/v8: a fixed per-route staging cost that halves
+with wider expert groups). Our stock fused-MoE op has a different cost model -
+the halved per-rank GEMM widths cost more than the reduced balls-in-bins
+imbalance saves. The adaptation itself is validated and stays in the repo
+(inert without GLM_MOE_TP); it becomes relevant again if the Q21 custom
+kernels land (their cost model would resemble the mxfp4 kernels').

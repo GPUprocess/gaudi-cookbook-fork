@@ -608,7 +608,11 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   Risk: low (verify mode checks FP8-ULP; static gather count captures into graphs).
   Dependencies: none. Next action: boot with VLLM_HPU_MOE_GATHER=1 (+VERIFY first requests),
   bs=1 decode + 16-stream aggregate + accuracy gate vs the same-family baseline.
-- **Q17 EP4xTP2 expert layout** — `RESEARCH`. Hypothesis: fewer wider EP bins cut the
+- **Q17 EP4xTP2 expert layout** — `REFUTED` on the stock FP8 stack (implemented + deployed:
+  the group layout WORKS correctly - coherent outputs, R003="5", acceptance 1.71 - but
+  bs=1 -22 percent (30 vs 38.3) and @16 -21 percent (145 vs 183). The study's +11 percent
+  was specific to their custom MXFP4 kernels' per-route staging cost. The adaptation stays
+  in the repo inert without GLM_MOE_TP; relevant again under the Q21 custom kernels.) Hypothesis: fewer wider EP bins cut the
   balls-in-bins imbalance (16 routes: busiest 6.3/4 bins vs 4.45/8 bins). Bottleneck: EP/TG.
   Expected gain (ESTIMATE): +5-11% single-stream (measured on GLM-5.3 MXFP4, same topology,
   memory-neutral; quality gates held, NOT bit-identical). Evidence: docs/results/moe-decode-step.md.
