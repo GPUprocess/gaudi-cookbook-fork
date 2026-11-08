@@ -1118,3 +1118,28 @@ executing the GEMV in-register) cut both the weight bytes (38 -> ~2 GB/step at
 bs=1; proportionally at batch) and the kernel time (the mxfp4 study: the
 custom kernels at 66 t/s where stock reaches 37 — a 1.8x kernel-speedup
 analogue). The concurrency lever is done; the kernel track is the path.
+
+## EXP-NS64 — max-num-seqs 64: the aggregate +13% at 64 streams, the bs=1 -7%
+## (2026-11-08, boot ns64)
+
+**Config:** the adopted stack + max-num-seqs 64 (the KV pool 723,155 tokens —
+covers the bench; production long-sequence concurrency needs more).
+
+**Results (steady state):**
+
+| Metric | ns32 (max-num-seqs 32) | ns64 (max-num-seqs 64) | Delta |
+|---|---|---|---|
+| Aggregate @64 streams | ~400 (at 32-48 streams) | **392-452 (median ~430)** | +8-13% |
+| bs=1 decode | 38.0-39.1 | 35.0-36.8 (median 35.4) | **-8%** |
+| Acceptance | 1.80-1.85 | (not measured separately) | — |
+
+**Trade-off:** the aggregate +13% at 64 streams, the bs=1 -8% (the larger
+decode-bucket shapes dilute the bs-1 optimization; the bs-1 graphs are the
+same shapes but the bucket ladder is wider). The aggregate continues to
+scale with max-num-seqs (the weight amortization improves); the bs=1 pays a
+modest penalty.
+
+**Serving recommendation:** the aggregate-oriented deployments (the 800 t/s
+objective) use ns64; the latency-oriented deployments (the 200 t/s
+single-stream) use ns32 or ns16. The config choice is a deployment
+parameter, not a code change — both are validated.
