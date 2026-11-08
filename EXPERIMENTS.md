@@ -953,3 +953,15 @@ worker context, and check torch.ops.custom_op.block_fp8_dequant_glm from
 inside the worker process. If visible there, the dequant qualification runs
 in-worker (a debug endpoint or a warmup call), unblocking the whole Q21
 qualification without any stack change.
+
+## EXP-Q21 fragment fix attempt: the Python visibility still fails (2026-11-08)
+
+The TORCH_LIBRARY(custom_op) full definition in our op.cpp (colliding with
+mxk_op_lazy.cpp's TORCH_LIBRARY_FRAGMENT for the same namespace) was changed to
+TORCH_LIBRARY_FRAGMENT - the schema now adds to the existing namespace without
+redefining it. The rebuilt library still fails to expose the op at serving time
+(NOT registered in all workers). The namespace definition was not the (only)
+issue. The in-worker visibility check (TASKS Q21 opener) remains the path: the
+worker context differs from every probe context, and the schema may be
+registering but visibility-checked too early, or the HPU-impl registration for
+our op is silently skipped in the worker's dispatcher state.
