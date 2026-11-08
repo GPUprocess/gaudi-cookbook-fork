@@ -1,6 +1,6 @@
 # Current Bottleneck Analysis — GLM-5.3-Flash on Intel Gaudi 2
 
-**Last updated:** 2026-11-08 (revision 3 — D1 host profiling + B7 resolution)
+**Last updated:** 2026-11-08 (revision 3 — D1 host profiling bs=1 + @16, B7 resolution)
 **Git commit:** `80a7fc6` → `60daaf7`+ (branch `glm53-flash`)
 **Model:** GLM-5.3-Flash (block-FP8 E4M3, 128×128 scales), 45 layers + 1 MTP layer, 288 routed experts (top-8), 42 MoE layers, 34 KDA layers + 11 DSA layers (MLA), mHC hyper-connections (4 streams, Sinkhorn), 3 dense layers
 **Serving stack:** vllm-gaudi v0.26.0 (b059f9c), Gaudi SW 1.24.1, lazy mode, TP8+EP8
@@ -35,9 +35,9 @@
 
 3. **The eager MTP draft dispatch costs ~7.5 ms/step at bs=1 — 31.4% of the host time (D1), ~17% of the whole step (revised up from the ~1–1.5 ms estimate).** Its top host costs: raw torch op dispatch (~21% of the bucket: `OpOverload.__call__` + `OpOverloadPacket.__call__`), `mark_step` closures (10.5%), `dynamic_quant` (7.5%), and a NATIVE `SiluAndMul.forward_native` fallback. The draft runs ~15–20 ops eagerly, each paying dispatcher + lazy tracking.
 
-4. **The per-stream host cost of ~3.8 ms/stream** (the sampler + scheduler + draft dispatch + the logprob processing) dominates the aggregate at 16+ streams (54% of the step time), limiting the aggregate scaling to sub-linear growth (2× streams → +33% aggregate, not +100%).
+4. **The per-stream host cost of ~3.8 ms/stream is WORKER-side per-row work** (D1 @16: the EngineCore scheduler is 99.4% message-queue WAIT; the worker host splits replay 68.6% / draft 17.4% / sampler 9.9%), limiting the aggregate scaling to sub-linear growth (2× streams → +33% aggregate, not +100%).
 
-**The highest-priority investigation areas:** (1) the routing-aware fused block-FP8 MoE kernel (Q21/RA-002) to cut both the expert-weight bytes (38.1 → ~2.1 GB/step at bs=1) and the launch count (one fused op replaces ~50 small ops) — **the op-loading blocker B7 is RESOLVED (see B7)**, (2) graphing or op-reducing the MTP draft (B5, now quantified at ~7.5 ms/step), (3) the per-stream host cost decomposition at 16 streams (B3; the bs=1 D1 profile is done, the 16-stream profile is not).
+**The highest-priority investigation areas:** (1) the routing-aware fused block-FP8 MoE kernel (Q21/RA-002) to cut both the expert-weight bytes (38.1 → ~2.1 GB/step at bs=1) and the launch count (one fused op replaces ~50 small ops) — **the op-loading blocker B7 is RESOLVED (see B7)**, (2) graphing or op-reducing the MTP draft (B5, now quantified: ~7.5 ms/step at bs=1, ~10.6 ms/step at 16 streams — also the largest per-row host cost), (3) the HPUGraph.replay internals (B2: ~14 ms/step at bs=1, ~42 ms/step at 16 streams).
 
 ---
 
@@ -278,76 +278,51 @@ Each recipe replay costs ~50–74 µs of host time:
 
 ---
 
-### BOTTLENECK-B3: Per-stream host cost (the sampler + scheduler + draft dispatch)
+### BOTTLENECK-B3: Per-stream host cost (worker-side per-row work; NOT the scheduler)
 
-**Classification:** VERIFIED (the scaling curve directly measures the marginal cost per stream)
+**Classification:** VERIFIED (the scaling curve + the D1 16-stream profile: the EngineCore is 99.4% message-queue WAIT — the scheduler is not the per-stream bottleneck; the cost lives in the worker's per-row work)
 
-**Severity:** HIGH (for the 800 t/s aggregate @16 objective; MEDIUM for the single-stream)
+**Severity:** HIGH (for the 800 t/s aggregate @16 objective)
 
-**Affected metric:** AGG (the dominant at 16+ streams), TG (secondary at bs=1)
+**Affected metric:** AGG (the dominant at 16+ streams)
 
-**Affected component:** the vLLM v1 scheduler, the rejection sampler output processing, the MTP draft proposer, the output processor
+**Affected component:** the WORKER-side per-row work: the eager MTP draft's per-row preparation (vocab masking, embedding, quant ops), the sampler output processing, and the replay staging — NOT the vLLM scheduler
 
-**Current behavior:** each additional concurrent stream adds ~3.8 ms to the step time. The per-stream work includes:
-- The sampling probability computation (the softmax/top-k/top-p on the host, the rejection walk output processing)
-- The scheduler's batch composition (the request ordering, the KV block allocation, the preemption logic, the sequence group management)
-- The MTP draft input preparation (the token embedding lookup, the position computation, the KV cache slot allocation, the draft attention metadata)
-- The logprob processing (the top-N extraction when requested)
-- The output detokenization batching (the incremental detokenization for the streaming responses)
-- The KV cache update (the accepted-token rollout, the draft-token speculation slots)
+**Current behavior (D1 @16 streams, worker rank 0, 754 py-spy samples + the EngineCore profile, 649 samples):**
+
+The worker host time at 16 active streams (~61 ms of the ~114 ms step) splits:
+| Bucket | Share of worker host | ≈ ms/step |
+|---|---:|---:|
+| `execute_model` (replay) | 68.6% | ~42 |
+| MTP draft dispatch | 17.4% | ~10.6 |
+| Sampler | 9.9% | ~6 |
+| Sampling metadata + context | ~3.4% | ~2 |
+| EngineCore (scheduler process) | 99.4% message-queue WAIT | ~0 (waiting on the workers) |
+
+The draft bucket's per-row leaves appear at 16 streams: `get_masked_input_and_mask` (vocab_parallel_embedding.py:179/188, 6.2% of the bucket) — per-row vocabulary masking in the draft's embedding path. The draft's absolute host cost GROWS with rows (~7.5 ms at bs=1 → ~10.6 ms at 16 streams).
 
 **Measured evidence:**
-- The scaling curve: the step time grows linearly at ~3.8 ms/stream (R² > 0.99 across 1–64 streams, multiple boots)
-- At 16 streams: the per-stream host cost is 61 ms of the 114 ms step = 54% — the DOMINANT component at 16+ streams
-- The per-stream throughput drops from 40.1 t/s (bs=1) to 16.2 t/s (bs=16) — a 2.5× reduction
-- The mxfp4 step-anatomy study: the host work scales with rows (the sampler + the scheduler + the draft dispatch are per-row operations)
+- The scaling curve: ~3.8 ms/stream linear (R² > 0.99)
+- D1 @16: the bucket split above; the EngineCore almost entirely idle-waiting → the per-stream cost is worker-local
+- The D1 @16 load measured 4.1 t/s per stream UNDER PTRACE (py-spy overhead inflates it; the stack PROPORTIONS remain the valid output — do not use the absolute t/s from profiled runs)
 
-**Expected behavior:** an optimized implementation would reduce the per-stream host cost to ≤1 ms/stream by:
-- Batching the sampler output processing across all streams (one host call for N streams)
-- Pre-allocating the KV blocks per sequence (avoiding the per-step allocation)
-- Computing the draft input preparation on-device (avoiding the host round-trip)
-- Using C++ for the scheduler hot path (eliminating the Python overhead)
+**Expected behavior:** graph the draft (kills most of the ~10.6 ms) + batch the sampler output processing (most of the ~6 ms) → the per-stream marginal drops toward ~1–1.5 ms → the aggregate @16 approaches ~380–450 t/s before any kernel work.
 
-**Performance impact:** at 16 streams, the per-stream host cost is 61 ms of the 114 ms step. Cutting it to 16 ms (4× reduction) would save 45 ms/step → the aggregate would increase from ~257 to ~380 t/s (+48%). This is the DOMINANT lever for the 800 t/s @16 objective.
+**Root cause:** per-row Python work in the worker's `sample_tokens` path (the draft preparation + the sampler), plus the replay staging scaling with the batch.
 
-**Root cause:** the per-stream work is implemented as per-stream Python operations (not batched across streams). The vLLM v1 scheduler processes each request individually. The MTP draft proposer prepares each sequence's input individually. The framework is designed for flexibility, not for the minimum host overhead.
+**Why it has not been solved:** the device-side rejection sampler (adopted) moved the accept/reject walk to the device but the host still does per-row output processing; the draft is eager (B5); the EngineCore scheduler was SUSPECTED but is now DISPROVEN as the per-stream bottleneck (it waits).
 
-**Why it has not been solved:**
-1. The device-side rejection sampler (ADOPTED, EXP-Q18) moved the accept/reject walk to the device but the host still processes the output (the token IDs extraction, the KV update, the next-step input preparation)
-2. The early-draft lever (ADOPTED, EXP-Q18) enqueued the draft immediately after the sampler but the input preparation is still per-sequence
-3. The scheduler's batch composition is a core vLLM design choice (not easily changed without a fork)
-4. The Python framework adds ~1–2 µs per operation (the PyTorch dispatcher, the autograd, the tensor wrapping)
+**Previous experiments:** EXP-Q18 (the levers), EXP-NS16/NS32/NS64 (the scaling curve), D1-16 (this session)
 
-**Previous experiments:** EXP-Q18 (the levers: adopted), EXP-NS16/NS32/NS64 (the scaling curve), the mxfp4 step-anatomy study (the per-row host measurement)
-
-**Relevant source code:**
-- `/opt/glm53/vllm/vllm/v1/core/scheduler.py` — the request scheduler
-- `/opt/glm53/vllm/vllm/v1/sample/rejection_sampler.py` — the rejection sampler output processing
-- `/opt/glm53/vllm-gaudi/vllm_gaudi/v1/spec_decode/hpu_eagle.py` — the MTP proposer (the input preparation)
-- `/opt/glm53/vllm-gaudi/vllm_gaudi/v1/worker/hpu_model_runner.py` — the input preparation + the output processing
-
-**Relevant GaudiGrimoire findings:**
-- The mxfp4 step-anatomy study: the host work scales with rows (the sampler + the scheduler + the draft dispatch are per-row operations)
-- The DSV4.1 PT2 modules (hpu_dsv4_control_mme_pt2.so): the DSV4.1 deployment moved the control-path computation to PT2 custom ops, reducing the host overhead
-- The abotsis fork's decode_lean.py: the GLM_MXK/GLM_SPEC_DEVICE_REJECT/GLM_EARLY_DRAFT levers that we adopted
+**Relevant source code:** `vllm/model_executor/layers/vocab_parallel_embedding.py:179/188 (get_masked_input_and_mask)`, `glm5_next_hpu/decode_lean.py:112 (early_draft)`, `vllm_gaudi/v1/worker/hpu_model_runner.py:4640 (sample_tokens)`, the rejection sampler output path
 
 **Research questions:**
-1. Can the sampler output processing be batched across all streams (one host call for N streams)?
-2. Can the KV block allocation be pre-allocated per sequence (avoiding the per-step allocation)?
-3. Can the draft input preparation be done on-device (avoiding the host round-trip)?
-4. What is the minimum per-stream host work for a decode step (the theoretical lower bound)?
-5. Can the scheduler's batch composition be replaced with a pre-computed schedule (amortizing the scheduling cost)?
+1. Can the draft's per-row embedding + masking be batched across rows (one op for N rows)?
+2. Can the sampler output processing be batched across all streams (one host call)?
+3. What is the minimum per-row host work in the worker path (the theoretical floor)?
+4. Does the replay bucket's growth with rows come from the staging (per-row copy_to) or the shape diversity (more graphs at mixed lengths)?
 
-**Potential optimization directions:**
-- The batch sampler: one host call that processes all N streams' sampling output
-- The pre-allocated KV blocks: allocate the KV cache for the max sequence length at admission time
-- The on-device draft preparation: compute the draft input (the token embedding, the position, the KV slot) on the device
-- The C++ scheduler: replace the Python scheduler with a C++ implementation
-- The persistent kernels: keep the kernels resident on the device and stream the inputs (eliminating the launch overhead entirely)
-
-**Dependencies:** D1 (the profiling trace) to decompose the per-stream host cost into the sampler vs the scheduler vs the draft components
-
-**Recommended next action:** D1 profiling at 16 streams to decompose the per-stream host cost into its components, then prioritize the reduction targets.
+**Recommended next action:** graph the draft (B5's fix) — it is ALSO the largest per-row host cost at 16 streams (~10.6 ms/step); then measure the sampler's residual share.
 
 ---
 
@@ -531,18 +506,23 @@ Raw op dispatch (`OpOverload.__call__` + `OpOverloadPacket.__call__`) is ~21% of
 | The dense + MTP module + sampler device work | ~0.6 | ~1% | DERIVED |
 | **Device total** | **~21** | **~47%** | DERIVED (needs the device-side trace to confirm) |
 
-**Missing measurements:** the per-layer device time (DSA vs KDA split); the host/device overlap ratio (how much of the 21 ms device work hides under the 24 ms host time); the HBM bandwidth during the MoE weight read; the 16-stream host profile (B3's decomposition).
+**Missing measurements:** the per-layer device time (DSA vs KDA split); the host/device overlap ratio (how much of the 21 ms device work hides under the 24 ms host time); the HBM bandwidth during the MoE weight read.
 
-### bs=32 decode step (the adopted config, 32 active streams, ~179 ms)
+### bs=32 decode step (the adopted config, 32 active streams, ~179 ms) — D1-16 INFORMED
+
+The 16-stream D1 profile (754 worker samples + 649 EngineCore samples) informs the batch scaling:
 
 | Component | Estimated time (ms) | Percentage | Evidence quality |
 |---|---:|---:|---|
-| The MoE weight streaming (the all-experts-read, unchanged) | 15.5 | 9% | DERIVED (batch-independent) |
-| The host-launch pipeline (fixed) | 15–20 | 8–11% | ESTIMATED |
-| The per-stream host cost (32 × ~3.8 ms) | ~122 | 68% | DERIVED (the scaling curve slope) |
+| The worker host: `execute_model` replay bucket (68.6% of the worker host) | ~42 | 23% | MEASURED (D1 @16 proportions; the host ≈ 61 ms of the ~114 ms step at 16 streams) |
+| The worker host: MTP draft dispatch (17.4%, grows with rows: get_masked_input_and_mask per-row) | ~10.6 | 9% | MEASURED (D1 @16) |
+| The worker host: sampler + metadata (~11%) | ~8 | 7% | MEASURED (D1 @16) |
+| The EngineCore scheduler | ~0 | 0% | MEASURED (99.4% MQ wait — not on the critical path) |
+| The MoE weight streaming (batch-independent) | 15.5 | 9% | DERIVED |
 | The attention + the compute (scales with rows) | ~24–48 | 13–27% | ESTIMATED |
 | The all-reduce (larger messages, same count) | ~5 | 3% | ESTIMATED |
-| **Total** | **~179** | **100%** | MEASURED |
+
+(The ~179 ms figure is the bs=32 extrapolation; the D1 profile ran at 16 active streams where the step is ~114 ms.)
 
 ---
 
@@ -592,6 +572,7 @@ Raw op dispatch (`OpOverload.__call__` + `OpOverloadPacket.__call__`) is ~21% of
 | Q14 | — | 4-HPU deployment candidate | bs=1 33.26, @16 113.5, accuracy 100% | Measured | Validated |
 | D1 | HOST | py-spy host profile, bs=1 (1458 samples) | replay 58% / draft 31.4% / sampler+meta ~11% of host; draft ≈7.5 ms/step (revised up 5×); replay internals localized to graphs.py:75 | Measured | Diagnosis established |
 | B7 | KERNEL | The load-context investigation (maps, LD_DEBUG, cross-tests) | The collision is a load-order artifact; the legacy-API op lib loads cleanly after HPU init — running in production (8/8 workers) | Measured | RESOLVED |
+| D1-16 | HOST | py-spy @16 streams: worker (754 samples) + EngineCore (649 samples) | Worker host: replay 68.6% / draft 17.4% (per-row: get_masked_input_and_mask) / sampler 9.9%; EngineCore 99.4% MQ-wait — the scheduler disproven as the per-stream bottleneck | Measured | B3 relocated to the worker |
 
 ---
 
@@ -635,7 +616,7 @@ At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched 
 | 1 | **B1: the Q21 routing-aware fused MoE kernel** (the weight streaming 38.1 → ~2.1 GB/step; also cuts the launch count + the AR boundaries) | CRITICAL | VERIFIED (the mechanism) / ESTIMATED (the gain) | 200 t/s + 800 t/s | bs=1: 43 → ~206 t/s; @16: 257 → ~845 t/s | HIGH (weeks) | **1** — UNBLOCKED (B7 resolved) |
 | 2 | **B5: the eager MTP draft dispatch** (D1: ~7.5 ms/step at bs=1; op dispatch + mark_step + dynamic_quant + native SiluAndMul) | HIGH | VERIFIED (D1) | TG | ~5–6 ms/step recoverable → +13–15% bs=1 | MEDIUM | **2** |
 | 3 | **B2: the HPUGraph.replay internals** (D1: ~14 ms/step; the replay loop dominates, staging only 1.6%) | CRITICAL | VERIFIED (D1) | All metrics | Fewer/larger graphs → −50% host floor | MEDIUM-HIGH | **3** |
-| 4 | **B3: the per-stream host cost** (the sampler + scheduler + draft dispatch batching; the bs=1 D1 done, the 16-stream profile missing) | HIGH | VERIFIED (the scaling curve) | 800 t/s @16 | −74% per-stream → +50% aggregate | MEDIUM | **4** |
+| 4 | **B3: the worker-side per-row host cost** (D1 @16: draft 17.4% + sampler 9.9% of the worker host; the EngineCore scheduler DISPROVEN — 99.4% MQ-wait) | HIGH | VERIFIED (D1-16) | 800 t/s @16 | graph the draft + batch the sampler → the marginal 3.8 → ~1–1.5 ms/stream | MEDIUM | **4** |
 | 5 | **B4: the AR latency + the boundaries** (the one-shot AR + the boundary reduction) | MEDIUM | VERIFIED | All metrics | −50% host floor → +25% decode | MEDIUM | **5** |
 | 6 | ~~B7: the op-loading registrar collision~~ | — | **RESOLVED** (the load-order recipe; the legacy-API op lib runs in production) | — | unblocks rank 1 | — | — |
 
@@ -646,7 +627,7 @@ At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched 
 | Missing measurement | Why it matters | How to obtain |
 |---|---|---|
 | ~~The per-op host time (D1)~~ | ~~Identifies the fusion targets~~ **DONE (2026-11-08):** the host split is measured — replay 58%, draft dispatch 31.4%, sampler/meta ~11%; the draft leaves identified (op dispatch, mark_step, dynamic_quant, native SiluAndMul) | — |
-| The 16-stream host profile (B3) | Decomposes the 3.8 ms/stream marginal cost into the sampler vs the scheduler vs the draft at the target batch | py-spy on a worker + the EngineCore during a 16-stream load |
+| ~~The 16-stream host profile (B3)~~ | ~~Decomposes the 3.8 ms/stream~~ **DONE (2026-11-08):** the worker host @16 = replay 68.6% / draft 17.4% / sampler 9.9%; the EngineCore scheduler is 99.4% MQ-wait (NOT the per-stream bottleneck — the cost is worker-local per-row work) | — |
 | The per-layer device time | Identifies the kernel optimization targets per layer | The 8-rank profiling with the per-layer ranges |
 | The host/device overlap ratio | Quantifies how much of the ~21 ms device work hides under the 24 ms host time | The timeline trace (the host + the device on the same timeline) |
 | The HBM bandwidth during the MoE weight read | Confirms the weight-read floor on our exact tree | The HBM counters or the bandwidth micro-benchmark |
