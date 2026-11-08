@@ -627,6 +627,15 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   measure bs=1 + @16; (b) then the static-placement machinery for the full
   +11 percent. Risk: our KDA/hybrid layers must be untouched (the patch touches
   only the FusedMoE config + MoE method paths).
+  LOADER WIRING POINT (located): our model.py calls param.weight_loader(param, w,
+  shard_id) at lines ~593/607 for the MoE expert params - the load_fused branch
+  wires there (or in vLLM FusedMoE.weight_loader), handling the FP8 shapes
+  (w13/w13_scale/w2/w2_scale with the group TP slicing; the mxfp4 module's
+  load_fused already handles [E, d1, d2] + the w13/w2 dim discrimination and the
+  page-cache-aware copy). The moe_layout module is self-contained (ctypes/json/
+  os/re/time/torch only). Remaining Q17(a) work: copy the module into our package
+  + write the config patch (re-anchor to our flatten_tp_across_dp_and_pcp layout)
+  + wire load_fused at the loader point + GLM_MOE_TP=2 boot.
 - **Q18 router fast path + early draft + device-side rejection** — `VERIFIED` (all three
   levers: bs=1 38.1 median (neutral), aggregate @16 **183-185 t/s (+46% over the eager
   draft, -13% vs non-MTP)**, acceptance 1.80 held, BYTE-IDENTICAL outputs, suite
