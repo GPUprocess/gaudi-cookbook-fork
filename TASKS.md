@@ -640,10 +640,15 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   config.py - the EP branch is at ~1231-1253 (assert use_ep at 1232; insert the
   group-layout check after it, before ep_size = tp_size; the anchor drifted from
   the mxfp4 patch - our make() has flatten_tp_across_dp_and_pcp between);
-  (2) vllm/.../fused_moe/routed_experts.py - the per-weight loader at ~585 has a
-  gpt_oss_mxfp4 branch; our FP8 path takes the GENERIC branch - wire load_fused
-  as a glm_fp8_layout branch there (the module handles [E, d1, d2] + the w13/w2
-  dim discrimination); (3) the router mapping (select_experts_from_routed in
+  (2) vllm/.../fused_moe/routed_experts.py - PRECISE WIRING SITE FOUND:
+  RoutedExperts.load_weights (~869) iterates expert_mapping; for FUSED checkpoint
+  tensors (loaded_weight.dim() == 3, our combined [E, d1, d2] w13/w2) the
+  is_fused branch at ~897 holds the full combined tensor BEFORE the chunk/unbind
+  - exactly what moe_layout.load_fused(layer=self-ish context, param,
+  loaded_weight) expects. Wire the group-slice call at the TOP of the is_fused
+  branch (return True when it handled the param); the non-fused branch (single
+  expert weights) keeps stock. The layer context: self carries moe_config +
+  layer_name (experts_by_slot needs it only for placements); (3) the router mapping (select_experts_from_routed in
   vllm_gaudi/ops/hpu_fused_moe.py ~485/576) - map_ids no-ops without a placement
   file, wire it for the later static-placement step. The module copies into our
   package self-contained.
