@@ -614,7 +614,19 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   memory-neutral; quality gates held, NOT bit-identical). Evidence: docs/results/moe-decode-step.md.
   Risk: load-time trap (page-faulting placement selection — read contiguous shares first);
   76.5->larger per-rank weights at TP2 sharding needs the memory check. Dependencies: none.
-  Next action: compute the placement offline, then a TP2-EP4 boot with the load-order fix.
+  Next action UPDATED (the mxfp4 moe_layout patch decomposed for our FP8 model):
+  part 1 (patch_config: the group layout in vllm FusedMoEParallelConfig.make -
+  GLM_MOE_TP=t forms rank groups, experts over groups, intermediate dim within
+  groups) is MODEL-GENERIC - applyable to our FP8 port after re-anchoring, and
+  ALONE gives EP4xTP2 contiguous (the simulation: fewer wider bins). Parts 2-3
+  (the fused mxfp4 loader slice + the router id->placement-slot mapping) are
+  MXFP4-loader-specific; our FP8 path needs: the standard loader honours the
+  group layout automatically (VERIFY), and the placement mapping adapted to
+  select_experts_from_routed. Plan: (a) apply part 1 + GLM_MOE_TP=2, boot,
+  verify the expert sharding in the load log (72 experts/group, I/2 per rank),
+  measure bs=1 + @16; (b) then the static-placement machinery for the full
+  +11 percent. Risk: our KDA/hybrid layers must be untouched (the patch touches
+  only the FusedMoE config + MoE method paths).
 - **Q18 router fast path + early draft + device-side rejection** — `VERIFIED` (all three
   levers: bs=1 38.1 median (neutral), aggregate @16 **183-185 t/s (+46% over the eager
   draft, -13% vs non-MTP)**, acceptance 1.80 held, BYTE-IDENTICAL outputs, suite
