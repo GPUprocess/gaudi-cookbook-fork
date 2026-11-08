@@ -749,6 +749,21 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   an isolated image. The kernel + installer + runtime remain in the repo, inert
   without GLM_FP8_MXK=1.
 
+### Research-folder status files (theory-agent feedback, 2026-11-08)
+
+The research sources live in the workspace at glm53_optimize/research/ with
+STATUS files per the framework (PROPOSED/UNDER REVIEW/ACCEPTED/REJECTED/
+IMPLEMENTING/VERIFIED/FAILED/DEFERRED), updated by the implementation agent:
+
+- abotsis-glm53-gaudi: **VERIFIED** (levers adopted, +42% aggregate) /
+  **IMPLEMENTING** (in-graph deep speculation - the highest-value open theory)
+- 1Cat-vLLM-Gaudi: **IMPLEMENTING** (block-FP8 kernel built + gated; the op-shim
+  blocked by the stack registrar collision - paths recorded)
+- g2-opt-manual: **VERIFIED** (the launch-bound frame; EXP-PHYS floor analysis)
+- project-maya: **IMPLEMENTING** (the build environment; the theory question:
+  how did the DSV4.1 custom ops load alongside the plugin?)
+- strata-fork: **VERIFIED** (frame evidence) / **DEFERRED** (the port itself)
+
 ### Queue operating rule
 
 After EVERY experiment: update the entry, ask what now limits performance, add newly discovered
