@@ -788,3 +788,15 @@ already reports the boot outcome).
 - bs=1 decode: **median ~37-39 t/s** (best 39.4)
 - Aggregate @16: **~180-187 t/s** (best 186.8)
 - vs non-MTP same-window: +18-20% on both axes (Q02 closed)
+
+## EXP-Q21 collision — gdb backtrace attempt: tooling-limited (2026-11-08)
+
+gdb (available on the host) with `catch throw` did not intercept the dlopen-time
+static-init throw (stripped release .so, no habana_operator.h debug symbols; the
+terminate path bypasses the catchpoint arming). The registrar mechanism stands as
+documented: the second .so's TORCH_LIBRARY_IMPL(custom_op, HPU) static block
+triggers the habana dispatcher's lazy init, which re-registers the built-in
+kernels the backend .so registered at import.
+
+**Resolution requires stack-level work** (the three recorded paths); the
+symbol-level hunt would need debug-symbol builds of libhabana_pytorch_backend.so.
