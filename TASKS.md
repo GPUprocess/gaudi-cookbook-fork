@@ -738,6 +738,18 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   dispatcher's lazy init, which re-registers the built-in kernels
   (hpu::habana_d2d_memcpy_other, habana_operator.h:799). The STOCK glm op
   library fails identically (not our op.cpp); both venvs; both load orders.
+  ROOT CAUSE (EXP-Q21): habana::RegisterKernel::add is a WEAK symbol exported by
+  BOTH libhabana_pytorch_backend.so and libhabana_pytorch_plugin.so - each
+  carries its own registry instance. A third .so linking both creates its own
+  TU-level registry context; the d2d_memcpy registration arrives twice across
+  the instances and the guard throws. Architectural: not fixable in a third
+  .so on v0.26.0.
+  PATH FORWARD: (a) build the serving image with the kernels (the mxfp4
+  framework's assumption - the Dockerfile stage per kernels/mxfp4-moe/README.md;
+  the kernel ELF + the installer are image-ready) or (b) upgrade the stack to
+  v0.30.0 (the fp8 gather is native there; the registrar guards may differ).
+  The kernel ELF + the gated library are correct and load cleanly; only the
+  torch-op shim's LOAD mechanism needs the stack change.
   RESOLUTION PATHS: (a) build/load inside the proper serving image (the
   framework's assumption); (b) register the ops from the plugin's own init
   instead of a second load_library'd .so; (c) probe the dispatcher init guards;
