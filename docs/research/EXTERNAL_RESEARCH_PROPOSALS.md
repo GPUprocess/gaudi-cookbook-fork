@@ -3,7 +3,7 @@
 Independent performance research for GLM-5.3-Flash on 8× / 4× Intel Gaudi 2.
 
 - **Author:** independent research architect (research-only; no HPU access, no implementation)
-- **Date:** 2026-11-07 (revision 1)
+- **Date:** 2026-11-08 (revision 5; statuses as re-applied by the implementation agent 2026-11-08 preserved)
 - **Status of this document:** official research handoff channel. The implementation agent updates the
   `Status:` field of each proposal and appends to `## Research history`. Do not delete prior proposals.
 - **Status vocabulary:** `PROPOSED` (new, unreviewed) → `IN REVIEW` → `IN PROGRESS` → `MEASURED` →
@@ -41,9 +41,11 @@ file strategy); the upstream `VLLM_BUCKETING_STRATEGY=pad` (padding-aware) mode 
 (verified, `extension/bucketing/padding_aware.py`) but is unused, as is the disk recipe cache
 (`PT_HPU_RECIPE_CACHE_CONFIG`) — see RA-006.
 
-Best verified numbers (8 HPUs): bs=1 decode **38.3–39.1 tok/s**; aggregate @16 **181–185 tok/s**;
-prefill 3.3–5.7K tok/s warm at 0.5–8K (objective band met at most depths); 1M context serving-validated
-(needle at 860,739 tokens). 4 HPUs (Q14): bs=1 33.26, aggregate @16 113.5, accuracy 100%.
+Best verified numbers (8 HPUs, adopted stack after RA-001 + ns16, 2026-11-08): bs=1 decode
+**41.4 tok/s** (RA-001 adopted, +8–10% over 38.3); aggregate @16 **~258 tok/s** (ns16 adopted);
+aggregate @32 396–401, @64 392–452 (saturation recorded — see RA-003 rev-5 note); prefill 3.3–5.7K
+tok/s warm at 0.5–8K (objective band met at most depths); 1M context serving-validated (needle at
+860,739 tokens). 4 HPUs (Q14): bs=1 33.26, aggregate @16 113.5, accuracy 100%.
 
 ### Validation round 2 (2026-11-08, GaudiGrimoire deep pass + deployed-tree verification)
 
@@ -90,6 +92,71 @@ node study, 69% of spec) / **1,945 GB/s** (compiler cost model, libSynapse 1.24.
 **2,147 GB/s** (TPC stream envelope at ≥134 MB) / **2,450 GB/s** (spec). RA-003/RA-005/RA-006
 and the target-physics conclusions are unchanged by this round.
 
+### Revision 5 update (2026-11-08, owner question round: MTP-4 theories + draft models for GLM-5.3-Flash)
+
+The owner asked for (i) multiple distinct theories on how to make MTP k=4 work, and (ii) an
+investigation of draft models built for GLM-5.3-Flash (incoai/GLM-5.3-Flash-DFlash2 was named;
+"find more, then investigate how to implement them"). The owner also fixed the aggregate target at
+16 streams: **do not recommend operating beyond 16 concurrent streams** (the ns32/ns64 data is
+retained as saturation evidence only). Material changes in this revision:
+
+1. **RA-004 reworked as a multi-theory proposal.** The MTP-4 path is now: **T0** (config-only
+   eager k=4 acceptance probe — the gate that sizes everything), **T1** (the full k-step draft
+   chain as one HPU graph per bucket shape, attention-in-graph — the abotsis 919ec98f reference
+   mode, which the reference measured at MTP-4: acceptance 3.33/5.0, aggregate 26.0 vs 20.2,
+   single-stream 20.9 vs 17.3, parity 12/12; TASKS A014/A018 are READY for this port), **T2**
+   (four replays of the existing 1-step draft graph via `HPUGraph.replay_with_inputs` — API
+   verified tier B in gaudi-pytorch-bridge; lower capture risk, four host submissions), **T7**
+   (asymmetric k=2, fallback). The project's own experiments are now fully synthesized: EXP-Q11
+   refuted k=2 *eager* under the levers (−11% bs=1 / −29% @16; mechanism: the 2nd draft pass is a
+   full eager traversal per step); EXP-Q01b/Q15 established the draft graphs are
+   **accuracy-neutral** (the earlier 97.5% gate failure was a cross-boot artifact — same-boot A/B
+   is valid); EXP-Q19 established in-graph draft + early-draft **do not stack** (replay sync
+   serializes the draft) — hence T1/T2 run with `GLM_EARLY_DRAFT=0`.
+2. **RA-002 step 0 is now MEASURED — NEGATIVE.** EXP-Q16 (boots q16/q16b, 2026-11-07) ran exactly
+   the step-0 probe: the cookbook `fixes/fp8-moe-gather` backport (v0.26.0, the vllm-gaudi #1731
+   path discovered via GaudiGrimoire) with `VLLM_HPU_MOE_GATHER=1` at the RATIO=0.5 gate: bs=1
+   median 20.4 vs 37.44 baseline — **−45%, decisively negative**. The measured failure mode: the
+   gathered path (index_select of the routed expert weights + native FP8 up/gate GEMM + **fp32
+   down projection**) costs more than the all-36-experts stock fused op at our 2-row shapes — i.e.
+   the Synapse compiler does **not** fuse the gather into the GEMM's DMA on this stack (the rev-4
+   "best case" is empirically excluded). The custom TPC kernel is the primary byte-reduction path,
+   not a fallback.
+3. **RA-001 ADOPTED (EXP-RA001):** `PT_HPUGRAPH_DISABLE_TENSOR_CACHE=0` at boot — zero code
+   changes; bs=1 41.4 (+8–10%, conservative estimate confirmed); aggregate @16 neutral (~257);
+   host RSS 0.73–0.88 GB/worker. The host floor estimates in this document shift by the measured
+   delta; D1 still re-derives them on the FP8 tree.
+4. **RA-003 ADOPTED with the owner's scoping note:** ns16 adopted (183 → ~258 @16); the batch
+   lever is **exhausted** (396–401 @32, 392–452 @64 — saturation, not a recommendation; bs=1
+   degrades −7–8% at ns32/64 from the wider bucket ladder). The owner's target remains 16 streams;
+   see the RA-003 rev-5 note on the serve_mtp.sh ns32 setting.
+5. **New RA-009 — DFlash2 draft model (incoai/GLM-5.3-Flash-DFlash2).** A purpose-built DFlash2
+   block-diffusion drafter for this exact model exists (19K downloads; CC BY-NC-ND 4.0 —
+   **non-commercial license, flagged**): 5-layer sliding-window draft model (hidden 4096, window
+   2048), block 8 (7 draft tokens in **one** pass + 8-token verify), top-16 path selector
+   (rank-256), two-tap dynamic convolution, conditioned on target hidden states at layers
+   [5, 14, 24, 33, 42] (config verified). Inco's own numbers (Qwen3.8-27B, block 8): mean
+   acceptance **4.80 vs 4.28 for the native MTP path**; 2.7–3.4× bs=1 throughput vs
+   autoregressive; DFlash2 is production-used (CoreWeave Kimi K2.7 Code endpoint). HPU precedent:
+   the 1Cat-vLLM-Gaudi fork implements DFlash2 on the HPU v1 runner (Qwen3.8-27B-qualified, GDN
+   rollback checkpoints, TP1, ≤16 seqs), and the Strata single-card port runs DFlash on Gaudi2
+   (measured 2.9 tokens/round at block 8). Upstream vLLM v1 has `method=dflash` as a first-class
+   spec-decode method (parallel drafting, K extra slots). The GLM port is High-effort (v1 HPU
+   runner wiring + KDA state rollback + TP8) with an open HBM gate (D13).
+6. **New RA-010 — ngram/suffix probe (config-only, zero draft cost).** vllm-gaudi v1 supports
+   ngram drafting (PR #81 covered Eagle + NGRAM; the spec_decode test lists ngram as a task). One
+   boot, no code: if ngram k=4 acceptance on our suite is ≥ ~2.5, it is a large bs=1 gain with no
+   draft device pass at all. Runs in the same boot family as T0.
+7. **New rejections:** RJ-11 (k=2 eager MTP under the levers — EXP-Q11, mechanism identified);
+   RJ-12 (EP4×TP2 layout — EXP-Q17, −22%/−21% on the stock stack; the adaptation is dormant in
+   the repo and re-eligible once the Q21 custom kernel lands, per the project's own note).
+8. **Gaps:** D13 added (KDA per-layer state size → DFlash2 rollback-checkpoint HBM at 16 active —
+   RA-009's concurrency gate); D1 sharpened (decompose the multi-row step's draft-host term — the
+   T0/T1 A/B gives it directly).
+
+The target-physics conclusions (Consequences 1–5) are unchanged by this revision; RA-009 is an
+*alternative speculation path* to the same k≥4-depth requirement, not a new roofline.
+
 ### Where one decode step's time goes
 
 | Item | Value | Source |
@@ -105,6 +172,12 @@ and the target-physics conclusions are unchanged by this round.
 | All-reduce latency | 162 per step × ~20 µs ≈ 3.4 ms | same study; 20–30 µs small-message regime confirmed by independent 8-card Gaudi2 measurements [GG: comm-gaudi2-8card.json, tier D] |
 | Host work with device idle (step boundary) | ~5.5 ms (cut to ~2–3 by the adopted Q18 levers) | same study + EXP-Q18 |
 | AIP utilization during decode | 0–24% | MEASURED (EXP-OPT-001) |
+
+**Rev-5 baseline note:** the table is stated at the pre-RA-001 stack (38.3 tok/s). The adopted
+stack now includes RA-001 (41.4 tok/s, +8–10%) and ns16 for the @16 target (~258 tok/s, ~177 ms
+step at 16 active with AIP 0–24% — i.e. ~135 ms of the multi-row step is host/gaps, of which the
+eager draft pass is the leading candidate; D1/T0 decompose it). The H estimates below shift by the
+measured delta; D1 replaces them either way.
 
 **Interpretation (DERIVED):** the step is host-launch-bound at *every* batch size. The host issues
 ~322 recipe replays serially (~24 ms); device work (weight streaming + compute) hides underneath and
@@ -204,12 +277,19 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
    stretch goal**, not a base case (gate: declare only if D1 + RA-001 show bs=1 host ≤ 12 ms).
    Base-case 4-HPU bs=1 after the full lever stack: **130–250 tok/s** (k=4, H 7–16 ms); stock-op
    ceiling 31–100 even at spec BW.
-4. **800 tok/s @16 on 4 HPUs is impossible at k=1 and feasible at k=4.** k=1: 28.8 tok/step over
-   83.8 GB needs ≥ 92% of spec BW *with zero host* — above the best measured GEMV streaming (90%,
-   B10). k=4: 53.3 tok/step over 83.8 GB in a 66.8 ms budget → **800–885 t/s at current host and
-   85–100% of spec** (53.3 ÷ (40.3+26) ms @ 2.08 TB/s = 804); comfortable once RA-001 lands.
-   The 4-HPU aggregate target **requires RA-003 (16 active) and RA-004 (k=4)**; the routing kernel
-   is optional there (saves 11–40% at 16 active). **An owner decision is required (RA-005).**
+4. **800 tok/s @16 on 4 HPUs is impossible at k=1 and feasible at k=4 — host-corrected in rev 5.**
+   k=1: 28.8 tok/step over 83.8 GB needs ≥ 92% of spec BW *with zero host* — above the best
+   measured GEMV streaming (90%, B10). k=4: 53.3 tok/step over 83.8 GB in a 66.8 ms budget →
+   **800–885 t/s at current host and 85–100% of spec** (53.3 ÷ (40.3+26) ms @ 2.08 TB/s = 804);
+   comfortable once RA-001 lands. The 4-HPU aggregate target **requires RA-003 (16 active) and
+   RA-004 (k=4)**; the routing kernel is optional there (saves 11–40% at 16 active). **An owner
+   decision is required (RA-005).** **Rev-5 correction:** the "current host" in the 800–885 figure
+   is H = 26 ms — the *bs=1-class* host. The *measured* 4-HPU multi-row host is ~90 ms (Q14: @16
+   aggregate 113.5 at 8 active → 132 ms step − ~41 ms device). With the measured host, 800@16 on
+   4 HPUs needs host ≤ ~24 ms — a ~75% cut (RA-004's graphed draft removes the draft-host share;
+   RA-008's structural cut must remove most of the rest); the base case is 370–430 t/s. The k=4
+   requirement stands; the feasibility class moves from "comfortable" to "requires the full host
+   stack on 4 cards" (see RA-004 §5).
 5. **The aggregate target at high batch is host-bound, not bandwidth-bound, today — and the
    multi-row host cost is larger than the bs=1 host cost.** Measured: 8 active streams run a
    ~82 ms step (183 tok/s ÷ 15 tok/step) against ~21 ms of device byte-time — an unexplained ~61 ms
@@ -224,29 +304,52 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
 
 | Rank | ID | Title | One-line mechanism | Expected impact (theoretical) | Effort | Status |
 |---|---|---|---|---|---|---|
-| 1 | **RA-002** | Routing-aware fused block-FP8 dequant GEMV MoE kernel (Q21 sharpened) | TPC kernel reads only the routed experts, dequantizes in the load pipe, row-parallel across all 24 TPCs | 5.4–12.5× expert-byte cut at bs=1; the only path into the 200 tok/s roofline on 8 HPUs and the only competitive bs=1 path on 4 HPUs | High (weeks) | PROPOSED |
-| 2 | **RA-001** | Decode tensor cache under MTP (port the per-call cache policy) | Re-enable the HPU-graph tensor cache for decode shapes; removes per-replay re-allocation host work from ~322 replays/step | host floor −30–60% (binding constraint on 200 at both 8 and 4 HPUs and on 800@16); bs=1 +10–40%, aggregate @16 +15–50% | Low (days) | PROPOSED |
-| 3 | **RA-003** | max-num-seqs 16 (32 verify rows) aggregate unlock | Host cost is per-step not per-row; double active rows under the same launch budget | aggregate @16 183 → 330–400 (expected); required for any 800@16 on 4 HPUs | Low–Medium (days) | PROPOSED |
-| 4 | **RA-004** | MTP k=4 as one graphed draft chain (no early-draft) | The 4-step draft chain becomes a single HPU graph replay; deep speculation on the post-RA-002 device floor (draft passes cost ~0.3–0.5 GB each, not full-stack MoE) | bs=1 3.33 tok/step: 106–207 on 8 HPUs at current host, 155–300 with RA-001; **required for 800@16 on 4 HPUs and for the 200 stretch goal** | Medium–High | PROPOSED |
-| 5 | **RA-006** | Graph-shape consolidation: pad-and-mask verify graph + padding-aware prefill buckets + recipe cache (+ dynamic-shape probe) | One max-width masked verify graph for the ≤2-seq regime; `VLLM_BUCKETING_STRATEGY=pad` for prefill (upstream 1M-context measurement: 28% warm-TTFT cut); disk recipe cache (warmup ÷8 workers); dynamic shapes verified real but NOT in HPU graphs | decode shapes 16→1–2, ladder −2–4 GiB, warmup −3–5 min, 1M-TTFT class fix; medium host value | Low–Medium (B/C days, A days-week) | PROPOSED |
-| 6 | **RA-005** | 4-HPU target physics audit and deployment plan | Decision document: which targets are reachable on 4 cards and what each requires | no direct perf; forces the 4-HPU 200-t/s stretch-goal gate and the 800@16 k=4 config decision | None (doc) | PROPOSED |
+| 1 | **RA-004** | MTP k=4 — multi-theory: T0 acceptance probe → T1 graphed draft chain (A014 reference port) / T2 4× single-step replay / T7 asymmetric fallback | The 4-step draft chain becomes one HPU graph replay per step (T1, the reference's measured mode: 3.33/5.0 acceptance, +29% aggregate, parity 12/12) or four replays of the existing 1-step graph (T2); deep speculation at ~0.3–0.5 GB/draft-pass, not full-stack MoE | bs=1 41.4 → 65–115 (current stack), 130–250 (with RA-002 + host cut); @16 258 → 380–450 (current), 800+ (with the RA-008 host cut on 8 HPUs; 4 HPUs per RA-005). **Required for 800@16 at both 8 and 4 HPUs (k=1 is infeasible on 4 cards) and for the 200 bs=1 with RA-002** | Low (T0, config-only) → Medium–High (T1) | IN REVIEW (rev 5 rework) |
+| 2 | **RA-002** | Routing-aware fused block-FP8 dequant GEMV MoE kernel (Q21) | TPC kernel reads only the routed experts, dequantizes in the load pipe, row-parallel across all 24 TPCs. **Step 0 (upstream FP8 gather) measured −45% (EXP-Q16) — the compiler does not fuse the gather; the custom kernel is the primary byte-reduction path** | 5.4–12.5× expert-byte cut at bs=1; the only path into the 200 tok/s roofline on 8 HPUs and the only competitive bs=1 path on 4 HPUs; saves 11–40% of the @16 verify read | High (weeks) | IN PROGRESS (Q21; PT2 custom-op adaptation staged) |
+| 3 | **RA-008** | Recipe-boundary + collective-boundary reduction (structural host-floor attack) | each of the 162 ARs/step forces a `mark_step()` recipe boundary (verified); 322 replays + ≥162 boundaries + the eager-draft host = the measured ~135 ms host/gap term of the 177 ms multi-row step | host floor −30–50% if boundaries + draft-host ≥ 20% of it (pending D1/D6); **the binding constraint on 800@16 on 8 HPUs at the current host, after RA-004** | Low (env knobs) – High (op-class restructuring) | **WORK IN PROGRESS** (D1/D6) |
+| 4 | **RA-009** | DFlash2 block-diffusion draft model (incoai/GLM-5.3-Flash-DFlash2) on the v1 HPU runner | One pass drafts the whole 8-token block (5-layer sliding-window drafter + top-16 path selector + 2-tap conv, conditioned on target layers [5,14,24,33,42]); inco's Qwen evidence: acceptance 4.80 vs 4.28 native MTP; HPU precedent: 1Cat v1 implementation + Strata port | bs=1 41.4 → 90–120 (current stack, if A8 ≥ 4.0), 180–220 (with RA-002 + host cut); @16 258 → 450–500 (current), 800–1,100 (with host cut). **Acceptance-side alternative to RA-004**; license: CC BY-NC-ND 4.0 (non-commercial — flagged) | High (port: v1 HPU wiring + KDA rollback + TP8) | PROPOSED (rev 5) |
+| 5 | **RA-006** | Graph-shape consolidation: pad-and-mask verify graph + padding-aware prefill buckets + recipe cache (+ dynamic-shape probe) | One max-width masked verify graph for the ≤2-seq regime; `VLLM_BUCKETING_STRATEGY=pad` for prefill (upstream 1M-context measurement: 28% warm-TTFT cut); disk recipe cache (warmup ÷8 workers); dynamic shapes verified real but NOT in HPU graphs | decode shapes 16→1–2, ladder −2–4 GiB, warmup −3–5 min, 1M-TTFT class fix; medium host value | Low–Medium (B/C days, A days-week) | IN REVIEW |
+| 6 | **RA-010** | ngram/suffix speculation probe (config-only) | Drafting from prompt+history on the host: zero draft device passes, zero new code; vllm-gaudi v1 supports ngram (PR #81) | bs=1 up to ~+90% (41.4 → 75–85) **if** ngram k=4 acceptance on our suite ≥ ~2.5; otherwise a cheap data point for the speculation menu | Low (1 boot, config-only) | PROPOSED (rev 5) |
 | 7 | **RA-007** | Prefill at intermediate/long depths: warm ladder + chunk strategy | 3–6K target met at 0.5–8K warm; the 16K–64K warm ladder is unverified (32K: 1,807 cold-inclusive); chunk-size A/B + non-graph host cost are the candidate levers | unknown until D11/D12 | Low (if a gap exists) | **WORK IN PROGRESS** |
-| 8 | **RA-008** | Recipe-boundary + collective-boundary reduction (structural host-floor attack) | each of the 162 ARs/step forces a `mark_step()` recipe boundary (verified); 322 replays + ≥162 boundaries = the host floor after RA-001 | host floor −50% if boundaries ≥ 20% of it (pending D1/D6) | Low (env knobs) – High (op-class restructuring) | **WORK IN PROGRESS** |
+| 8 | **RA-005** | 4-HPU target physics audit and deployment plan | Decision document: which targets are reachable on 4 cards and what each requires | no direct perf; the 4-HPU 200-t/s stretch gate and the 800@16 k=4 config decision are set | None (doc) | MEASURED / DELIVERED |
+
+**Adopted (no longer in the queue):** RA-001 (tensor cache — ADOPTED, bs=1 +8–10%, zero code
+changes) and RA-003 (max-num-seqs — ADOPTED at ns16 for the target; batch lever exhausted at
+400–420 per ns32/64, owner scope: 16 streams).
 
 WORK IN PROGRESS proposals are research-incomplete by construction: their mechanism evidence is
 in, but the load-bearing numbers require the implementation agent's measurements (named in each
 section's "Open questions"). They are **not** in the execution order below and are promoted to
 PROPOSED — or closed — only when their open questions are answered.
 
-**Suggested execution order** (dependencies, not ranks):
-1. Diagnostic D1 (8-rank profile of the *current* FP8 step) — sizes RA-001 and RA-002 host/device
-   shares on our exact tree (1–2 boots, method already documented in `docs/results/moe-decode-step.md`).
-2. **RA-005 decision memo** (no HPU time) — owner scopes the 4-HPU aggregate target.
-3. **RA-001** (days) — smallest change, biggest host-floor attack, independent of everything.
-4. **RA-003** (days, parallel with RA-001's validation) — config + graph family + KV sizing.
-5. **RA-002** (weeks, continues Q21) — with the design constraints below; D2 first (confirm the stock
-   op's expert read pattern) so the baseline ceiling is a measured fact.
-6. **RA-004** (after RA-002) — k=4 on the new device floor.
+**Suggested execution order (rev 5 — dependencies, not ranks):**
+1. **RA-004 T0 + RA-010 (config-only, one boot family, first HPU action):** eager k=4 acceptance
+   probe (T0) and the ngram k=4 probe (RA-010). Both are `--speculative-config` changes only;
+   T0's acceptance number gates T1/T2 and calibrates RA-009's expectation; RA-010's is a free
+   data point. Slow steps are expected and fine (measurement, not serving).
+2. **RA-002 continues (weeks):** step 0 is done (NEGATIVE — EXP-Q16); proceed to D2 (stock-op
+   read pattern) then the kernel per §9; D4 (tile sweep) is its first kernel gate; the PT2
+   custom-op adaptation is staged for the registrar collision.
+3. **RA-004 T1 (after T0, days–week):** port the A014 reference (abotsis 919ec98f chain-graph
+   mode) with the staged rollout; T2 (4× replay via `replay_with_inputs`) is the fallback if the
+   4-step chain capture fails; T7 only if both fail and k=2 remains worth it.
+4. **D1 + D6 + D13 in one profiling window** (same boot family as T0/T1 if possible): D1 now
+   explicitly decomposes the multi-row step's **draft-host term** (T0's eager-k=4 vs the current
+   k=1 gives it directly); D13 (KDA state size → DFlash2 checkpoint HBM) is RA-009's gate and
+   costs no HPU time beyond the state-shape read.
+5. **RA-008 (after D1/D6):** restate or close; if promoted, it is the 800@16-on-8-HPUs host
+   attack (and the 200 bs=1 remainder beyond RA-001's measured +8–10%).
+6. **RA-009 assessment (no HPU time, parallel):** 1Cat port-surface diff vs our v0.26.0 v1 runner,
+   D13, the incoai checkpoint config/weight inspection, and the license question (research use is
+   fine under CC BY-NC-ND; commercial deployment needs a license from inco.ai). The HPU spike only
+   if D13 fits the budget and T0's data supports the acceptance case.
+7. **RA-003 config call (owner):** serve_mtp.sh currently runs ns32 while the target is 16
+   streams — ns16 costs −7–8% bs=1 (wider ladder at ns32/64 is the reverse) and matches the
+   target; the agent's own NS64 note recommends ns16 for latency. Decide which is the production
+   config; the @16 aggregate is ~258–260 under either.
+8. **RA-006/RA-007** proceed as before (RA-006-B/C env experiments can share boot 1's family).
+9. After each: update the discovery queue per the operating rule (did the bottleneck move?), and
+   update the `Status:` fields here.
 
 ---
 
@@ -419,7 +522,12 @@ removes that objection (DERIVED size above + 83 GB free host RAM measured today)
 **Status:** IN PROGRESS (= Q21: the 1Cat block_fp8_dequant core compiled + gated into our variant
 library, TPC gate PASS 3254 GUIDs; the torch-op shim blocked by the v0.26.0 registrar collision -
 the weak-symbol per-library registry architecture, EXP-Q21; the PT2 custom-op API discovered as
-the DSV4.1-proven loading mechanism, the adaptation staged) · **Priority:** 1 · **Complexity:**
+the DSV4.1-proven loading mechanism, the adaptation staged; **rev 5: STEP 0 IS MEASURED-NEGATIVE
+(EXP-Q16, boots q16/q16b): the cookbook v0.26.0 gather backport at the RATIO=0.5 gate runs bs=1
+20.4 vs 37.44 baseline (-45%) — the gathered-weight copy + fp32 down GEMM dominate at our 2-row
+shapes, and the Synapse compiler does NOT fuse the gather into the GEMM's DMA on this stack (the
+rev-4 "best case" is empirically excluded); the custom TPC kernel is now the PRIMARY
+byte-reduction path, not the fallback**) · **Priority:** 1 · **Complexity:**
 High (weeks) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
@@ -444,16 +552,23 @@ fix for the Q21 step-2 blocker (§6), and the MTP-depth interaction table (§5).
   k=0, 9.6× at k=1, 5.4× at k=4**. The Q16 experiment (gather 16 of 36 experts) confirms the stock
   path reads all local experts and shows *why* naive gather loses: materializing a dequantized
   copy (index_select + fp32 down-GEMM) costs more than the savings.
-- **Upstream state of this idea (rev 4, corpus-verified):** routed-only expert decode is NOT
-  novel — vllm-gaudi ships two implementations: (i) `VLLM_HPU_MOE_GATHER=1` in `hpu_fp8.py`
-  (PR #1731, merged, in v0.30.0; a **cookbook backport fix for v0.26.0 — our version — exists at
-  `fixes/fp8-moe-gather/`**), for block-quantized FP8 MoE with dynamic activation scales and silu
-  experts, using the Habana FP8 GEMM op on the gathered weights; (ii) MiniMax
-  `_gather_swigluoai_moe` in `hpu_fused_moe.py` (index_select of `G = min(E_local, T×K)` experts +
-  bmm on MME, bit-exact vs the dense pass by construction, default-on for MiniMax-M3). Both keep
-  FP8 weights — unlike Q16, which dequantized (the failure mode). Whether the Synapse compiler
-  fuses `index_select` into the GEMM's DMA (1× bytes) or materializes the gather (2× bytes) is
-  unmeasured on our tree → **step 0** below.
+- **Upstream state of this idea (rev 4, corpus-verified; rev 5, step 0 measured):** routed-only
+  expert decode is NOT novel — vllm-gaudi ships two implementations: (i) `VLLM_HPU_MOE_GATHER=1`
+  in `hpu_fp8.py` (PR #1731, merged, in v0.30.0; a **cookbook backport fix for v0.26.0 — our
+  version — exists at `fixes/fp8-moe-gather/`**), for block-quantized FP8 MoE with dynamic
+  activation scales and silu experts, using the Habana FP8 GEMM op on the gathered weights; (ii)
+  MiniMax `_gather_swigluoai_moe` in `hpu_fused_moe.py` (index_select of `G = min(E_local, T×K)`
+  experts + bmm on MME, bit-exact vs the dense pass by construction, default-on for MiniMax-M3).
+  **Rev 5 — (i) is now MEASURED on our tree (EXP-Q16, boots q16/q16b):** the cookbook backport
+  with the RATIO=0.5 gate (gather engaged, verified by the gate's log) runs bs=1 median **20.4
+  vs 37.44 baseline = −45%**, decisively negative. Measured cost model: the gathered path
+  (index_select of the 16 routed expert weights + one native FP8 up/gate GEMM + **fp32 down
+  projection**) costs more than the all-36-experts stock fused op at our 2-row shapes — the
+  Synapse compiler materializes the gathered weights and the down GEMM runs on the dequantized
+  (fp32) intermediate; the rev-4 "fused into the GEMM's DMA (1× bytes)" best case is **excluded
+  empirically** on this stack. MiniMax's (ii) has the same structural shape (index_select + bmm)
+  and was not run — its cost model is expected to be of the same class at 2 rows. Step 0 below is
+  recorded as COMPLETE/NEGATIVE; the custom kernel is the primary byte-reduction path.
 - MEASURED (cited): a plain M=1 GEMV streams 16.8 MB of weights at 1.94 TB/s (79% of spec) [GG:
   gaudi2-hbm-engine-bandwidth B10, tier D) — the hardware can serve the routed-only byte budget in
   ~1.5–4 ms/step at bs=1; the stock path cannot get there at any bandwidth because it moves
@@ -611,21 +726,17 @@ framework project.
 
 #### 9. Implementation instructions
 
-0. **Step 0 — gather probe (1 boot, ~1 day, before any kernel work):** apply the cookbook
-   `fixes/fp8-moe-gather` backport (targeted at v0.26.0, patches `vllm_gaudi/ops/hpu_fp8.py`);
-   anchor-verify it against our l.219/l.283 region (fail-closed per patch conventions; GLM-5.3
-   qualifies on the fix's stated criteria: block-FP8, dynamic activation scales, silu experts —
-   confirm the last from the checkpoint quant config, don't assume). Boot with
-   `VLLM_HPU_MOE_GATHER=1`; measure (a) per-rank HBM bytes/step at bs=1 with the D2 method —
-   routed budget (≈4.3 GB) means the compiler fused the gather into the GEMM's DMA; ≈2× the
-   routed set means it materialized; 40+ GB means the env didn't take; (b) bs=1 and @16 tok/s.
-   **Decision:** if bytes hit the routed budget AND bs=1 improves proportionally, the byte target
-   of this proposal is met by a patch — steps 1–6 below demote to the fallback for residual
-   per-route overhead and the 4-HPU margin case. If bytes or throughput fall short, proceed with
-   the kernel, carrying the probe's numbers as the measured intermediate. This is a materially
-   different hypothesis from Q16 (RJ-02): Q16's loss was dequantization materialization
-   (index_select + fp32 down-GEMM); the upstream fix keeps FP8 weights on the Habana FP8 GEMM op,
-   so worst case is a 1× fp8 copy and best case is zero materialization.
+0. **Step 0 — gather probe: COMPLETE — MEASURED NEGATIVE (EXP-Q16, boots q16/q16b, 2026-11-07).**
+   The cookbook `fixes/fp8-moe-gather` backport (v0.26.0, the PR #1731 path) was applied,
+   anchor-verified, and booted with `VLLM_HPU_MOE_GATHER=1` at the RATIO=0.5 gate (gather
+   engaged, confirmed by the gate's refusal at the default 0.4 and engagement at 0.5): bs=1
+   decode median **20.4 vs 37.44 baseline (−45%)**, reps 20.19/17.13/20.59/20.72 — decisively
+   negative. The gathered path (index_select of the routed expert weights + native FP8 up/gate
+   GEMM + fp32 down projection) costs more than the all-36-experts stock fused op at 2-row
+   shapes; the compiler does not fuse the gather into the GEMM's DMA on this stack. The Q16
+   branch is retired (superseded); **proceed directly to the kernel (steps 1–6)**, carrying
+   EXP-Q16's numbers as the measured intermediate. The only re-test condition is a vendor change
+   to the gather path's cost model (see RJ-02).
 1. **D2 first (1 boot, ~30 min):** instrument `apply_monolithic` to log `x.shape[0]`,
    `topk_ids` distinct-local count vs 36, and (if available) per-op HBM counters for one layer;
    or run one bs=1 step with `hl-smi`/profiler per-rank HBM traffic. Record: does the stock op's
@@ -658,16 +769,19 @@ framework project.
 
 #### 11. Novelty assessment
 
-**Corrected in rev 4:** routed-only expert reads are not new in general. Upstream vllm-gaudi ships
-two gather implementations (PR #1731 `VLLM_HPU_MOE_GATHER`, v0.30.0, with a v0.26.0 cookbook
-backport; MiniMax `_gather_swigluoai_moe`, default-on for MiniMax-M3), and this project already
-ran Q16 (gather + dequant materialization, measured −45% at our 2-row shapes — RJ-02). What RA-002
-contributes over all of those: (i) **step 0** — the first measurement of the upstream FP8 gather's
-actual HBM behavior on our exact tree (the Q16 failure mode does not transfer to it: FP8 weights
-stay packed, and the Synapse compiler may fuse the gather into the GEMM's DMA, which no prior
-attempt tested); (ii) the fused dequant GEMV with **zero materialization** as the fallback that
-no upstream path has (upstream gathers either materialize or ride on the compiler's fusion, which
-is not something we can control); (iii) the **tile sweep** requirement — the Strata audit (tier D)
+**Corrected in rev 4; step 0 completed in rev 5:** routed-only expert reads are not new in
+general. Upstream vllm-gaudi ships two gather implementations (PR #1731 `VLLM_HPU_MOE_GATHER`,
+v0.30.0, with a v0.26.0 cookbook backport; MiniMax `_gather_swigluoai_moe`, default-on for
+MiniMax-M3), and this project already ran Q16 (gather + dequant materialization, measured −45% at
+our 2-row shapes — RJ-02). What RA-002
+contributes over all of those: (i) **step 0 — now completed, MEASURED NEGATIVE (EXP-Q16)**: the
+first measurement of the upstream FP8 gather's actual behavior on our exact tree — the compiler
+materializes the gathered weights and the down GEMM runs fp32 on the dequantized intermediate;
+−45% at our 2-row shapes. This removed the only cheaper alternative and fixed the baseline the
+kernel must beat; (ii) the fused dequant GEMV with **zero materialization** — now the only
+remaining byte-reduction path (upstream gathers materialize or ride on the compiler's fusion,
+which EXP-Q16 showed does not happen on our stack); (iii) the **tile sweep** requirement — the
+Strata audit (tier D)
 shows TPC GEMVs at small per-TPC tiles are issue-bound at 10% of HBM peak, which neither Q16 nor
 the upstream gathers characterized; (iv) the full-card row-parallel distribution as an explicit
 requirement; (v) the single-op-library integration fix for the Q21 step-2 blocker; (vi) the
@@ -681,7 +795,15 @@ weight streaming bytes on our tree.
 **Status:** MEASURED - ADOPTED (EXP-NS16/NS32/NS64: the implementation agent ran this
 independently - the max-num-seqs lever delivered 183 -> ~258 @16 (ns16) -> 396-401 @32 (ns32)
 -> 392-452 @64 (ns64). The doc's 260-400 prediction CONFIRMED; the lever is EXHAUSTED at
-400-420 (the saturation curve recorded). Adopted: max-num-seqs 32 in serve_mtp.sh.) ·
+400-420 (the saturation curve recorded). Adopted: max-num-seqs 32 in serve_mtp.sh.) · **Rev 5 —
+owner scoping (2026-11-08):** the aggregate target is defined at **16 streams**; do not recommend
+operating beyond 16 concurrent streams. The ns32/ns64 points stand as *saturation evidence* (the
+batch lever is exhausted — the next aggregate gain comes from speculation depth and the host
+term, RA-004/RA-008), not as a serving recommendation; note also the bs=1 cost of the wider
+ladder (−7–8% at ns32/64 per EXP-NS32/NS64). **Open config call:** serve_mtp.sh currently runs
+ns32 while the target is 16 streams — the @16 aggregate is ~258–260 under either, so the choice
+is bs=1 latency (ns16) vs future headroom (ns32); the agent's own NS64 note recommends ns16 for
+latency. ·
 **Priority:** 3 · **Complexity:** Low-Medium · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
@@ -813,171 +935,372 @@ math (DERIVED above).
 
 ---
 
-### RA-004 — MTP k=4 as one graphed draft chain (without early-draft)
+### RA-004 — MTP k=4: multi-theory implementation (T0 acceptance probe → T1 graphed draft chain / T2 4× replay / T7 asymmetric)
 
 **Status:** IN REVIEW (our EXP-Q11 refuted k=2 under the EAGER draft with the levers — -11%
-bs=1 / -29% @16 — consistent with this proposal's premise that the draft chain must be graphed;
-gated on RA-002's in-graph draft) · **Priority:** 4 · **Complexity:** Medium-High ·
-**Owner (suggested):** primary agent
+bs=1 / -29% @16 — consistent with this proposal's premise that the draft chain must be graphed) ·
+**Rev 5 (2026-11-08):** reworked as a multi-theory proposal at the owner's request ("multiple
+theories/hypotheses on how to make MTP=4 work"). New evidence synthesized: (i) EXP-Q11's
+refutation is mechanism-specific — the *eager* 2nd draft pass (a full device+host traversal per
+step) is the killer, and the in-graph draft path is **re-eligible**: EXP-Q01b/Q15 proved the
+draft graphs accuracy-neutral (byte-identical R003 logprobs and suite result vs the same-boot
+graph-off control; the earlier 97.5% gate failure was a cross-boot artifact); (ii) the abotsis
+reference (919ec98f) measured the full chain-graph MTP-4 mode — acceptance 3.33/5.0, aggregate
+26.0 vs 20.2 (+29%), single-stream 20.9 vs 17.3 (+21%), greedy identical, parity 12/12; TASKS
+A014/A018 are READY and designate this port; (iii) EXP-Q19's non-stacking (in-graph draft +
+early-draft) stands as a configuration constraint (T1/T2 run `GLM_EARLY_DRAFT=0`). T0 (config-only
+acceptance probe) gates T1/T2. · **Priority:** 1 (rev 5) · **Complexity:** Low (T0) / Medium–High
+(T1) / Medium (T2) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
 The project's MTP depth is capped at k=1 because the *eager* draft's host cost grows with depth
-(reference measurement: 93 ms host vs 17 ms device per step at MTP-4, tier D), and the split-mode
-draft graphs (Q01) were measured to **not stack** with early-draft pipelining (EXP-Q19: 164–173 vs
-183–185 @16 — the replay's mark_step+sync discipline serializes exactly the work early-draft
-pipelines). The untried combination is the third one: the **whole 4-step draft chain captured as a
-single HPU graph** (the reference's "attention-in-graph" mode: metadata tensors — block tables,
-slot mappings, attn bias — as graph inputs, the chain's attention included), replayed **once per
-step**, with device-side rejection kept and **early-draft off**. One replay instead of four
-eager forwards or four graph replays; the sync cost is paid once, not per chain step. The reference
-measured this exact mode at MTP-4: acceptance 3.33/5.0, aggregate 26.0 tok/s, parity 12/12 (their
-slower stack, tier D).
+(reference: 93 ms host vs 17 ms device per step at MTP-4 — "MTP-4 pays that four times per step",
+tier D). EXP-Q11 confirmed it on our tree at k=2 under all adopted levers: −11% bs=1 / −29% @16,
+and the mechanism is now precise: **each additional draft depth adds one full eager traversal of
+the MTP module (device + host) per step; the levers (router fast path, device rejection,
+early-draft pipelining) make each pass cheap but cannot make the 2nd-and-later passes free**,
+because pass *n+1* depends on pass *n*'s output and cannot be pipelined — it sits in the critical
+path.
+
+The fix is to change how the draft chain executes, not to abandon depth. Four theories:
+
+- **T0 (gate, config-only):** measure the k=4 acceptance curve on the current eager path. This
+  number sizes everything: if k=4 acceptance on our prompts is < ~2.5 tok/step, no
+  draft-execution mode rescues k=4 (the verify-row cost dominates) and the speculation effort
+  moves to RA-009 (a different drafter with one-pass economics); if ≥ 3.0, T1/T2 proceed with the
+  reference's 3.33/5.0 as the working assumption. T0 is a `--speculative-config` change only —
+  the single highest-value, cheapest experiment in this document.
+- **T1 (primary): the full k-step chain as one HPU graph per bucket shape.** The reference's
+  measured "attention-in-graph" mode: the draft's whole tensor path (embed → eh_proj → norms →
+  MoE → head norm) **including the draft's own MLA self-attention**, captured as one
+  `wrap_in_hpu_graph` per decode shape; the attention metadata tensors (block tables, slot
+  mappings, attn bias, block groups) are passed as **graph inputs** and the forward context is
+  rebuilt from them inside the captured forward, so replays read fresh metadata. The 4 draft
+  steps chain inside the graph (each consumes the previous step's output and advances the KDA
+  candidate-slot columns, S=5); the chain is replayed **once per step**; `GLM_EARLY_DRAFT=0`;
+  `GLM_SPEC_DEVICE_REJECT=1` unchanged. Reference measurement (tier D): acceptance 3.33/5.0,
+  aggregate +29%, single-stream +21%, parity 12/12, greedy identical to the split/eager paths;
+  their 80-lane shape (16 seqs × 5 rows) — exactly our ns16 k=4 shape — is measured near-linear.
+- **T2 (lower-risk alternative): four replays of the existing 1-step draft graph.** Replay the
+  in-tree Q01 1-step draft graph 4× per step, feeding each replay's input from the previous
+  replay's output via `HPUGraph.replay_with_inputs` / `replayV3` (API verified in our bridge,
+  tier B). The KDA candidate state advances in-place inside the graph between replays — the same
+  state semantics as the T1 chain. Cost vs T1: 4 host submissions + 4 step markers instead of
+  1+1 (≈ +2–3 ms/step worst case at the current submission class — small against the ~90 ms
+  multi-row host term); benefit: **no 4-step chain capture** — the capture risk T1 carries
+  (in-graph KDA state writes across 4 steps, new on our tree) reduces to the proven 1-step
+  capture. T2 is both the fallback if T1's chain capture fails and a valid first attempt for
+  de-risking.
+- **T7 (fallback only): asymmetric k=2** — 1st draft pass eager (early-draft pipelining works
+  with the 1st pass), 2nd pass graphed as one 1-step replay after the 1st completes (serial
+  anyway — no pipelining needed). From Q11's arithmetic: the eager 2nd pass was the killer;
+  graphing only that pass recovers most of k=2's acceptance (2.25/3.0 measured) at ~1 replay of
+  added cost. Only worth it if both T1 and T2 fail to capture.
+
+The graphed draft chain is the only untried cell of the {eager, split-graph, chain-graph} ×
+{early-draft on, off} matrix — and it is the one the reference measured working at MTP-4.
 
 #### 2. Current limitation
 
-- MEASURED: eager k=1 is the adopted default (+15.1% verified, Stage-1); eager k=2 net-neutral
-  (EXP-MTP-002); Q11 (k≥2 revival) is BLOCKED on Q01, and Q01's split mode is accuracy-neutral but
-  performance-conflicting with early-draft (EXP-Q19).
-- MEASURED (reference, tier D): MTP-4 attention-in-graph: accepted 3.33, aggregate 26.0 vs 20.2
-  bypass, single-stream 20.9, parity 12/12; their 80-lane (16 seqs × 5 rows) concurrency is
-  near-linear.
-- DERIVED: with RA-002's routing-aware kernel the k=4 step streams 7.7 GB/step/card at TP8 (5.3 GB
-  verify routed reads + 4 MTP-module draft passes at ~0.3–0.5 GB each + 2.1 GB non-MoE; 15.9 at
-  TP4) — the four extra draft tokens cost only ~1.3–2.0 GB because the draft passes run through the
-  MTP module, not the 42-layer stack. On today's eager stack those 4 draft forwards each cost
-  ~1–2 ms of host+device; the graphed chain replaces them with one replay (~1 ms) plus those
-  bytes. The bottleneck for deep speculation moves from "device time per draft token" to "one
-  cheap graphed chain".
+- MEASURED (project, adopted stack 2026-11-08): bs=1 **41.4 tok/s** (RA-001), @16 **~258 tok/s**
+  (ns16) at k=1 (1.85 tok/step); the @16 step ≈ **115 ms** (29.6 tok/step ÷ 258) with AIP 0–24%
+  → device ~20–25 ms, **host/gaps ~90–95 ms** — of which the eager draft pass is the leading
+  term (T0 measures it directly).
+- MEASURED (project): **EXP-Q11: k=2 eager under the levers is REFUTED (−11% bs=1 / −29% @16)** —
+  the 2nd draft pass is a full eager traversal per step; acceptance at k=2 is 2.25/3.0 (the gain
+  exists; the cost does not). **EXP-Q01b/Q15: the draft graphs are accuracy-neutral** (the split
+  draft graph produces byte-identical R003 logprobs and the identical 40-item suite result vs its
+  own graph-off control; same-boot A/B is the valid gate policy). **EXP-Q19: in-graph draft +
+  early-draft do not stack** (164–173 vs 183–185 @16) — the replay's sync serializes the draft
+  step; the k=1 draft-graph result (+33% @16, +9.3% bs=1) is measured with early-draft OFF.
+- MEASURED (reference, tier D, abotsis 919ec98f): the eager draft at MTP-4 is 93 ms host vs 17 ms
+  device per step ("each draft forward is hundreds of host launches, and on this model the host
+  launch path is the bottleneck"); the chain-graph mode (T1) inverts this — one replay,
+  acceptance 3.33/5.0, +29% aggregate, +21% single-stream, parity 12/12, greedy identical.
+- DERIVED: at 16 active the verify reads all local experts (batch-independent: 41.9 GB/card TP8);
+  the 4 draft passes add only ~1.3–2.0 GB (the MTP module, D9 to confirm) — deep speculation is
+  nearly byte-free at @16; at bs=1 it adds ~4.5 GB over k=1 (4.3 → 7.7 routed, 41.3 stock).
+- DERIVED (rev 5 correction, feeds Consequence 4): the 4-HPU multi-row host is **not** the bs=1
+  class. Q14 (TP4+EP4, k=1, 8 active): @16 aggregate 113.5 → step ≈ 132 ms (15.0 tok/step)
+  against ~41 ms device (81.4 GB @ ~2.0 TB/s) → **~90 ms multi-row host at 4 HPUs, measured**.
+  Consequence 4's "800–885 t/s at current host" used H = 26 ms (the bs=1 class) — with the
+  measured 4-HPU multi-row host, 800@16 on 4 HPUs needs a ~75% host cut, not a free lunch. See
+  the Consequence 4 correction note in the Executive summary and §5 below.
 
 #### 3. Proposed architecture
 
-- Extend the existing `_DraftAttnGraphCore` machinery (`ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu/mtp.py`,
-  already landed for Q01: `_private_copy` storage clones, metadata-as-inputs, `set_forward_context`
-  inside replay) from a **1-step** graph to a **k-step chained** graph: the graph input is the target's
-  last hidden state + token ids + metadata; internally the chain runs 4 draft forwards (each consuming
-  the previous step's output and writing the KDA candidate-slot columns — the existing S+1 column
-  machinery generalizes to S=5); the graph output is the 4 draft token ids + the 5 draft hidden states
-  for the 5-row verify.
-- One replay per step, after the target verify, with the existing seam discipline
-  (mark_step + sync around the replay — paid once).
-- `GLM_EARLY_DRAFT=0` in this configuration (it conflicts with the replay sync by measurement,
-  EXP-Q19); `GLM_SPEC_DEVICE_REJECT=1` stays (it is post-sampler, independent of the draft path).
-- Verify row count = seqs × 5 (k+1). At 8 seqs: 40 verify rows + 8 draft rows — within the existing
-  capture size 2048; at 16 seqs (RA-003): 80 verify rows = the reference's 80-lane shape (their
-  measured near-linear concurrency point).
+**T0 — acceptance probe (gate; config-only, ~1 boot):**
+- Boot the current stack (eager draft, levers as adopted) with
+  `--speculative-config '{"method":"mtp","num_speculative_tokens":4}'`. Steps run 3–4× slower
+  than k=1 (expected ~10–15 t/s bs=1, ~100–150 @16) — this is a measurement run, not serving.
+- The k=4 verify buckets (seqs × 5 lanes: 80 rows at ns16) are a **new graph shape for T0
+  itself** — either add the 5-lane decode buckets to `bucketing_file.txt` or accept the first-use
+  30–60 s captures (fine for a measurement run).
+- Measure: (a) tokens/step (= acceptance, max 5) on the standard suite, ≥10 min steady, at bs=1
+  and 16 streams; (b) the step-time delta vs the current k=1 boot (host portion → the eager
+  draft-host term for D1); (c) if the runner exposes per-position acceptance, the marginal decay
+  (k=1 1.85, k=2 2.25 are the known first two points).
+- **Decision rule:** A4 ≥ 3.0 → T1 (T2 in parallel as de-risk); 2.5 ≤ A4 < 3.0 → proceed with
+  retargeted arithmetic (replace 3.33 with A4 in the §5 tables); A4 < 2.5 → close T1/T2 (draft
+  cost dominates) and pivot speculation effort to RA-009 — A4 remains the calibration baseline
+  for the DFlash2 comparison (same suite).
+
+**T1 — chain graph (primary):**
+- Extend the in-tree `_DraftAttnGraphCore` machinery
+  (`ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu/mtp.py`, landed for Q01: `_private_copy`
+  storage clones, metadata-as-inputs, `set_forward_context` inside replay) from a **1-step**
+  graph to a **k-step chained** graph: graph input = target's last hidden state + token ids +
+  per-step attention metadata; internally 4 draft forwards (each consuming the previous step's
+  output and writing the KDA candidate-slot columns — the existing S+1 column machinery
+  generalizes to S=5); graph output = 4 draft token ids + 5 hidden states for the 5-row verify.
+- Wrap per the reference (tier D source, `vllm_gaudi/models/glm5_next_mtp.py` @ 919ec98f): one
+  `htorch.hpu.wrap_in_hpu_graph(core, disable_tensor_cache=True, dry_run=False)` — **dry_run=False
+  is load-bearing** (deterministic garbage from the first post-capture replay under dry run —
+  EXP-Q01 iteration notes); the draft's parameters are the target's layer-45 modules **held by
+  reference** with the `_shares_target_modules = True` marker — the runner must NOT wrap the
+  draft model in a second graph (capturing the same storage in two graphs breaks replay with
+  "Neither storage attached to input tensor, not its view" — the exact bridge assert, verified in
+  tier B source `backend/habana_device/HPUGraph.cpp`).
+- **Tensor-cache policy (RA-001 interaction):** the reference wraps its draft core with
+  `disable_tensor_cache=True` while their runner's decode graphs are cache-on. Our RA-001
+  adoption (env at boot) puts the cache on for all decode graphs. Port decision: **follow
+  RA-001 (draft core cache-on)** — the reference's cache-off was a host-RAM sizing decision at
+  their ~10× graph count; ours is an order of magnitude smaller and the per-replay host work is
+  the measured bottleneck. If D3's HBM/host-RAM measurement objects, the env gate makes this a
+  one-line revert.
+- One replay per step, after the target verify, with the existing seam discipline (mark_step +
+  sync — paid once, not per chain step).
+- `GLM_EARLY_DRAFT=0` (measured non-stacking, EXP-Q19); `GLM_SPEC_DEVICE_REJECT=1` unchanged
+  (post-sampler, independent of the draft path; the device rejection walk is already ours —
+  `glm5_next_hpu/decode_lean.py`).
+- Verify row count = seqs × 5 (k+1). At 16 seqs (ns16, the target): **80 verify rows = the
+  reference's measured 80-lane shape** (near-linear concurrency); at 8 seqs: 40 rows. Pre-warm
+  both in the warm client (first-use 30–60 s stalls, measured).
 - KDA spec state: S+1 = 5 candidate columns (the churn/chain parity tests in `tests/cpu/`
   parameterize S — extend the test, not the algebra).
 
+**T2 — 4× replay of the 1-step graph (lower-risk alternative / fallback):**
+- Keep Q01's 1-step draft graph (proven capture). Per step: replay it 4 times; after each
+  replay, the next replay's input (token id + hidden state) comes from the **previous replay's
+  output tensor**, supplied via `HPUGraph.replay_with_inputs(tlistI)` / `replayV3` (tier B, our
+  exact bridge: `python_packages/habana_frameworks/torch/hpu/graphs.py`; C++ side
+  `SingleHPUGraph::replayV3` replaces the user-input IR values per replay and requires the
+  supplied tensors to carry **device storage** — the previous replay's output does; a CPU tensor
+  without storage raises the documented "Neither storage attached to input tensor, not its view"
+  — keep the handoff on-device).
+- The KDA candidate state advances in-place inside the graph between replays (identical state
+  semantics to the T1 chain; the S=5 column machinery is the same).
+- Host cost vs T1: 4 submissions + 4 step markers instead of 1+1. At the current submission
+  class (~74 µs/replay, v0.24 figure — D1 re-derives): +2–3 ms/step worst case — small against
+  the ~90 ms multi-row host term, and the price of removing the chain-capture risk.
+- Numerics: the same per-step computation as T1 — verify with CPU parity (4× 1-step replay vs 4
+  chained eager forwards, atol 1e-6) + the R003 byte-identity probe.
+
+**T7 — asymmetric k=2 (fallback only):** 1st draft pass eager with early-draft ON (pipelined with
+the next verify, per the Q18 levers); 2nd draft pass graphed as one 1-step replay after the 1st
+completes (serial anyway — no pipelining needed). Recovers the measured k=2 acceptance
+(2.25/3.0) at ~1 replay of added cost. Only if both T1 and T2 fail to capture.
+
 #### 4. Technical feasibility
 
-- The reference ships this mode with measured MTP-4 numbers and 12/12 parity (tier D) — feasibility
-  on the same model/hardware is demonstrated; the port is an adaptation (the Q01 port of the same
-  family is already in-tree and CPU-verified).
-- **Independent cross-evidence (rev 4, tier D, gaudi2-single-card-strata):** a full single-Gaudi2
-  MoE deployment on SynapseAI 1.24.1 runs **4-row verification windows as fused launches**
-  (18.63 ms per window at 2K, device-side argmax, 155.7 tok/s at IQ4×Q8, ~2.9/4 acceptance) and
-  ships "fused four-step verification" GDN kernels — i.e., multi-step speculation fused into
-  single launches is a demonstrated Gaudi2 execution pattern, not a theoretical one. (Their draft
-  is DFlash2 with 58% acceptance at block 4 — different machinery; our k=4 acceptance assumption
-  of 3.33/5.0 rests on the abotsis reference measurement, not on Strata.)
-- `dry_run=False` is load-bearing for chained graphs (upstream measured deterministic garbage from
-  the first post-capture replay under dry run — EXP-Q01 iteration notes).
-- The private-storage clone cost scales with the chain's module set (layer 45 + shared head ≈
-  0.9 GiB/rank, unchanged from k=1 — the chain reuses the same modules).
-- **Unsupported assumptions:** (i) the chain graph captures cleanly with the KDA candidate-slot
-  writes in-graph (Q01 captured 1 step; 4 chained steps with in-graph state updates is new —
-  mitigate: CPU parity first, then single-step HPU, then 4-step); (ii) acceptance holds at k=4 on
-  our prompts (reference: 3.33/5.0 — our k=1 acceptance 1.88/2.0 is at the same ratio,
-  94%, so the decay shape is consistent); (iii) the 40/80-row verify graph family fits the HBM
-  graph budget (capture 2048 at TP8; +25.5 GiB ladder already allocated — the 25.5 GiB is the first
-  reclaimable block if needed, OPT-002).
+- **T1's mechanism is demonstrated on the same model + hardware + SW class:** the abotsis
+  reference ships exactly this mode (single full draft graph incl. attention-in-graph + MoE) and
+  measured it at MTP-4: 3.33/5.0, +29% aggregate, +21% single-stream, parity 12/12, greedy
+  identical (tier D). The reference source is in the corpus (`vllm_gaudi/models/glm5_next_mtp.py`,
+  commit 919ec98f) — the port is an adaptation, and the same family (1-step) is already in our
+  tree, CPU-verified (Q01). The reference's own docs describe the mode's load-bearing details:
+  metadata tensors as graph inputs with the forward context rebuilt inside the captured forward;
+  `requires_prompt_cache_fill` for the draft attention; the draft head bound by reference (no
+  double load); drafts paired with the logits-producing batch.
+- **T2's API is verified in our exact bridge (tier B):** `replay_with_inputs` /
+  `replayV2(static_tlist, tlist)` / `replayV3(tlistI)` exist in 1.24.1
+  `habana_frameworks/torch/hpu/graphs.py` (marked **beta — "may change in future releases"**);
+  `SingleHPUGraph::replayV3` in `backend/habana_device/HPUGraph.cpp` shows the per-replay input
+  substitution and the device-storage requirement. No project or reference precedent uses this
+  for a draft chain (T2 is a new application of a vendor API — hence the CPU-parity + R003 gate
+  before adoption, and the SW pin).
+- **Cross-evidence (rev 4, tier D, gaudi2-single-card-strata):** a full single-Gaudi2 MoE
+  deployment on SynapseAI 1.24.1 runs 4-row verification windows as fused launches (18.63 ms per
+  window at 2K, device-side argmax, ~2.9/4 acceptance) and ships "fused four-step verification"
+  kernels — multi-step speculation fused into single launches is a demonstrated Gaudi2 execution
+  pattern on our SW generation. (Their draft is DFlash2 — different machinery, see RA-009; our
+  k=4 acceptance assumption rests on the abotsis measurement, gated by T0.)
+- **Q15 resolved the accuracy question for graphed drafts:** byte-identical to eager on R003 +
+  the 40-item suite (same-boot A/B). The 5-row verify shape's near-tie class remains the
+  documented risk (ACCURACY.md) and is gated, not a blocker.
+- **Unsupported assumptions:** (i) T1's 4-step chain capture with in-graph KDA candidate-state
+  writes on *our* tree (Q01 captured 1 step; the reference captured 4 on theirs — the staged
+  1→2→4 rollout with CPU parity at each stage is the mitigation); (ii) k=4 acceptance on our
+  prompts (T0 gates; our decay 1.85 → 2.25 extrapolates to ~3.05/5.0, consistent with but below
+  the reference's 3.33); (iii) the 40/80-row verify + draft graph family fits the HBM graph
+  budget (25.5 GiB ladder is the first reclaimable block, OPT-002; the reference ran the 80-lane
+  shape with ~13 GiB of prompt graphs noted — our window is smaller); (iv) T2's beta API
+  stability across the pinned 1.24.1 SW (pin the SW; re-verify the signature at any bump).
 
-#### 5. Expected performance impact (theoretical)
+#### 5. Expected performance impact (theoretical until measured)
 
-Bytes/step from the Executive summary table (routed k=4: TP8 7.7 GB, TP4 15.9 GB — the 4 draft
-passes cost ~0.3–0.5 GB aggregate each through the MTP module, not full-stack MoE; 16 active:
-all-experts verify, 41.9/83.8 GB). Step = bytes ÷ BW + H + ~1 ms chain replay; H = 12–26 ms
-current, 7–16 with RA-001; tok/step = 3.33 bs=1, 53.3 at 16 active:
+Baseline (adopted, 2026-11-08): bs=1 41.4 tok/s (step ≈ 45.5 ms; device ~21, host ~24.5); @16
+258 tok/s (step ≈ 115 ms; device ~20–25, host/gaps ~90–95 — the eager draft is the leading host
+term, T0 measures it). Tok/step at k=4 = A4 (T0's measurement; the reference's 3.33 → 53.3 at 16
+active). Draft bytes ~1.3–2.0 GB (MTP module, D9). All numbers DERIVED; A4 and the host terms are
+the two open inputs.
 
-| Config | tok/step | Step (H 12–26) | tok/s | Step (H 7–16, RA-001) | tok/s |
+| Config | tok/step | Step, T1 graphed draft, current host | tok/s | Step, + RA-008 host cut | tok/s |
 |---|---:|---:|---:|---:|---:|
-| 8 HPU bs=1 (TP8, 7.7 GB) | 3.33 | 16.1–31.5 ms | 106–207 | 11.1–21.5 ms | 155–300 |
-| 8 HPU @16 active (RA-003, 41.9 GB) | 53.3 | BW-ceiling 34–43 ms → 1,240–1,560; realistic with the measured multi-row host term (~61 ms at 8 active, D1) 78–88 ms | 605–682 | 54–62 ms | 860–990 |
-| 4 HPU bs=1 (TP4, 15.9 GB) | 3.33 | 19.5–36.4 ms | 91–171 | 14.5–26.4 ms | 126–230 |
+| 8 HPU bs=1, stock op (41.3 GB) | 3.33 | 34–37 ms (21 + 1.5 + 1 replay + H 10–13) | 90–98 | 28–31 ms (H 7–10) | 107–119 |
+| 8 HPU bs=1, RA-002 routed (7.7 GB) | 3.33 | 18–21 ms (4.2 + 1.5 + 1 + H 10–13) | 159–185 | 14–17 ms (H 7–10) | 196–238 |
+| 8 HPU @16 ns16, stock (41.9 GB) | 53.3 | 67–92 ms (22–26 device + H 45–66 = measured 90–95 minus the eager-draft host, T0) | 580–795 | 55–72 ms (H 35–52) | 740–970 |
+| 8 HPU @16 + RA-002 (−~4.6 GB verify read at k=4) | 53.3 | −2 ms | +2–3% | −2 ms | +3% |
+| 4 HPU bs=1, stock (81.4 GB) | 3.33 | 48–52 ms (40.7 + 1.5 + 1 + H 10–13; Q14-derived bs=1 host 15.8) | 64–69 | 24–28 ms (RA-002 + H 7–10) | 119–139 |
+| 4 HPU bs=1, RA-002 routed (15.9 GB) | 3.33 | 21–25 ms (7.95 + 1.5 + 1 + H 10–13) | 133–158 | 15–19 ms (H 7–10) | 175–222 |
+| 4 HPU @16 ns16, stock (83.8 GB) | 53.3 | 125–145 ms (43 + 1 + H 80–100, Q14-derived multi-row host) | 367–426 | 67–87 ms (H 24–44) | 613–795 |
 
-- **Target:** bs=1 on 8 HPUs 38.3 → 106–207 tok/s with RA-002 at the current host, 155–300 with
-  RA-001. Standalone on the current stack (stock op, k=4): ~68 tok/s (same step as k=1, 3.33 vs 1.88
-  tok/step: 38.3 × 3.33/1.88). **Conservative:** 90–150 (chain-replay sync costs 10–15 ms,
-  acceptance 3.0). **Worst case:** 40–60 (chain capture fails to stay graphable → falls back to k=1;
-  the investment survives as the k=2 capability, which is the Q11 minimum).
+- **Target 200 bs=1 on 8 HPUs:** T1 + RA-002 + RA-008 at mid levels (196–238 in the table) —
+  consistent with Consequence 2 (all three levers, none at the extreme). T1 alone on the current
+  stack: 90–98 (stock) — the graphed chain is worth it even before the kernel, and it is the
+  prerequisite that makes the kernel's bytes usable at k=4.
+- **Target 800@16 on 8 HPUs:** T1 + the RA-008-class host cut (host ≤ ~50 ms of the measured
+  90–95): 740–970 in the table — reachable; T1 alone: 580–795 (already >2× today's 258).
+- **Target 800@16 on 4 HPUs (CORRECTED, rev 5):** with the measured 4-HPU multi-row host
+  (~90 ms, Q14-derived), T1 alone gives **367–426**, and 800 needs host ≤ ~24 ms — a **~75% cut**
+  of the measured 4-HPU multi-row host (T1 removes the draft-host share; RA-008's structural cut
+  must remove most of the rest). Consequence 4's "800–885 at current host" assumed H = 26 ms
+  (the bs=1 class) and is **not valid for 4 HPUs at 16 active** — see the correction note in the
+  Executive summary. The k=4 *requirement* stands unchanged (k=1 is BW-infeasible there at any
+  host level).
+- **Conservative:** acceptance 3.0 instead of 3.33 (−9% on every tok/step) + chain-replay sync
+  10 ms: bs=1 8 HPU ~80 (stock) / ~140 (RA-002); @16 ~520–720.
+- **Worst case:** T1's chain capture fails to stay graphable on our tree → T2; if T2 also fails
+  → T7 (k=2, 2.25/3.0) → k=1. The investment survives as the k=2 capability at each fall-back
+  (Q11's minimum).
 - Note: k=1 + RA-001 + RA-002 reaches 102–214 on 8 HPUs — 200 is inside that range but only at
-  host ≤ 6–7.7 ms + 52–100% of spec (both near-extreme). **k=4 is the robust configuration**: at
-  host ≤ 10–13 ms it needs only 47–86% of spec. And k=4 is the *only* path to 800@16 on 4 HPUs
-  (Consequence 4: k=1 is BW-infeasible there at any host level).
+  host ≤ 6–7.7 ms + 52–100% of spec (both near-extreme). **k=4 remains the robust configuration**:
+  at host ≤ 10–13 ms it needs only 47–86% of spec, and it is the *only* speculation path to
+  800@16 on 4 HPUs (RA-009's DFlash2 path is the alternative drafter for the same depth
+  requirement — §11).
 
-#### 6. Implementation complexity — Medium–High
+#### 6. Implementation complexity
 
-The Q01 port (CPU-verified, in-tree) is the base; the delta is chain-in-graph (metadata plumbing for
-4 steps, S=5 column algebra test, 40/80-row verify graph family, warm-client entries). No new kernel
-work (the draft layer reuses the existing target/draft ops; if RA-002 lands first, the draft's MoE
-call can also take the routed-GEMV path at 1-row shapes — optional, later).
+- **T0 — Low:** config-only (speculative depth + the 5-lane buckets), one boot, standard bench
+  harness.
+- **T1 — Medium–High:** the Q01 port (CPU-verified, in-tree) is the base; the delta is
+  chain-in-graph: 4-step metadata plumbing, in-graph KDA state writes across steps, the S=5
+  column-algebra test, the 40/80-row verify + draft graph family, warm-client entries, and the
+  reference's wrap discipline (`_shares_target_modules`, `dry_run=False`, single wrap of the
+  draft core). No new kernel work (the draft layer reuses the existing target/draft ops; if
+  RA-002 lands first, the draft's MoE call can take the routed-GEMV path at 1-row shapes —
+  optional, later).
+- **T2 — Medium:** reuses the proven 1-step capture; the delta is the replay loop with on-device
+  input handoff via `replay_with_inputs` + the beta-API pinning.
+- **T7 — Low–Medium:** composes the existing eager (1st pass) and graphed (2nd pass) paths.
 
 #### 7. Risks
 
 - **Accuracy (highest):** the 5-row verify shape changes the FP near-tie class (documented,
-  ACCURACY.md), and the R003 chaos item (EXP-Q15) is exactly this kind of knife-edge. Gate policy:
-  same-boot A/B per EXP-Q15; consider a 5-rep × 80-item suite extension (or the I015 boundary
-  diagnostics) so a 1-item flip is distinguishable from ≤ 0.5 pp.
-- **Graph capture:** 4-step chain with in-graph KDA state writes — new relative to Q01; staged
-  rollout (1-step → 2-step → 4-step, CPU parity at each).
-- **Memory:** +~0.8 GiB/rank MLA latent cache at 5 draft rows (A027 scaling), +graph ladder for the
-  40/80-row shapes; HBM headroom OK at TP8 (70 GiB with RA-003's KV), tight at TP4 (Q14: 11.1 GiB
-  free after weights — budget before attempting).
+  ACCURACY.md); the R003 chaos item (EXP-Q15) is exactly this knife-edge. Gate: same-boot A/B per
+  the Q15 policy (now validated as the correct comparison); consider the 5-rep × 80-item suite
+  extension (or I015 boundary diagnostics) so a 1-item flip is distinguishable from ≤ 0.5 pp.
+- **T1 graph capture:** 4-step chain with in-graph KDA state writes — new on our tree (the
+  reference proves it on theirs); staged rollout 1→2→4 with CPU parity at each; `dry_run=False`
+  is load-bearing (documented garbage failure mode).
+- **T2 API risk:** `replay_with_inputs`/`replayV3` are beta in 1.24.1 ("may change in future
+  releases", tier B) — pin the SW, re-verify the signature at any bump; the handoff tensor must
+  carry device storage (keep it on-device; a CPU handoff raises the documented assert).
+- **Memory:** +~0.8 GiB/rank MLA latent cache at 5 draft rows (A027 scaling) + the 40/80-row
+  graph family on the 25.5 GiB ladder (first reclaimable block, OPT-002); TP8 headroom OK, TP4
+  tight (Q14: 11.1 GiB free after weights — budget before attempting).
 - **Interaction with RA-003:** 80-lane verify at 16 seqs — the reference ran exactly this shape
-  (80 lanes) and measured near-linear; our capture ladder must pre-warm it.
+  and measured near-linear; pre-warm it in the warm client.
+- **RA-001 interaction:** the draft core's cache-on policy (T1 note) — one-line env revert if D3
+  objects.
+- **Host regression at k=1:** T1 is a **k=4 serving config**, not a k=1 change — the adopted
+  k=1 stack (eager draft + early-draft levers) stays untouched; the A/B is k=4-graphed vs
+  k=4-eager, with k=1 as the reference point.
 
 #### 8. Dependencies
 
-- Q01's in-tree machinery (landed, CPU-verified, env-gated OFF).
-- Q15 resolution or the same-boot gate policy (adopted in DECISIONS.md) for the accuracy verdict.
-- RA-002 for the full payoff (optional for the experiment to be meaningful: k=4 vs k=1 A/B on the
-  current stack already answers "does the chain graph work").
-- Q11 (currently BLOCKED on Q01) — this proposal is the unblock path with a *different* design than
-  the one Q11 assumed; update Q11's dependency text to RA-004.
+- T0: none (config-only; the current eager path supports k≥2 — Q11 ran k=2; k=4 verify buckets
+  are new shapes, first-use capture acceptable for a measurement run).
+- T1: Q01's in-tree machinery (landed, CPU-verified, env-gated OFF); the A014 reference source
+  (corpus: abotsis 919ec98f — the designated port per TASKS A014/A018); the same-boot gate policy
+  (DECISIONS.md); RA-003's ns16 (the 80-row shape is the target shape).
+- T2: Q01's 1-step graph (in-tree); the 1.24.1 bridge API (verified tier B).
+- RA-002: optional for the full bs=1 payoff — the k=4-vs-k=1 A/B on the current stack already
+  answers "does the graphed chain work".
+- Q11 (REFUTED for eager k=2): this proposal is the unblock path with a *different* design than
+  the one Q11 assumed — update Q11's dependency text from "Q01" to "RA-004 (T1/T2)".
 
 #### 9. Implementation instructions
 
-1. Read EXP-Q01 (design + iterations 1–3) and the reference mode (corpus: abotsis
-   `vllm_gaudi/models/glm5_next_mtp.py`, `docs/features/glm53_flash.md` speculative notes;
-   `VLLM_GLM_MTP_DRAFT_ATTN`/`VLLM_GLM_MTP_ATTN_GRAPH` behavior).
-2. CPU: generalize `tests/cpu/check_draft_graph.py` to chain length k (chain output == k chained
+0. **T0 (first; config-only, ~1 boot):** (a) add the 5-lane decode buckets to
+   `bucketing_file.txt` (or accept first-use captures); (b) boot the current stack with
+   `--speculative-config '{"method":"mtp","num_speculative_tokens":4}'` (draft graphs OFF, as
+   today); (c) measure tokens/step (acceptance out of 5) on the standard suite, ≥10 min steady,
+   bs=1 + 16 streams; step time vs the current k=1 boot (host portion = the eager draft-host
+   term → D1); (d) record EXP-RA-004-T0 with A4 and apply the §3-T0 decision rule. Same boot
+   family: the RA-010 ngram probe (independent config).
+1. **T1 port (after the T0 gate passes):** read EXP-Q01 (design + iterations 1–3) and the
+   reference source (corpus: abotsis `vllm_gaudi/models/glm5_next_mtp.py` @ 919ec98f —
+   `_DraftAttnGraphCore`, `HpuGlm5NextMTPModel.__init__` (the wrap discipline,
+   `_shares_target_modules`, `dry_run=False`), `docs/features/glm53_flash.md` speculative notes —
+   metadata-as-inputs, prompt-cache fill, the device rejection-sampling path; the
+   `VLLM_GLM_MTP_DRAFT_GRAPH` / `VLLM_GLM_MTP_DRAFT_ATTN` / `VLLM_GLM_MTP_ATTN_GRAPH` env
+   semantics).
+2. CPU: extend `tests/cpu/check_draft_graph.py` to chain length k (chain output == k chained
    eager forwards, atol 1e-6, position-0 zeroing held at step 1 only); extend
    `check_kda_spec.py` to S=5.
-3. HPU staged: boot with k=1 attn-mode graph (sanity, vs Q01 numbers), then k=2, then k=4; at each:
-   acceptance, bs=1, 16-stream, R003 probe, suite.
-4. Set the serving config for the experiment: `--speculative-config '{"method":"mtp",
-   "num_speculative_tokens": 4}'`, `GLM_EARLY_DRAFT=0`, `GLM_SPEC_DEVICE_REJECT=1`,
-   `VLLM_GLM_MTP_DRAFT_GRAPH=1` (attn mode), decode bucket pinned (32-row verify at 16 seqs /
-   40-row at 8 seqs... note: rows = seqs × 5).
-5. Record EXP-RA-004; update A012/A013/A026 and Q11.
+3. HPU staged: boot with the k=1 attn-graph (sanity vs Q01's +33% @16 / +9.3% bs=1 — the first
+   data point on the cache-on draft core, D3), then k=2, then k=4; at each: acceptance, bs=1,
+   16-stream, R003 probe, 40-item suite (same-boot family).
+4. **T2 (if the T1 chain capture fails at any stage — or as a parallel de-risk):** implement the
+   4× replay loop on the k=1 draft graph with `HPUGraph.replay_with_inputs` (on-device handoff
+   from each replay's output); CPU parity (4× 1-step replay vs 4 chained eager) + the R003 probe;
+   then the same staged HPU ladder.
+5. Serving config for the k=4 experiment: `--speculative-config '{"method":"mtp",
+   "num_speculative_tokens": 4}'`, `GLM_EARLY_DRAFT=0`, `GLM_SPEC_DEVICE_REJECT=1`, draft-graph
+   env ON (attn mode), ns16, 80-row shape pre-warmed in the warm client.
+6. Record EXP-RA-004 (per theory: T0 / T1 / T2); update A012/A013/A026, Q11 (unblock), and the
+   discovery queue.
 
 #### 10. Validation criteria
 
-- **Function:** chain graph replays correctly from step 1 (no dry-run garbage — the documented
-  failure mode), churn/swap parity at S=5, block-boundary tests (the 639/640/641 set) at k=4.
-- **Performance:** bs=1 ≥ 60 tok/s on the current stack (the chain-graph works) and ≥ 120 with
-  RA-001+RA-002; acceptance ≥ 3.0/5.0.
-- **Accuracy:** same-boot A/B vs k=1, suite delta ≤ 0.5 pp (with the extended suite or I015
-  diagnostics to de-noise the chaos item).
+- **T0:** A4 recorded (bs=1 + 16-stream, steady state) + the eager draft-host term (k=4 eager
+  step − k=1 eager step, host portion). That is the full T0 deliverable.
+- **T1/T2 function:** the chain (or 4× replays) replays correctly from step 1 (no dry-run
+  garbage — the documented failure mode), churn/swap parity at S=5, block-boundary tests (the
+  639/640/641 set) at k=4, greedy byte-identity on the R003 probe vs the same-boot eager k=4
+  control.
+- **Performance:** bs=1 ≥ 60 tok/s on the current stack (vs 41.4 at k=1) and ≥ 150 with RA-002
+  (+ the RA-008 host cut); @16 ≥ 550 on the current stack (vs 258 at k=1) and ≥ 800 with the
+  RA-008 host cut on 8 HPUs; acceptance ≥ A4 (the graphed path must not lose acceptance vs the
+  eager k=4 — the reference is greedy-identical).
+- **Accuracy:** same-boot A/B vs the eager k=4 control, suite delta ≤ 0.5 pp (extended suite or
+  I015 diagnostics to de-noise the chaos item).
+- **T2-specific (if both T1 and T2 exist):** greedy byte-identity between the two graphed modes
+  (same math), and the host-cost delta (the 4-submission penalty) recorded in EXPERIMENTS.md.
 
 #### 11. Novelty assessment
 
-Q11 (BLOCKED) and Q05 (whole-verify-step graph) are the adjacent entries, but neither specifies this
-combination: Q11 assumed "Q01 split mode + early-draft" (measured non-stacking, EXP-Q19); Q05
-targets the *target* verify graph with the sampler outside; this targets the **draft chain** as one
-graph *without* early-draft — the only untried cell of the {eager, split-graph, chain-graph} ×
-{early-draft on, off} matrix, and the one the reference measured working at MTP-4.
+- Q11 (refuted for eager k=2) and Q05 (whole-verify-step graph) are the adjacent entries; neither
+  specifies a graphed draft chain without early-draft. Q19 measured the non-stacking cell (split
+  graph + early-draft). Q01's split mode is in-tree but (a) 1-step only and (b) never chained at
+  k≥2 — the 4-step chain is the untried cell of the {eager, split-graph, chain-graph} ×
+  {early-draft on, off} matrix, and the one the reference measured working at MTP-4 (3.33/5.0,
+  parity 12/12).
+- **T2 (4× replay via `replay_with_inputs`) is new relative to both the project and the
+  reference** — the reference uses the single chain graph, and a GaudiGrimoire search for
+  `replay_with_inputs` returns only the bridge source (no prior use for a draft chain anywhere in
+  the corpus). The API itself is vendor-verified (tier B), which is why T2 is a credible
+  fallback rather than a research bet.
+- **T0 is a new diagnostic** — no prior measurement of the k=4 acceptance on our suite (the
+  reference's 3.33 is on their prompts; our k=1/k=2 points extrapolate to ~3.05).
+- **Distinct from RA-009 (DFlash2):** RA-009 changes the *drafter* (a separate block-diffusion
+  model, one pass per block); RA-004 changes the *draft execution* of the existing MTP head (k
+  chained passes, graphed). They are complementary: T0's A4 is the baseline RA-009 must beat
+  (inco's Qwen data says DFlash2 beats native MTP by ~0.5 tokens — if A4 lands near the
+  reference's 3.33, DFlash2's expected GLM number is ~3.7–4.0), and RA-009's one-pass economics
+  are the alternative if A4 disappoints.
 
 ---
 
@@ -1431,6 +1754,353 @@ Reduce the number of host-visible boundaries per step, in order of effort:
 **Promotion rule:** after D1+D6, restate as PROPOSED naming the specific op class(es) to
 restructure and the knob value, or fold the residue into RA-001's re-profiling and close.
 
+### RA-009 — DFlash2 block-diffusion draft model (incoai/GLM-5.3-Flash-DFlash2) on the v1 HPU runner
+
+**Status:** PROPOSED (rev 5, new — owner-requested investigation of draft models built for
+GLM-5.3-Flash) · **Priority:** 4 · **Complexity:** High (port: v1 HPU runner wiring + KDA
+rollback + TP8) · **Owner (suggested):** primary agent
+
+#### 1. Executive summary
+
+A purpose-built DFlash2 drafter for this exact model exists: **incoai/GLM-5.3-Flash-DFlash2**
+(19K downloads, 129 likes; **license CC BY-NC-ND 4.0 — non-commercial, flagged in §7**). DFlash2
+is a *block-diffusion* drafter: instead of drafting autoregressively (k chained passes — the MTP
+path), it predicts the **whole block in one forward pass** and keeps the top-16 candidates at
+every position; a lightweight selector (rank-256 low-rank bilinear scoring of adjacent candidate
+pairs) traces one coherent path; two-tap dynamic convolutions fix the suffix decay. The GLM
+checkpoint's config (verified, `config.json`): 5 layers of sliding attention (window 2048),
+hidden 4096, 32 heads / 8 KV heads, head_dim 128, intermediate 12288, BF16, vocab 154880,
+`dflash_config: block_size 8, selector_top_k 16, selector_rank 256, conv_kernel_size 2,
+mask_token_id 154856, target_layer_ids [5, 14, 24, 33, 42]` — i.e. it conditions on the target's
+hidden states at five of GLM-5.3-Flash's 45 layers, and drafts 7 tokens + 1 bonus = an **8-token
+verify block** per pass.
+
+Evidence that this works, and works well:
+
+- **Inco's own numbers (blog 2026-08-18, tier D):** on Qwen3.8-27B (block 8), DFlash2 mean
+  acceptance **4.80 vs 4.28 for the native MTP path** and 3.62 for DSpark; on Qwen3.5-4B, 5.97
+  vs 4.54 MTP. SGLang serves at **2.7–3.4× the throughput of autoregressive decoding at bs=1**;
+  DFlash2 adds >20% output per verification pass for ~1% added cycle latency (selector +2.0 M
+  params / +0.6% latency; conv +16.5 M params / +0.7%). Decoding is lossless: greedy output
+  matches the target exactly, sampling preserves the distribution (rejection sampling).
+- **Ecosystem:** DFlash/DFlash2 drafters are published for many models (NVIDIA, Red Hat, Modal,
+  Meta Muse Glimmer, Poolside, Xiaomi, Nemotron); CoreWeave's production Kimi K2.7 Code endpoint
+  runs DFlash by default; 3.5M+ DFlash downloads. Upstream **vLLM v1 has `method=dflash` as a
+  first-class spec-decode method** (parallel drafting; "DFlash uses one bonus query followed by K
+  mask queries"; worker modules `vllm.v1.worker.gpu.spec_decode.dflash/dflash2`).
+- **HPU precedent (the feasibility core):** the **1Cat-vLLM-Gaudi fork implements DFlash2 on the
+  HPU v1 runner** (`vllm_gaudi/v1/spec_decode/hpu_dflash2.py`, `flashinfer_gaudi.dflash2`,
+  `platform.py` `_validate_hpu_dflash2_config` — all in the corpus, tier D): all 7 drafts in one
+  pass, top-16 selector on HPU, 8-token block verification with **rollback-safe recurrent-state
+  checkpoints** (each active request reserves 8 checkpoints per GDN layer → `max_num_seqs ≤ 16`,
+  TP1/PP1/DP1 qualified, greedy scope). And the **Strata single-card Gaudi2 port runs DFlash on
+  HPU** (`hpu/include/strata/hpu/dflash.hpp`, tier D) — measured **2.9 tokens/round at block 8**,
+  ~2.83–3.26 acceptance at block 4. Both are Qwen-targeted; the GLM port is the delta.
+
+The port to our stack (vllm-gaudi v0.26.0, TP8+EP8, 34 KDA + 11 DSA layers): wire `method=dflash`
+into our v1 HPU runner (1Cat's wiring is the reference), tap the target's hidden states at
+[5,14,24,33,42], run the 5-layer drafter on the same 8 workers (TP8), replace the Qwen-GDN
+rollback with **KDA + MLA state rollback** (per-token checkpoints for the accepted prefix — our
+KDA state machinery, `kda_layer.py`, is the substrate; I1008/A026 verified the state handling),
+and size the 8-token verify graph family (16 seqs × 8 = 128 rows — the HBM budget, §7). This is
+a High-effort integration port with one hard HBM gate (D13) and one hard license gate for
+commercial use — but it is the *acceptance-side* alternative to RA-004: one pass per block
+instead of k chained passes, and inco's data says the drafter out-accepts the native MTP by
+~0.5 tokens.
+
+#### 2. Current limitation
+
+- The MTP drafter is autoregressive: k=4 means 4 chained passes through the MTP module (RA-004's
+  problem), each pass's marginal acceptance decays (measured: 1.85/2.0 at k=1 → 2.25/3.0 at
+  k=2, i.e. ~+0.4/pass, decaying). Suffix decay is structural to autoregressive drafting — DFlash2
+  attacks it explicitly (conv + selector; inco's Figure 2: 5L recall@1 80.3%→72.9% across the
+  block vs 80.9%→77.6% with conv).
+- The eager draft's host cost grows with depth (RA-004's premise) — graphing fixes execution but
+  not the *number of passes*; a one-pass drafter removes both.
+- The GLM-specific drafter is published but its benchmark numbers are "being re-measured… once
+  final" (model card) — **no GLM acceptance number is published**; the Qwen3.8 ratio (4.80/4.28 =
+  +12% over MTP) is the only proxy, and RA-004 T0's A4 on our suite is the calibration baseline.
+
+#### 3. Proposed architecture
+
+- **Draft model:** `DFlash2DraftModel` (incoai checkpoint, ~1.5–2.5 B params BF16 DERIVED from
+  the config dimensions — exact size from the safetensors index; ~0.3–0.6 GB/rank at TP8). One
+  forward pass per step: the anchor token (last verified) + 7 mask tokens at positions
+  p..p+7 through 5 sliding-attention layers (window 2048 over the context + the block), each
+  sublayer wrapped in two-tap dynamic convolutions; per-position top-16 candidates via the
+  **target's lm_head** (shared — no draft vocab head); the selector scores adjacent pairs
+  S(a,b) = U(b) + ⟨A(a) ⊙ H(h_t), B(b)⟩ and walks greedily from the anchor → 7 draft tokens.
+- **Target integration:** hidden-state taps at layers [5,14,24,33,42] (EAGLE-class extraction —
+  the v1 runner's `extract_hidden_states` mechanism exists upstream; the 1Cat wiring shows the
+  HPU pattern). The taps are per-token feature concatenations fed to the drafter's K/V at the
+  token's position (per the Strata `dflash.hpp` description of the same architecture class:
+  residuals from the target layers, averaged over the hyper-connection streams, become the
+  drafter's K/V at that position — for GLM the 4 mHC streams' averaging is part of the tap).
+- **Verification:** 8-token block (7 draft + 1 bonus) = 8 rows/seq → 128 rows at 16 active.
+  Per-token KV/KDA checkpoints: each verification position writes its own causal KV page extent
+  (the 1Cat implementation: "each verification token uses its own causal KV-page extent,
+  including when a block crosses a page boundary"; padding writes to a reserved padding page);
+  the KDA recurrent state is checkpointed per position (8 per KDA layer per active request — the
+  Qwen GDN analog) so the accepted prefix's state is restored on rollback; the rejection sampler
+  (ours: `decode_lean.py` device walk, or the 1Cat `dflash2_greedy_rejection_sample_packed`
+  pattern) selects the accepted prefix.
+- **Parallelism:** TP8 for the drafter (hidden 4096 splits cleanly; the selector needs full-vocab
+  candidate logits — an 8-way all-gather of 7 × 16 candidates × selector embeddings per seq,
+  KB-scale — or the selector runs on the gathered logits; DERIVED cost: negligible vs the step).
+  The target's existing 162 ARs/step are unchanged.
+- **Scope gates (from the 1Cat qualification, to be re-qualified for GLM):** greedy first
+  (the lossless check: DFlash2's greedy output must be **byte-identical to the no-spec control** —
+  the strongest accuracy check available to any speculation method), then sampled (T=0.7/top_p
+  0.9, the project's sampled gate); ≤16 sequences (owner scope anyway); prefix caching off during
+  qualification (the 1Cat scope), LoRA off.
+
+#### 4. Technical feasibility
+
+- **The drafter is purpose-built for this model** — incoai trained it on zai-org/GLM-5.3-Flash
+  (base_model in the card; `num_target_layers: 45` matches; target_layer_ids [5,14,24,33,42]
+  within the 45). 19K downloads = actively used (on GPUs, via SGLang `--speculative-algorithm
+  DFLASH`).
+- **HPU execution of this exact machinery is demonstrated twice:** (i) 1Cat's v1 HPU
+  implementation — full source in the corpus (`hpu_dflash2.py`: the proposer, block-table
+  resolution, slot mapping, attention metadata; `HpuModelAdapter` methods
+  `compute_candidates` / `score_dflash2_candidates` / `select_dflash2_candidates`; the platform
+  validation gates); (ii) Strata's single-card port on SynapseAI 1.24.1 (our SW generation) with
+  measured 2.9 tokens/round.
+- **The v1 spec-decode substrate is upstream:** `method=dflash` in vLLM v1 (parallel drafting, K
+  extra slots, `uses_draft_kv_cache`); our port already runs v1 spec decode (MTP via the
+  `HpuEagleProposer`-class path).
+- **KDA state handling is ours and verified** (I1008: activations BF16, state contract; A026; the
+  KDA candidate-column machinery already generalizes to S=5 per RA-004) — the 8-checkpoint
+  rollback is a sizing problem (D13), not a mechanism problem.
+- **Unsupported assumptions:** (i) **GLM acceptance** — unpublished; the Qwen3.8 ratio (+12% over
+  native MTP) applied to T0's A4 gives the working estimate (A4 3.33 → ~3.7–4.0 tok/step at block
+  8); (ii) **TP8 drafter** — 1Cat qualified TP1 only; the selector all-gather is DERIVED-negligible
+  but unmeasured; (iii) **D13 — KDA checkpoint HBM**: 8 checkpoints × 34 KDA layers × 16 active ×
+  per-layer state size (state shape from `kda_layer.py`) — if this exceeds ~8 GB/card the
+  concurrency cap falls below 16 and the @16 target is dead for this path; (iv) **128-row verify
+  graph HBM** at ns16 (vs the 80-row for MTP-4) — the 25.5 GiB ladder budget (OPT-002 reclaim);
+  (v) **version drift** between the 1Cat fork's vllm-gaudi base and our v0.26.0 — the port
+  surface must be diffed (their `platform.py` validation is Qwen-3.8-specific: layer_types
+  pattern, draft field checks — all replaced for GLM).
+
+#### 5. Expected performance impact (theoretical until measured)
+
+Tok/step = 1 + A8 (A8 = DFlash2 acceptance at block 8, max 8; estimate 3.8–4.8 from inco's
+Qwen data; calibrate against T0's A4). Draft cost ≈ one pass of the ~1.5–2.5 B drafter
+(~0.3–0.6 GB/rank at TP8 → ~0.2–0.3 ms device + selector) — vs MTP-4's 4 chained passes
+(~1.3–2.0 GB + the execution machinery).
+
+| Config | tok/step (A8=4.5) | Step, current host | tok/s | Step, + host cut (RA-008) | tok/s |
+|---|---:|---:|---:|---:|---:|
+| 8 HPU bs=1, stock (41.3 GB) | 4.5 | 45–50 ms (21 + 0.5 + 1 + H 22–25) | 90–100 | 30–35 ms (H 8–13) | 129–150 |
+| 8 HPU bs=1, RA-002 routed (4.3 GB verify + draft 0.5) | 4.5 | 22–26 ms (3.8 + 0.5 + 1 + H 10–13) | 173–205 | 16–20 ms (H 7–10) | 225–281 |
+| 8 HPU @16 ns16, stock (41.9 GB, 128 rows) | 72 | 85–105 ms (24 + 0.5 + H 60–80) | 686–847 | 65–80 ms (H 40–55) | 900–1,108 |
+| 4 HPU bs=1, RA-002 routed (15.9 GB) | 4.5 | 26–30 ms (7.95 + 0.5 + 1 + H 10–13) | 150–173 | 18–22 ms (H 7–10) | 205–250 |
+| 4 HPU @16 ns16, stock (83.8 GB) | 72 | 135–155 ms (43 + 0.5 + H 90–110) | 465–533 | 70–90 ms (H 25–45) | 800–1,030 |
+
+- **vs RA-004 (MTP-4, A4=3.33):** DFlash2 wins on tok/step (72 vs 53.3 @16) at ~equal device
+  cost (one pass vs four) — if A8 ≥ 4.0, it dominates MTP-4 on both axes. The uncertainty is
+  A8 (unpublished for GLM) and D13 (HBM).
+- **Conservative:** A8 = 3.8 (the low end of inco's ratio applied to a strong MTP baseline):
+  8 HPU @16 ~550–700 current host; bs=1 ~75–90 (stock) / ~150 (RA-002).
+- **Worst case:** A8 < 3.0 (GLM's drafter underperforms the Qwen ratio) or D13 caps concurrency
+  < 16 — the port is not adopted; the investment survives as the acceptance data point vs T0's A4
+  (which re-weights RA-004's T1/T2 effort).
+
+#### 6. Implementation complexity — High (port, not mechanism)
+
+- New draft-model class on the v1 HPU runner (1Cat's `hpu_dflash2.py` + adapter methods as the
+  reference; the Qwen-specific validation replaced for GLM); hidden-state tap hooks at 5 target
+  layers; the selector + convolution as framework ops or small kernels (1Cat's
+  `flashinfer_gaudi.dflash2`); KDA per-position checkpoint/rollback (new — the Qwen GDN analog
+  replaced); the 128-row verify graph family + warmup; TP8 drafter; fail-closed env
+  (`VLLM_GLM_DFLASH2=0` default). 2–4 weeks if D13 passes; the SGLang path (the checkpoint's
+  documented serving) is *not* available on our HPU stack — the v1 HPU port is the only route.
+
+#### 7. Risks
+
+- **License (hard gate for production):** the checkpoint is **CC BY-NC-ND 4.0** — research and
+  evaluation only; no commercial use, no derivatives of the checkpoint without a license from
+  inco.ai. The port code (1Cat's) has its own license (verify: the fork's LICENSE) — Apache-2.0
+  class per the source headers in the corpus. **Decision required before any production
+  deployment; research-phase evaluation is unblocked.** (The MTP path — RA-004 — has no such
+  gate: the drafter is the model's own layer-45 head.)
+- **Acceptance (the main performance risk):** GLM A8 is unpublished; if the drafter underfits
+  GLM-5.3-Flash's distribution (it was trained by a third party, not Z.ai), A8 could land far
+  below inco's Qwen numbers. T0's A4 + a cheap HPU spike (§9) measure this before the full port.
+- **D13 HBM (the main feasibility risk):** 8 × 34 × 16 KDA checkpoints — if > ~8 GB/card, the
+  concurrency cap < 16 kills the @16 target for this path (bs=1/low-batch use would still work).
+- **128-row verify graph HBM:** 1.6× the MTP-4 row count — the ladder budget (OPT-002 reclaim)
+  must cover it at TP8; TP4 is likely out (11.1 GiB free, Q14) — DFlash2 is an 8-HPU path first.
+- **Correctness:** the lossless property (greedy byte-identity to the no-spec control) is the
+  built-in accuracy check — if it fails, the bug is in the port (state rollback or tap), not the
+  method; the same-boot A/B gate + 40-item suite apply as usual.
+- **Integration:** version drift (1Cat base vs our v0.26.0); the draft attention cache (1Cat:
+  "DFlash2 adds a draft attention cache" — the undersized-KV silent-queueing failure mode they
+  document) must be sized in our KV budget.
+
+#### 8. Dependencies
+
+- T0 (RA-004) acceptance data — the calibration baseline (no dependency on T1/T2 landing).
+- D13 (KDA state size → checkpoint HBM) — the go/no-go gate; costs a state-shape read + one
+  measurement, no full integration.
+- The 1Cat source (corpus, tier D) + the incoai checkpoint config/weights (small download —
+  ~3–5 GB class; within the research agent's "no large model files" allowance, but the
+  implementation agent pulls it into the model store per normal process).
+- RA-003's ns16 (16 active is the target; DFlash2's 16-seq cap matches it exactly).
+- License decision (owner) before production use — not before research evaluation.
+
+#### 9. Implementation instructions
+
+1. **Assessment (no HPU time, first):** (a) download the incoai checkpoint's `config.json` +
+   safetensors index — confirm the draft model's exact param count, the target-tap contract, and
+   any GLM-specific serving notes; (b) diff the 1Cat DFlash2 surface (`vllm_gaudi/v1/spec_decode/
+   hpu_dflash2.py`, `vllm_gaudi/v1/worker/hpu_model_runner.py` adapter methods,
+   `flashinfer_gaudi/dflash2.py`, `platform.py` `_validate_hpu_dflash2_config`,
+   `vllm_gaudi/envs.py` DFlash2 envs) against our v0.26.0 v1 runner — produce the port-surface
+   list (files, APIs, Qwen-specific gates to replace); (c) **D13:** read the KDA per-layer state
+   shape from `kda_layer.py` / the checkpoint, compute 8 × 34 × 16 × state_bytes, compare to the
+   HBM headroom (TP8: ~30 GiB free class; TP4: 11.1 GiB).
+2. **Cheap HPU spike (only if D13 ≤ ~8 GB and the port surface is tractable):** run the drafter
+   **eager, ungraphed, TP1 or TP8, 1–2 requests, greedy** — wire the 5 hidden-state taps + the
+   drafter forward + a manual 8-token verify (no checkpoint rollback needed for a greedy
+   spike with the per-position page-extent trick on a single request) — measure **A8 on the
+   standard suite** (≥10 min) vs T0's A4. This is the acceptance gate: A8 ≥ 3.5 → proceed;
+   A8 < 3.0 → record and close (the data re-weights RA-004).
+3. **Full port (only if the spike passes):** 1Cat's HPU proposer + selector + KDA rollback
+   checkpoints, 128-row verify family, TP8, warmup entries, `VLLM_GLM_DFLASH2=0` fail-closed env;
+   qualification per §3 (greedy byte-identity first, then sampled, ≤16 seqs, prefix caching off).
+4. Record EXP-RA-009 (assessment / spike / port); update the discovery queue; update the license
+   status in DECISIONS.md.
+
+#### 10. Validation criteria
+
+- **D13:** the checkpoint HBM number in EXPERIMENTS.md (the go/no-go).
+- **Spike:** A8 on the standard suite (greedy, ≥10 min) — the gate number; plus the greedy
+  byte-identity check on the spike (drafted output == no-spec control, the lossless property).
+- **Full port:** bs=1 ≥ 90 tok/s on the current stack (vs 41.4) and ≥ 170 with RA-002; @16 ≥ 650
+  on the current stack (vs 258) and ≥ 900 with the RA-008 host cut; A8 ≥ 3.5 sustained; greedy
+  byte-identical to the no-spec control; sampled suite delta ≤ 0.5 pp same-boot; KDA checkpoint
+  HBM ≤ the D13 budget at 16 active; ≤16 sequences sustained without the silent-queueing mode.
+
+#### 11. Novelty assessment
+
+Never attempted in this project (the MTP head is the only drafter we have ever run). Distinct
+from RA-004: different *drafter* (separate 5-layer block-diffusion model vs the target's own
+layer-45 MTP head) and different *draft economics* (one pass per 8-token block vs k chained
+passes); the verification machinery (per-position page extents, rejection sampling) is shared
+with RA-004's substrate. The HPU precedent is strong (1Cat's v1 implementation + Strata's 1.24.1
+port, both in the corpus; the GLM checkpoint is published and in active use on GPUs) — the risk
+is the GLM-specific acceptance (unpublished) and the KDA checkpoint HBM (D13), not the mechanism.
+The license (CC BY-NC-ND 4.0) makes this a research-track path until the owner clears it for
+production.
+
+---
+
+### RA-010 — ngram/suffix speculation probe (config-only, zero draft cost)
+
+**Status:** PROPOSED (rev 5, new) · **Priority:** 7 · **Complexity:** Low (config-only, 1 boot)
+· **Owner (suggested):** primary agent
+
+#### 1. Executive summary
+
+ngram/suffix speculation drafts from the **prompt + already-generated token history** (a host-side
+lookup for the longest repeated n-gram) — **zero draft device passes, zero new code, no draft
+model**. vllm-gaudi v1 supports ngram (PR #81 "Enable Spec Decode for HPU v1 — Part 1 (basic
+workflow + eagle)" explicitly covered **Eagle and NGRAM**; the corpus test
+`tests/full_tests/spec_decode.py` lists `ngram` among the runnable tasks). The draft cost is
+therefore zero, so the only question is acceptance: GLM-5.3-Flash's benchmark output is
+code/reasoning-heavy, and code is repetitive (identifiers, syntax, repeated structure) — ngram
+acceptance at k=4 could plausibly land at 1.5–3.0. If it lands ≥ 2.5, this is one of the largest
+per-effort wins available (a config change giving ~+70–90% bs=1), and it is a permanent fallback
+drafter (it costs nothing when it underperforms — it can stay in the serving config as the
+low-acceptance regime's method).
+
+#### 2. Current limitation
+
+- The MTP drafter costs a full module traversal per draft pass (eager) or a graphed chain
+  (RA-004) — every speculative token carries that cost. ngram carries none.
+- No prior ngram measurement exists on this stack or model (no experiment in EXPERIMENTS.md).
+
+#### 3. Proposed architecture
+
+- One boot in the same family as RA-004 T0: `--speculative-config '{"method":"ngram",
+  "num_speculative_tokens": 4, "prompt_lookup_max": <4–8>} ` (lookup window per vLLM's ngram
+  proposer; start at 4, A/B 6/8 if the first number is interesting).
+- Verify buckets: seqs × 5 lanes (the same 80-row shape RA-004 T0 needs — shared infrastructure,
+  no extra graphs).
+- The rejection sampler is the existing device path (`GLM_SPEC_DEVICE_REJECT=1`); no draft
+  machinery is involved.
+- **Decision rule:** A_ng (tokens/step, max 5) ≥ 2.5 → keep ngram in the speculation menu (record
+  the config; it is a zero-cost alternative for latency-sensitive low-batch serving and a
+  cross-check on the MTP acceptance); 1.5 ≤ A_ng < 2.5 → record (a modest gain, not worth
+  displacing MTP at k=1); A_ng < 1.5 → record as negative (RJ).
+
+#### 4. Technical feasibility
+
+- ngram on HPU v1 is upstream-supported (PR #81 + the test task list, tier D) — verify the
+  proposer exists in our v0.26.0 tree (grep `NgramProposer` / `method == "ngram"` in the v1
+  spec_decode path — 10 minutes, no boot).
+- The 5-lane verify buckets are shared with RA-004 T0 (already in scope).
+- **Unsupported assumption:** ngram acceptance on GLM-5.3-Flash's benchmark prompts (text-
+  dependent; the only way to know is the probe — which is why this is a probe).
+
+#### 5. Expected performance impact (theoretical until measured)
+
+Step (bs=1) = verify device (~21 ms stock) + H (~22.5, no draft component) ≈ 43.5 ms.
+
+| A_ng (tok/step) | 1.5 | 2.5 | 3.5 |
+|---:|---:|---:|---:|
+| bs=1 tok/s (stock op) | 34 (−18% vs 41.4) | 58 (+40%) | 80 (+93%) |
+| @16 tok/s (29.6→16×A_ng tok/step, step ~115 ms − draft host) | 184 (−29%) | 341 (+32%) | 458 (+78%) |
+
+(The k=1 MTP baseline is 41.4 / 258 — ngram only displaces it above A_ng ≈ 1.9 at bs=1, ≈ 2.0 at
+@16. Below that, it is a data point, not a lever.)
+
+#### 6. Implementation complexity — Low
+
+Config-only + the 10-minute tree check. One boot, shared with T0's family.
+
+#### 7. Risks
+
+- **Accuracy:** ngram drafts are exact token copies from history — the rejection sampling makes
+  the output distribution-identical by construction (standard spec-decoding); the accuracy gate
+  applies as usual (same-boot A/B), with no new near-tie class beyond the 5-row verify shape
+  (shared with RA-004).
+- **Prompt lookup cost:** host-side ngram matching at large contexts (1M) is O(window) per
+  position — negligible at decode batch sizes; not a concern at the benchmark context.
+- **Wasted rows:** at low acceptance, the 5 verify rows cost for ~1–2 tokens — that is the
+  decision rule's lower band, not a risk per se.
+
+#### 8. Dependencies
+
+- RA-004 T0's boot family (the 5-lane buckets are shared).
+- The 10-minute v0.26.0 tree check (ngram proposer present in the v1 path).
+
+#### 9. Implementation instructions
+
+1. Tree check: confirm the ngram proposer is wired in our v1 spec-decode path (grep
+   `NgramProposer` / `ngram` in `vllm_gaudi/v1/`; record the file + the config keys).
+2. Boot the T0 family with the ngram config (§3); standard suite, ≥10 min steady, bs=1 + 16
+   streams; record tokens/step (A_ng) and the step time.
+3. Apply the decision rule; record EXP-RA-010; if A_ng ≥ 2.5, note the recommended serving config
+   in the runbook (it coexists with the MTP config — different `--speculative-config` methods,
+   not a flag combination).
+
+#### 10. Validation criteria
+
+- A_ng recorded (bs=1 + 16-stream, steady state) with the step time — that is the deliverable.
+- If promoted (A_ng ≥ 2.5): same-boot A/B vs the k=1 MTP baseline, suite delta ≤ 0.5 pp, greedy
+  byte-identical on the R003 probe (ngram drafts are deterministic — identity is expected).
+
+#### 11. Novelty assessment
+
+Never measured on this stack. Distinct from RA-004/RA-009 (no draft model at all — the "drafter"
+is the text's own history); it is the zero-cost corner of the speculation menu and the natural
+control when comparing T0's A4 against RA-009's A8 (all three measured on the same suite in the
+same boot family give a complete drafter comparison: history < MTP head < DFlash2, or whatever
+the data says).
+
 ---
 
 ## Rejected ideas (investigated, not pursued — with reasons)
@@ -1447,12 +2117,14 @@ restructure and the knob value, or fold the residue into RA-001's re-profiling a
 | RJ-08 | `VLLM_DELAYED_SAMPLING` (host CPU reduction between steps) | **v0-only feature, absent from our tree (server-verified, rev 4).** vllm-gaudi PR #433 removed it: "VLLM_DELAYED_SAMPLING is for v0 and not used here"; the vendor feature gate is `Engine('v0')`; the v0 runner additionally required `is_single_step and not spec_decode_enabled` — doubly inapplicable to our v1 + MTP stack. | A v1 delayed-sampling implementation lands in vllm-gaudi. |
 | RJ-09 | `--num_scheduler_steps` multi-step scheduling (amortize one schedule over N decode steps) | **v0-era feature, not in v1 (server-verified, rev 4):** implemented in vllm-fork (PR #441; their best n=64); our v1 runner has no multi-step scheduler (grep-verified). v1's engine loop schedules one step per call. | v1 multi-step lands in vllm-gaudi — it would directly attack the multi-row host term of Consequence 5, so re-test immediately if it appears. |
 | RJ-10 | FP8 KV cache (`CACHE_DTYPE_BYTES` / `--kv-cache-dtype fp8`) | Reference fork, **same model**: "I've had not a ton of luck with fp8 kvcache on gaudi -- it's coherent but it's failed needle tests more than it should" (abotsis, vllm-gaudi #1549, tier D). Our gates make long-context recall the dominant risk term: 1M needle at 860,739 tokens (Q12: 100%) + 0.5 pp accuracy budget. KV is not the decode bottleneck (the weight floor dominates) and capacity suffices for the stated targets (1M ≈ 1–2 seqs). | A vendor fix to the needle behavior, or a 1M × multi-seq capacity requirement beyond the stated targets. |
+| RJ-11 | k=2 MTP eager under the adopted levers (Q11 revival) | Measured: −11% bs=1 / −29% @16 (EXP-Q11, 2026-11-08). Mechanism now precise: the 2nd draft pass is a full eager traversal of the MTP module (device + host) per step and cannot be pipelined (it depends on the 1st pass's output); the Q18/Q19 levers make each pass cheap but not the 2nd pass free. The k=2 acceptance (2.25/3.0) is real — the cost is the refutation, not the acceptance. | A draft-execution mode where the marginal draft pass costs ≤ 1 graph replay — i.e. RA-004 T1 (chain graph) / T2 (4× replay) — or a one-pass drafter (RA-009). Eager k=2 itself: do not re-test. |
+| RJ-12 | EP4×TP2 expert-parallel layout | Measured: bs=1 −22%, O16 −21% (EXP-Q17, REFUTED on the stock stack). The study's +41% was specific to Q01's split-mode graph (the dormant `GLM_MOE_TP` adaptation in the repo). On the stock op, EP2 halves the per-rank expert count but doubles the per-rank TP width — unfavorable for the all-experts-read cost model at our shapes. | The Q21 custom kernel (RA-002) lands — its cost model (routed reads, no all-experts sweep) should be close to the mxfp4 kernel the +41% study targeted; the project's own note: the adaptation "will become relevant again once the Q21 custom kernel lands". One A/B after RA-002. |
 
 ## Research gaps (questions requiring the implementation agent's measurements)
 
 | # | Question | Why it matters | Suggested method | Effort |
 |---|---|---|---|---|
-| D1 | Per-recipe host cost and recipe count on the **current FP8 tree** (the 322 × 74 µs figure is the v0.24 MXFP4 stack's); **and** the decomposition of the measured ~82 ms step at 8 active streams (device byte-time ~21 ms → ~61 ms host-side at multi-row, ~2.5× the bs=1 host floor — sampler/scheduler/logprob scaling with rows) | Sizes RA-001's expected gain and RA-002's host assumption; the multi-row term is the binding constraint on 800@16 at *both* 8 and 4 HPUs — the single most load-bearing unverified number set | 8-rank torch.profiler (CPU+HPU), 10 warm steps bs=1 + 8 active + 16 active, method in `docs/results/moe-decode-step.md` §1/§5 | 1 boot |
+| D1 | Per-recipe host cost and recipe count on the **current FP8 tree** (the 322 × 74 µs figure is the v0.24 MXFP4 stack's); **and** the decomposition of the measured ~82 ms step at 8 active streams (device byte-time ~21 ms → ~61 ms host-side at multi-row, ~2.5× the bs=1 host floor — sampler/scheduler/logprob scaling with rows). **Rev 5:** explicitly decompose the **draft-host term** — RA-004 T0 (eager k=4 vs k=1 step delta, host portion) provides it directly; the multi-row host at 16 active is now ~90–95 ms (258 t/s ÷ 29.6 tok/step = 115 ms step − ~20–25 ms device) | Sizes RA-001's expected gain and RA-002's host assumption; the multi-row term is the binding constraint on 800@16 at *both* 8 and 4 HPUs (4-HPU point measured at ~90 ms via Q14) — the single most load-bearing unverified number set | 8-rank torch.profiler (CPU+HPU), 10 warm steps bs=1 + 8 active + 16 active, method in `docs/results/moe-decode-step.md` §1/§5 | 1 boot |
 | D2 | Does the stock `mixture_of_experts` op read all 36 local experts at bs=1, or only the routed ones? | Converts the 40 GB/step premise (and thus the whole RA-002 ceiling) from high-confidence inference to fact | Per-rank HBM traffic counter or profiler during one bs=1 step with routing instrumentation (Q13 histogram hook) | 1 boot |
 | D3 | Host-RAM **and per-rank HBM** cost of the decode tensor cache at our ~200-graph population (rev 4: vendor docs say the cache retains "all input, intermediate and output tensors" per graph — the HBM delta is an assumption, not a zero) | RA-001's guard threshold + KV-pool headroom | `resource.getrusage` per worker + `hl-smi` per-rank HBM before/after, cache on/off (inside RA-001's A/B) | included |
 | D4 | Achieved GB/s of a 25.2 MB expert GEMV at full-card row-parallel distribution — **rev 4: with a tile sweep (24/8/3/1 TPCs per expert = 1.05/3.15/8.4/25.2 MB per TPC)** to find the issue-bound knee (the Strata audit measured a 5-tile TPC GEMV at 237 GB/s = 10% of peak; B10's 1.94 TB/s was at a 16.8 MB tile) | RA-002's per-route target (beat 1.5 TB/s to clear 200 t/s with margin) and the TPCs-per-expert design parameter | TPC micro-bench of the new kernel (RA-002 step 5b) — or of the step-0 gather path's GEMM if the probe runs first | included |
@@ -1464,49 +2136,58 @@ restructure and the knob value, or fold the residue into RA-001's re-profiling a
 | D10 | Dynamic-shape per-launch patch cost on our 1.24.1 bridge (`ht.enable_dynamic_shape()`, 2-size-range micro-graph, non-graphed lazy); and whether the 1M-context end-of-prefill stall (upstream `exp`-bucketing finding, ~4/5 of 1M TTFT on a 27B/TP4 box) exists on our stack | RA-006-D decision (dynamic shapes vs padding for prefill bucket counts); RA-006-B sizing. Note: dynamic shapes are NOT available in HPU graphs (tier B docs) — this is a prefill/warmup question only | Micro-bench (no full model) + one 1M warm-TTFT window under `VLLM_BUCKETING_STRATEGY=pad` vs default | 1 boot |
 | D11 | **Warm** prefill ladder: clean warm tokens/s at 4K/8K/16K/32K/64K/128K prompts (warm-client first, first-use compilation excluded and reported separately; free HBM recorded per chunk size) — the project's verified prefill numbers cover 0.5–8K only | RA-007 promotion gate: is the 3–6K objective met at intermediate depths (32K: 1,807 is cold-ambiguous)? Also records TP4 HBM headroom at 32K chunks | One boot, the bench prefill ladder with the RESEARCH-001 addendum-9 warm protocol | 1 boot |
 | D12 | Host/device split of one **warm 8K prefill chunk** (moe-decode-step.md method applied to the prefill path; non-graph lazy regime) | RA-007's lever choice: chunk-size A/B (device-bound) vs RA-008's boundary class (host-bound). The gpt-oss trace established host-launch-bound for *decode* bs=1 — prefill is unmeasured | 8-rank torch.profiler over ~5 warm 8K-chunk prefills | with D11 |
+| D13 | KDA per-layer recurrent state size (bytes) → **DFlash2 rollback-checkpoint HBM**: 8 checkpoints × 34 KDA layers × 16 active × state_bytes, plus the 128-row verify graph share (vs the 80-row for MTP-4) | RA-009's go/no-go: if the checkpoint HBM exceeds ~8 GB/card, the DFlash2 path caps concurrency below 16 and the @16 target is dead for that path (bs=1/low-batch still viable); also sizes RA-004's S=5 candidate-column HBM share | Read the state shape from `kda_layer.py` / checkpoint dimensions (no HPU time); confirm with a single-request checkpoint-allocation measurement on the first DFlash2 boot | 5 min (calc) + included |
 
 ## Implementation agent instructions (next actions, in order)
 
 1. **Record this document** in the repo (commit `docs/research/EXTERNAL_RESEARCH_PROPOSALS.md`),
-   add the five RA entries to the AUTONOMOUS DISCOVERY QUEUE in TASKS.md with cross-references, and
-   set the proposal statuses as the review proceeds.
-2. **RA-005 decision memo to the owner** (no HPU time): the 4-HPU target table + the (a)/(b)/(c)
-   options. This is the only item that changes *what to build*.
-3. **D1 + D2 + D6 in one profiling window, plus D11 + D12** (same boot family; decode method
-   already documented in the repo, prefill method per the gap table). These measurements re-anchor
-   every number in this document on our exact tree — including the RA-007/RA-008 promotion gates.
-4. **RA-001** (days): port the per-call tensor-cache policy, A/B per §10. Fastest credible host-floor
-   cut; independent of everything else.
-5. **RA-003** (days, can share RA-001's boot family): max-num-seqs 16 + KV sizing + 32-row verify
-   graph pre-warm. The aggregate target moves here, not in the kernels.
-5b. **RA-006-B/C** (env experiments, share the RA-001/RA-003 boot family):
-   `VLLM_BUCKETING_STRATEGY=pad` prefill A/B (incl. 1M warm TTFT if a window allows) and
-   `PT_HPU_RECIPE_CACHE_CONFIG` warmup measurement (8 workers, cached vs cold).
-   **RA-006-A** (pad-and-mask 10-row verify graph + scratch slots + degenerate routing) after
-   RA-001, gated on the byte-identity parity test.
-6. **RA-002** (weeks, continues Q21 step 3): **start with step 0 (the v0.26.0 gather probe — 1
-   boot, ~1 day)** before any kernel work; if it hits the routed byte budget, the custom kernel
-   (five sharpenings: byte target, full-card row-parallel with the D4 tile sweep, in-kernel
-   intermediate, single op library, MTP-depth table) becomes the fallback. D4 is its first kernel
-   gate.
-7. **RA-004** (after RA-002): k=4 chain graph; update Q11's dependency from "Q01" to "RA-004".
-8. After each: update the queue per the operating rule (did the bottleneck move?), and update the
-   `Status:` fields here.
-9. **WIP promotion gates (rev 4):** RA-008 restated or closed after D1+D6; RA-007 restated or
-   closed after D11+D12 (plus the owner's answer on the objective's assumed prompt length);
-   RA-002's kernel scope restated after step 0. Update the `Status:` fields in the same edit as
-   the evidence.
+   add RA-009/RA-010 to the AUTONOMOUS DISCOVERY QUEUE in TASKS.md (RA-001…RA-008 are already
+   queued), and update the `Status:` fields as the review proceeds. Note the rev-5 status
+   corrections: RA-002 step 0 is MEASURED-NEGATIVE (EXP-Q16), RA-004 is reworked (T0/T1/T2/T7),
+   and the Consequence 4 host correction (4-HPU multi-row host measured ~90 ms via Q14).
+2. **RA-004 T0 + RA-010 (config-only, one boot family, first HPU action):** the eager k=4
+   acceptance probe (gates T1/T2, calibrates RA-009) and the ngram k=4 probe (free data point).
+   Both are `--speculative-config` changes; the 5-lane decode buckets are the only shared
+   infrastructure (add to `bucketing_file.txt` or accept first-use captures). Slow steps are
+   expected — this is measurement, not serving.
+3. **RA-002 continues (weeks):** step 0 is done (NEGATIVE — proceed per its §9); D2 (stock-op
+   read pattern) then the kernel; D4 (tile sweep) is the first kernel gate; the PT2 custom-op
+   adaptation is staged for the v0.26.0 registrar collision.
+4. **RA-004 T1 (after T0, days–week):** port the A014 reference (abotsis 919ec98f chain-graph
+   mode) with the staged 1→2→4 rollout; T2 (4× replay via `HPUGraph.replay_with_inputs`) as the
+   fallback if the chain capture fails — or as a parallel de-risk; T7 only if both fail.
+5. **D1 + D6 + D13 in one profiling window** (share the T0/T1 boot family where possible): D1
+   now explicitly decomposes the multi-row step's **draft-host term** (T0 gives it directly);
+   D13 (KDA state size → DFlash2 checkpoint HBM) is RA-009's gate and costs no HPU time beyond
+   the state-shape read; D11/D12 (prefill) as before if the window allows.
+6. **RA-008 (after D1/D6):** restate or close per its promotion rule; if promoted, it is the
+   800@16-on-8-HPUs host attack and the 200 bs=1 remainder beyond RA-001's measured +8–10%.
+7. **RA-009 assessment (no HPU time, parallel):** the 1Cat port-surface diff vs our v0.26.0 v1
+   runner, D13, the incoai checkpoint config/weight-index inspection, and the license question to
+   the owner (CC BY-NC-ND 4.0: research evaluation unblocked; commercial deployment needs a
+   license). The HPU spike (eager drafter + manual verify, greedy A8 on the suite) only if D13 ≤
+   ~8 GB/card and T0's A4 supports the acceptance case.
+8. **RA-003 config call (owner):** serve_mtp.sh runs ns32 while the target is 16 streams — decide
+   the production config (ns16 for bs=1 latency per the agent's own NS64 note; @16 aggregate is
+   ~258–260 under either). Do not operate beyond 16 concurrent streams (owner scope).
+9. **RA-006/RA-007** proceed as before (RA-006-B/C env experiments can share boot 1's family).
+10. After each: update the discovery queue per the operating rule (did the bottleneck move?), and
+    update the `Status:` fields here. **WIP promotion gates (rev 4, carried):** RA-008 restated or
+    closed after D1+D6; RA-007 restated or closed after D11+D12 (plus the owner's answer on the
+    objective's assumed prompt length). Update the `Status:` fields in the same edit as the
+    evidence.
 
 ## Research history
 
 | Date | Rev | Author | Findings / changes |
 |---|---|---|---|
+| 2026-11-08 | 5 | independent research architect (owner question round: MTP-4 theories + GLM draft models) | Owner asked for multiple theories on making MTP k=4 work and an investigation of draft models built for GLM-5.3-Flash (incoai/GLM-5.3-Flash-DFlash2 named; "find more, then investigate how to implement them"); owner fixed the aggregate target at 16 streams (no >16-stream recommendations). Changes: (i) **RA-004 reworked as a multi-theory proposal** — T0 (config-only eager k=4 acceptance probe, the gate), T1 (full k-step draft chain as one HPU graph per bucket shape, attention-in-graph — the abotsis 919ec98f reference mode, measured at MTP-4: 3.33/5.0 acceptance, +29% aggregate, +21% bs=1, parity 12/12; TASKS A014/A018 READY), T2 (four replays of the 1-step draft graph via `HPUGraph.replay_with_inputs`/`replayV3` — API verified tier B in gaudi-pytorch-bridge; a new application of the vendor API, lower capture risk), T7 (asymmetric k=2 fallback); project evidence synthesized: Q11 refutes eager k=2 with the mechanism (2nd pass = full eager traversal, un-pipelineable), Q01b/Q15 establish the draft graphs as accuracy-neutral (the 97.5% gate failure was a cross-boot artifact), Q19 keeps early-draft OFF in the graphed config. (ii) **RA-002 step 0 marked MEASURED-NEGATIVE** (EXP-Q16, boots q16/q16b: the cookbook v0.26.0 gather backport at RATIO=0.5 = −45% bs=1; gather materialized + fp32 down GEMM; the compiler-fusion best case empirically excluded) — the custom TPC kernel is now the primary path, not the fallback. (iii) **New RA-009 — DFlash2 draft model**: incoai/GLM-5.3-Flash-DFlash2 verified (5-layer sliding-window block-diffusion drafter, block 8, top-16 rank-256 selector, 2-tap conv, target taps [5,14,24,33,42], 19K downloads, **CC BY-NC-ND 4.0 flagged**); inco's Qwen3.8-27B data: acceptance 4.80 vs 4.28 native MTP, 2.7–3.4× bs=1 vs autoregressive, lossless; HPU precedent: 1Cat v1 HPU implementation (Qwen-qualified, GDN rollback checkpoints, ≤16 seqs, TP1) + Strata single-card port (measured 2.9/round at block 8, SynapseAI 1.24.1); upstream vLLM v1 `method=dflash` first-class; the port is High (v1 HPU wiring + KDA rollback + TP8), gated by D13 (checkpoint HBM) + an acceptance spike; license gate for production. (iv) **New RA-010 — ngram probe** (config-only, zero draft cost; vllm-gaudi v1 ngram supported per PR #81; up to ~+90% bs=1 if A_ng ≥ 2.5). (v) **RA-003 owner scoping**: 16 streams is the target; ns32/64 = saturation evidence only; open config call on serve_mtp.sh ns32. (vi) **RA-001 ADOPTED** reflected in all baselines (bs=1 41.4, @16 258). (vii) **New rejections**: RJ-11 (eager k=2, Q11, mechanism identified), RJ-12 (EP4×TP2, Q17, re-eligible after Q21). (viii) **Consequence 4 host-corrected**: the measured 4-HPU multi-row host (~90 ms, Q14-derived) invalidates the H=26 ms assumption — 800@16 on 4 HPUs needs a ~75% host cut (base case 370–430 t/s), not "800–885 at current host"; the k=4 requirement stands. (ix) Gaps: D13 added, D1 sharpened (draft-host term). GaudiGrimoire: HPUGraph replay_with_inputs/replayV3 (tier B, gaudi-pytorch-bridge source incl. the "Neither storage attached to input tensor" assert), abotsis `glm5_next_mtp.py` chain-graph source + speculative notes (tier D), 1Cat `hpu_dflash2.py` / `platform.py` / `hpu_model_runner.py` DFlash2 (tier D), 1Cat `flashinfer_gaudi.md` DFlash2 qualification scope (tier D), Strata `dflash.hpp` (tier D), vLLM v1 SpeculativeConfig dflash/parallel_drafting + worker spec_decode modules (tier D). Web: inco.ai DFlash2 blog (acceptance tables, 2.7–3.4×, losslessness), HF model card + checkpoint `config.json` (verified), HF search for other GLM-5.3-Flash draft models (none found beyond the incoai DFlash2 + the model's own MTP head). |
 | 2026-11-08 | 4 | independent research architect (GaudiGrimoire deep-validation round) | Re-validated every load-bearing claim of RA-001…RA-006 against the corpus + the deployed tree (server-verified line numbers). Changes: (i) **RA-002 novelty corrected** — upstream vllm-gaudi ships two routed-only MoE gather implementations (PR #1731 `VLLM_HPU_MOE_GATHER`, v0.30.0, with a **cookbook backport fix for our v0.26.0**; MiniMax `_gather_swigluoai_moe`, default-on) — added **step 0: apply the backport and measure HBM bytes/step** (materially different from Q16's dequant materialization: FP8 stays packed, the Synapse compiler may fuse the gather into the GEMM's DMA); the custom TPC kernel demotes to fallback if the probe hits the byte target; novelty section rewritten; (ii) RA-002 **tile-size risk** from the g2-opt-manual Strata audit (5-tile TPC GEMV = 237 GB/s = 10% of HBM peak, issue-bound; "TPC beats MME at one row" unsupported) — D4 now requires a tile sweep (24/8/3/1 TPCs per expert); (iii) RA-001 — 1.24.1 `wrap_in_hpu_graph` signature server-verified (no `cache_tensors_list`; `dry_run` auto), **drafter wrap (l.5060) added to scope**, HBM-retention assumption made explicit → D3 extended to per-rank HBM; (iv) RA-004 — Strata cross-evidence (fused 4-row verification windows + fused four-step verification run on Gaudi2 1.24.x); (v) **host-lever triage → three rejections:** RJ-08 `VLLM_DELAYED_SAMPLING` (v0-only; removed by vllm-gaudi PR #433; absent from our tree, server-verified), RJ-09 `--num_scheduler_steps` multi-step (v0-era; no v1 implementation, server-verified), RJ-10 FP8 KV cache (reference fork, same model: needle-test failures; our 1M needle gate + 0.5 pp budget dominate); `PT_HPU_ENABLE_LAZY_COLLECTIVES` found **already auto-enabled** (`platform.py:432`) — not a lever; (vi) **new structural fact:** every collective forces a `mark_step()` in `hpu_communicator.py` (3 sites, verified) → ≥162 recipe boundaries/step → new **RA-008 (WORK IN PROGRESS)**; (vii) prefill re-scoped (objective met at 0.5–8K warm; the 16K–64K warm ladder is unverified; graph-capturing 8K-row prefills is HBM-infeasible at ~29 GB, DERIVED) → new **RA-007 (WORK IN PROGRESS)**; (viii) HBM bandwidth figures standardized (1,696 measured / 1,945 cost model / 2,147 TPC envelope / 2,450 spec). RA-003/RA-005/RA-006 and all target-physics conclusions unchanged. |
 | 2026-11-07 | 1 | independent research architect | Initial audit of the fork (TASKS/EXPERIMENTS/CURRENT_STATE/DECISIONS/ACCURACY, all EXP-* reports, `docs/results/moe-decode-step.md`, RESEARCH-001 + addenda 1–11, port source, live process and deployed tree, checkpoint config). GaudiGrimoire consultation (log below). Independent byte model + ceilings (Executive summary). Five proposals: RA-001…RA-005. Seven rejections (RJ-01…RJ-07). Eight research gaps (D1…D8). |
 | 2026-11-07 | 3 | independent research architect (community input) | Owner supplied a Discord exchange on pad-and-mask / bucketing / dynamic shapes on Gaudi. All specific claims verified against corpus + deployed tree: (i) `VLLM_BUCKETING_STRATEGY=pad` (PR #762, padding-aware) **present in our v0.26.0 but unused** (verified on server); (ii) bucketing/padding is the documented upstream continuous-batching mechanism; (iii) **dynamic shapes are real in the 1.24.1 SDK + bridge** (`synGeometryMinSizes/MaxSizes`, `ht.enable_dynamic_shape()`, `PatchDynamicTensors` — tier B) **but HPU Graphs are static-only** (habana-docs, tier B) → not a decode-hot-path lever, prefill probe only (D10); (iv) disk recipe cache documented, unused in our scripts (verified). Added **RA-006** (pad-and-mask verify graph + padding-aware prefill buckets + recipe cache + dynamic-shape probe), the RA-002 padded-row/degenerate-routing contract, the RA-003 separate-large-shapes note, D10, and the upstream 1M-context TTFT datapoint (28% warm-TTFT cut with `pad` bucketing, tier D) as motivation for RA-006-B. |
 | 2026-11-07 | 2 | independent research architect (owner correction) | **Draft-pass byte model corrected.** Rev 1 charged the k MTP draft passes with full 42-layer MoE reads (72 main-MoE routes/step at k=4 → 22.1 GB/card at TP4). The draft chain runs through the MTP module (~0.3–0.5 GB/pass aggregate — the checkpoint has exactly 42 MoE layers; composition to verify per D9). Corrected k=4 bytes: TP8 7.7 GB, TP4 15.9 GB. Consequences: (i) the owner's active-weights roofline check (18–28 GB/token → 340–530 t/s at 4 HPUs) is confirmed — 200 t/s is **inside** the 4-HPU roofline; (ii) 200 @ 4 HPU reclassified from "plan as unreachable" to **gated stretch goal, est. 15–25% probability** (host ≤ ~9–10 ms + 89–100% of spec + routing kernel); base case 126–230; (iii) 200 @ 8 HPU confirmed as base-case target (host ≤ 10–13 ms + 47–86%); (iv) the stock-op model now reproduces the measured 39.1 (TP8) and 33.2 (TP4) t/s to <1%, validating the all-weights-read premise; (v) aggregate tables updated (16 active hits 69–89% of experts at k=1/4, routing-aware saves 11–40% there). No proposal ranking or mechanism changed; RA-002/RA-004/RA-005 numbers updated throughout. |
 
-### GaudiGrimoire consultation log (2026-11-07)
+### GaudiGrimoire consultation log (2026-11-07; rev-5 queries 2026-11-08 marked "(rev 5)")
 
 | Query (abridged) | Key result | Tier / source | Used in |
 |---|---|---|---|
@@ -1537,6 +2218,11 @@ restructure and the knob value, or fold the residue into RA-001's re-profiling a
 | `VLLM_DELAYED_SAMPLING removed v1 num_scheduler_steps` | delayed sampling: vllm-gaudi PR #433 "is for v0 and not used here"; vendor feature gate `Engine('v0')`; v0 runner required `is_single_step and not spec_decode_enabled`; **absent from our v0.26.0 tree (server-verified grep)**. Multi-step: v0-era (vllm-fork PR #441, best n=64); **no multi-step scheduler in our v1 tree (server-verified grep)** | D/B + server | RJ-08, RJ-09 |
 | `abotsis GLM-5.3-Flash 11.5 tok/s fp8 kvcache needle MTP` | reference fork, same model (vllm-gaudi #1549, 2026-08): exhausted options at ~11.5 t/s bs=1 decode on their stack; MTP "about half the acceptance that it should be"; "fp8 kvcache on gaudi — it's coherent but it's failed needle tests more than it should"; "push/pull between vllm's async scheduler and the Gaudi's own ARC scheduler" | D | RJ-10; context (our stack: 38.3 t/s bs=1, k=1 acceptance 94% — the Q18 levers + MTP port are working relative to the reference) |
 | `prefill throughput vllm-gaudi TP2 8600 peak` | vllm-gaudi v1, dense model, TP2, 4K ISL/1K OSL × 32 concurrent: **~8,600 tok/s observed-peak prefill**, total 2,885 tok/s, TTFT median 1.13 s (tier D) — the v1 prefill path reaches the 3–6K objective band per card on dense models; our open case is MoE + non-graph large chunks | D | RA-007 framing (the gap, if any, is at intermediate/long depths on our stack) |
+| `MTP multi-token prediction draft graph attention-in-graph vllm-gaudi HPU speculative` (rev 5) | the abotsis reference's `glm5_next_mtp.py` @ 919ec98f: `HpuGlm5NextMTPModel` — draft head over the target's layer-45 modules **held by reference** (`_shares_target_modules = True`; "capturing the same storage in two graphs makes replay fail with 'Neither storage attached to input tensor, not its view'"); the graphed draft = ONE `wrap_in_hpu_graph(core, disable_tensor_cache=True, dry_run=False)` per bucket shape over "embed → eh_proj → norms → MoE → head norm"; **attention-in-graph mode**: metadata tensors (block_list, block_mapping, attn_bias, block_groups, slot_mapping) as graph inputs, forward context rebuilt inside the captured forward; eager draft = "hundreds of host launches… 93 ms host vs 17 ms device per step — MTP-4 pays that four times per step"; MTP-4 measured: **accepted 3.33 (bypass 2.41), aggregate 26.0 vs 20.2, single-stream 20.9 vs 17.3, greedy identical, parity 12/12**; device-side rejection sampling (host path was ~5 tok/s); draft head bound by reference (no double load) | D / abotsis-vllm-gaudi `vllm_gaudi/models/glm5_next_mtp.py` + `docs/features/glm53_flash.md` | RA-004 T1 (the designated port, A014/A018); RA-004 §4/§9 |
+| `HPUGraph replay_with_inputs replayV2 replayV3 static inputs habana_frameworks` (rev 5) | **tier B vendor source (gaudi-pytorch-bridge, 1.24.1):** `HPUGraph.replay_with_inputs(tlistI, asynchronous)` / `replayV2(static_tlist, tlist, asynchronous)` / `replayV3(tlistI, asynchronous)` — beta API ("may change in future releases"); `SingleHPUGraph::replayV3` (C++) replaces the user-input IR values per replay and asserts device storage on supplied tensors ("Neither storage attached to input tensor, not its view" otherwise); CPU inputs converted via h2d scales when enabled | B / `python_packages/habana_frameworks/torch/hpu/graphs.py`, `backend/habana_device/HPUGraph.cpp` | RA-004 T2 (4× replay of the 1-step draft graph — a new application of this API for a draft chain) |
+| `DFlash2 HPU top-16 selector 8-token block verification Gaudi` (rev 5) | **1Cat-vLLM-Gaudi fork implements DFlash2 on the HPU v1 runner**: `vllm_gaudi/v1/spec_decode/hpu_dflash2.py` (HpuDFlash2Proposer: all 7 drafts in one pass, block-table resolution, CPU slot mapping, attention metadata), `HpuModelAdapter` methods (`compute_candidates` / `score_dflash2_candidates` / `select_dflash2_candidates` — the selector in one HPU region), `platform.py` `_validate_hpu_dflash2_config` (Qwen3.8-27B-qualified only: `DFlash2DraftModel` architecture, exactly 7 speculative tokens, `max_num_seqs ≤ 16` — "each active request reserves eight rollback checkpoints per GDN layer", TP1/PP1/DP1, greedy scope, `VLLM_HPU_FLASHINFER_DFLASH2=1`); `flashinfer_gaudi.md`: per-token causal KV-page extents across page boundaries, padding to a reserved page, draft attention cache sizing warning | D / 1Cat-vLLM-Gaudi (commit e2266e0e) | RA-009 (the port reference + the qualification-scope template for GLM) |
+| `EAGLE dflash draft_model speculative decoding HPU v1 runner method` (rev 5) | vllm-gaudi PR #81 "Enable Spec Decode for HPU v1 — Part 1 (basic workflow + eagle)": **Eagle and NGRAM** in scope; corpus test `tests/full_tests/spec_decode.py` lists tasks 'ngram', 'eagle', 'eagle3', 'medusa', 'mlp_speculator', 'draft_model' (no 'dflash' in the vllm-gaudi test list); upstream **vLLM v1 SpeculativeConfig: `method` includes `dflash`** (parallel drafting Yes, K additional slots; "DFlash uses one bonus query followed by K mask queries"; worker modules `vllm.v1.worker.gpu.spec_decode.dflash/dflash2` exist) | D / vllm-gaudi PR #81 + test source; vllm-docs SpeculativeConfig | RA-009 §4 (v1 substrate); RA-010 (ngram supported on HPU v1) |
+| `Strata DFlash HPU dflash.hpp incoai Qwen3.8-Flash-Next-DFlash2` (rev 5) | Strata single-card Gaudi2 port runs DFlash on-device (`hpu/include/strata/hpu/dflash.hpp`, `STRATA_HPU_DFLASH=<dir>`): 5-layer drafter, hidden 2560 (Qwen shape), block default 4 (model card deploys 4, acceptance length 2.83–3.26; **at block 8 this port measured 2.9 tokens per round**), top-16 selector (rank 256, window 2048, target_layers {5,15,25,35,45}), two-tap grouped dynamic convolution; drafter conditions on target residuals averaged over the hyper-connection streams | D / gaudi2-single-card-strata (commit c0c29337) | RA-004 §4 cross-evidence; RA-009 §1/§4 (HPU execution of the DFlash2 machinery, measured 2.9/round) |
 
 **Cross-checks performed outside the corpus:** checkpoint `config.json` (model dimensions → byte
 model, cross-checked to the 328.3 GB total within 1.4%); deployed tree
@@ -1546,4 +2232,13 @@ l.219–283 — routing-table dtypes and the Q16 hook point); port source (`mode
 `GLM5_NEXT_DECODE_LAYER_GROUP=45` single-group mark_step, `mhc.py` — mHC mixing is local, no
 collective, kernel-gated Sinkhorn; `mtp.py` — the Q01 graph cores in-tree); live process (adopted
 config, MTP k=1, TP8+EP, 32K/8seq); host resources (125 GB RAM, 83 GB available — the tensor-cache
-budget).
+budget). **Rev 5 (web, 2026-11-08):** inco.ai DFlash2 blog (acceptance tables: Qwen3.8-27B
+4.80/4.28/3.62 DFlash2/MTP/DSpark at block 8; 2.7–3.4× bs=1 vs autoregressive; selector +2.0 M
+params / +0.6% latency; conv +16.5 M / +0.7%; losslessness: greedy identical, sampling
+distribution-preserving); HF `incoai/GLM-5.3-Flash-DFlash2` model card (19K downloads, 129 likes,
+**CC BY-NC-ND 4.0**, "benchmark numbers being re-measured", SGLang `--speculative-algorithm
+DFLAGS`… `DFLASH` serving) + checkpoint `config.json` (5 × sliding_attention, hidden 4096, window
+2048, `dflash_config` block 8 / top-k 16 / rank 256 / conv kernel 2, **target_layer_ids
+[5,14,24,33,42]**, `num_target_layers: 45` — matches GLM-5.3-Flash); HF search for other
+GLM-5.3-Flash draft models — **none found** beyond the incoai DFlash2 and the model's own MTP
+head (no EAGLE head for this model on HF; the z-lab DFlash family is Qwen-only).

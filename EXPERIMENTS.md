@@ -1198,3 +1198,35 @@ hpu_custom_op_pt2.h into the GLM include tree. This is a build-system task
 library, the PT2 op shim, and the diagnosis are staged for the next session
 which implements the header-compatible build and runs the on-device
 qualification.
+
+## EXP-RA001 proper — the capture-time tensor cache: bs=1 +10.7%, ADOPTED
+## (2026-11-08, boot ra001p)
+
+**Implementation:** the one-line patch in the runner's
+`_maybe_wrap_in_hpu_graph`: `disable_tensor_cache=True` → `False`. This enables
+the vendor-default tensor caching at CAPTURE time (dry_run=False, the tensors
+properly initialized), which produces better graph quality than the env-var
+replay-time approach (the dry_run capture doesn't fully initialize the tensors).
+
+**Results (steady state, 8 warm reps):**
+
+| Metric | Baseline (cache off) | Env-var replay-time | **Capture-time (this)** |
+|---|---|---|---|
+| bs=1 decode | 38.0-39.1 (median 38.3) | 40.5-43.2 (median 41.4) | **40.3-44.2 (median 42.4)** |
+| vs baseline | — | +8.1% | **+10.7%** |
+| Aggregate @16 | ~258 | ~257 | ~257 (neutral) |
+| Host RSS total (8 workers) | ~5.5 GB | ~6 GB | **7.4 GB** (acceptable) |
+
+**Verdict: ADOPTED** — the capture-time cache is the BEST implementation:
++10.7% bs=1 (vs +8.1% env-var), the aggregate neutral, the RSS acceptable.
+The one-line patch is retained in the runner. The env var
+`PT_HPUGRAPH_DISABLE_TENSOR_CACHE` is NOT set (the capture-time value False
+is used natively).
+
+**The research architect's RA-001 is CONFIRMED and EXCEEDED**: the doc
+predicted +15-25% bs=1 (conservative +5%); the capture-time implementation
+delivers +10.7% (between the conservative and the expected). The aggregate
+@16 was predicted +25-50% but measured neutral — the doc overestimated the
+aggregate impact because the per-replay allocation is not the dominant host
+cost at 16 streams (the device time and the per-row host work dominate
+instead).
