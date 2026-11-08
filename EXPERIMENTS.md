@@ -1094,3 +1094,27 @@ headroom).
 remaining gap to the 800 t/s objective (2×) is the per-step efficiency (the
 Q21 kernel track + the multi-row host term D1 will quantify). The bs=1
 single-stream is unaffected (the bs-1 graphs are unchanged).
+
+## EXP-NS32 saturation — the aggregate concurrency curve on the adopted stack
+## (2026-11-08, boot ns32)
+
+| Streams | Aggregate t/s | Notes |
+|---|---|---|
+| 16 | ~258 | the ns16 config's number (the same at ns32) |
+| 32 | 396–401 | converged |
+| 48 | 372–422 | |
+| 64 | 383–421 | saturated |
+
+**The batch-amortization lever is EXHAUSTED at ~400-420 t/s.** The weight-read
+amortization is complete (all 36 local experts read per step regardless of
+rows; adding rows adds only GEMV compute at AIP 0-24%). The remaining
+bottleneck is the per-step pipeline: the ~322 recipe launches (~24 ms host at
+bs=1, the D1 measurement pending), the small-M GEMM efficiency, and the MoE
+kernel time (the mxfp4 study: MoE 82% of the step at batch 16).
+
+**The 800 t/s objective requires the Q21 kernel track** — the fused MoE
+kernels (the routing-aware GEMV: reading only the routed experts' weights AND
+executing the GEMV in-register) cut both the weight bytes (38 -> ~2 GB/step at
+bs=1; proportionally at batch) and the kernel time (the mxfp4 study: the
+custom kernels at 66 t/s where stock reaches 37 — a 1.8x kernel-speedup
+analogue). The concurrency lever is done; the kernel track is the path.
