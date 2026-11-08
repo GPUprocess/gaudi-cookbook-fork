@@ -64,11 +64,15 @@ TORCH_LIBRARY_FRAGMENT(custom_op, m) {
 
 TORCH_LIBRARY_IMPL(custom_op, CPU, m) {
     m.impl("block_fp8_dequant_glm",
-           [](const at::Tensor& w, const at::Tensor& s) {
+           [](const at::Tensor& w, const at::Tensor& s) -> at::Tensor {
                TORCH_CHECK(false, "block_fp8_dequant_glm requires HPU tensors");
+               return at::Tensor();
            });
 }
 
 TORCH_LIBRARY_IMPL(custom_op, HPU, m) {
-    m.impl("block_fp8_dequant_glm", &run);
+    m.impl("block_fp8_dequant_glm",
+           [](const at::Tensor& w, const at::Tensor& s) -> at::Tensor {
+               return run(w, s);
+           });
 }
