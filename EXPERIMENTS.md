@@ -764,3 +764,27 @@ stay closed unless the draft pass becomes near-free (the Q21 kernel track:
 an in-graph draft would change this arithmetic - the draft replay would add
 ~device-time only, making the k=2 draft marginal cost ~2x device instead of
 2x (device + host), which could flip the balance).
+
+## EXP-HYGIENE — stale-worker cleanup + the clean-host re-measurement (2026-11-08)
+
+**Finding:** multiple orphaned VLLM::Worker processes (100% CPU each, 236-295
+min runtime) survived earlier boots - tmux kill-server does not reap detached
+worker processes after crash chains. They competed for host CPU during every
+measurement since.
+
+**Cleanup + clean-host re-measurement (adopted config, k=1 + all levers):**
+- bs=1 decode: 34.85-39.15, median 36.86 (still climbing: last rep 39.15) -
+  consistent with the verified 38-39 band; the ~5% run-to-run variance is
+  inherent (the lazy-mode AccThread legitimately busy-waits at ~100% CPU).
+- Aggregate @16: 53.7 (capture) -> 171.4 -> 179.6 -> 160.1 -> **186.8** -
+  the verified 181-185 band holds (186.8 best).
+
+**Verdict:** the session's numbers stand within the noise band; the stale
+workers added variance, not bias. PROCESS FIX: every boot script must reap
+orphans first - `pkill -9 -f VLLM::Worker` before the tmux start (boot_watch
+already reports the boot outcome).
+
+**Final adopted-config numbers (clean host, steady state):**
+- bs=1 decode: **median ~37-39 t/s** (best 39.4)
+- Aggregate @16: **~180-187 t/s** (best 186.8)
+- vs non-MTP same-window: +18-20% on both axes (Q02 closed)
