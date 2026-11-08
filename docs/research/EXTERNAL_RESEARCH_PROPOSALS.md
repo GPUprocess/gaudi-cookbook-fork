@@ -45,6 +45,51 @@ Best verified numbers (8 HPUs): bs=1 decode **38.3–39.1 tok/s**; aggregate @16
 prefill 3.3–5.7K tok/s warm at 0.5–8K (objective band met at most depths); 1M context serving-validated
 (needle at 860,739 tokens). 4 HPUs (Q14): bs=1 33.26, aggregate @16 113.5, accuracy 100%.
 
+### Validation round 2 (2026-11-08, GaudiGrimoire deep pass + deployed-tree verification)
+
+Every load-bearing claim of RA-001…RA-006 was re-checked against the corpus and the deployed tree.
+Material changes (details in the affected sections, rev 4 history):
+
+1. **RA-002 novelty corrected:** upstream vllm-gaudi ships **two routed-only MoE gather
+   implementations** (PR #1731 `VLLM_HPU_MOE_GATHER`, in v0.30.0 with a cookbook backport fix
+   targeted at **v0.26.0** — our version; MiniMax `_gather_swigluoai_moe`, index_select + bmm,
+   bit-exact, default-on for MiniMax-M3). RA-002 gains a **step 0**: apply the v0.26.0 backport
+   and measure HBM bytes/step. It is materially different from Q16 (which dequantized and lost
+   −45%): the upstream fix keeps FP8 weights on the Habana FP8 GEMM op, so the gather either
+   costs ≤1× fp8 materialization or is fused into the GEMM's DMA by the Synapse compiler. If the
+   probe hits the routed byte budget, the custom TPC kernel demotes to fallback.
+2. **RA-002 tile-size risk quantified:** a third-party audit (g2-opt-manual) of the Strata
+   single-Gaudi2 port found its 5-tile TPC expert GEMV **issue/latency-bound at 237 GB/s (10% of
+   HBM peak)**, and its "TPC beats the MME at one row" claim unsupported (small-tile effect).
+   B10's 1.94 TB/s figure was at a 16.8 MB tile — our 1.05 MB/TPC tile is 16× smaller per TPC.
+   D4 now requires a **tile sweep** (24/8/3/1 TPCs per expert); the TPC count per expert is a
+   design parameter, not fixed at 24.
+3. **RA-001 sharpened:** the 1.24.1 `wrap_in_hpu_graph` signature was verified on the server
+   (`dry_run=None` auto, **no `cache_tensors_list` parameter** — the vllm-fork-era mitigation for
+   the documented disable=True in-place-tensor caveat is not in our bridge; `free_inplace=True`
+   default is the 1.24.1 mechanism). The **drafter's wrap (l.5060) takes the same policy** and is
+   now in scope. Vendor docs say the cache retains "all input, intermediate and output tensors"
+   per graph → HBM delta is an **assumption to measure** (D3 extended), not a zero.
+4. **Host-lever triage (three rejections):** `VLLM_DELAYED_SAMPLING` and
+   `--num_scheduler_steps` multi-step are **v0-only features, absent from our v1 tree**
+   (server-verified; vllm-gaudi PR #433 removed delayed sampling: "is for v0 and not used here")
+   → RJ-08/RJ-09. FP8 KV cache → RJ-10 (reference fork, same model: "it's coherent but it's
+   failed needle tests more than it should"). `PT_HPU_ENABLE_LAZY_COLLECTIVES` is **already
+   auto-enabled** by vllm-gaudi (`platform.py:432`, verified) — not a lever.
+5. **New structural fact (feeds RA-008, WIP):** every collective in `hpu_communicator.py` forces
+   a `mark_step()` (3 call sites, verified) — a documented bridge workaround for lazy collectives
+   — so the 162 ARs/step (D6) imply ≥162 extra recipe boundaries on the host critical path,
+   stacked on the 322 replays. This is the host-floor remainder after RA-001.
+6. **Prefill re-scoped (feeds RA-007, WIP):** the 3–6K t/s objective is met at 0.5–8K warm
+   (3.3–5.7K, project-verified). The open question is the warm ladder at 16K–64K (32K point is
+   1,807 t/s, cold-inclusive) — pending D11/D12. Graph-capturing 8K-row prefills is
+   HBM-infeasible (~29 GB pinned activations, DERIVED) — the 2048 capture cap is memory-driven.
+
+HBM bandwidth figures are standardized across this document: **1,696 GB/s** (measured, 8-card
+node study, 69% of spec) / **1,945 GB/s** (compiler cost model, libSynapse 1.24.1 decompile) /
+**2,147 GB/s** (TPC stream envelope at ≥134 MB) / **2,450 GB/s** (spec). RA-003/RA-005/RA-006
+and the target-physics conclusions are unchanged by this round.
+
 ### Where one decode step's time goes
 
 | Item | Value | Source |
@@ -185,6 +230,13 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
 | 4 | **RA-004** | MTP k=4 as one graphed draft chain (no early-draft) | The 4-step draft chain becomes a single HPU graph replay; deep speculation on the post-RA-002 device floor (draft passes cost ~0.3–0.5 GB each, not full-stack MoE) | bs=1 3.33 tok/step: 106–207 on 8 HPUs at current host, 155–300 with RA-001; **required for 800@16 on 4 HPUs and for the 200 stretch goal** | Medium–High | PROPOSED |
 | 5 | **RA-006** | Graph-shape consolidation: pad-and-mask verify graph + padding-aware prefill buckets + recipe cache (+ dynamic-shape probe) | One max-width masked verify graph for the ≤2-seq regime; `VLLM_BUCKETING_STRATEGY=pad` for prefill (upstream 1M-context measurement: 28% warm-TTFT cut); disk recipe cache (warmup ÷8 workers); dynamic shapes verified real but NOT in HPU graphs | decode shapes 16→1–2, ladder −2–4 GiB, warmup −3–5 min, 1M-TTFT class fix; medium host value | Low–Medium (B/C days, A days-week) | PROPOSED |
 | 6 | **RA-005** | 4-HPU target physics audit and deployment plan | Decision document: which targets are reachable on 4 cards and what each requires | no direct perf; forces the 4-HPU 200-t/s stretch-goal gate and the 800@16 k=4 config decision | None (doc) | PROPOSED |
+| 7 | **RA-007** | Prefill at intermediate/long depths: warm ladder + chunk strategy | 3–6K target met at 0.5–8K warm; the 16K–64K warm ladder is unverified (32K: 1,807 cold-inclusive); chunk-size A/B + non-graph host cost are the candidate levers | unknown until D11/D12 | Low (if a gap exists) | **WORK IN PROGRESS** |
+| 8 | **RA-008** | Recipe-boundary + collective-boundary reduction (structural host-floor attack) | each of the 162 ARs/step forces a `mark_step()` recipe boundary (verified); 322 replays + ≥162 boundaries = the host floor after RA-001 | host floor −50% if boundaries ≥ 20% of it (pending D1/D6) | Low (env knobs) – High (op-class restructuring) | **WORK IN PROGRESS** |
+
+WORK IN PROGRESS proposals are research-incomplete by construction: their mechanism evidence is
+in, but the load-bearing numbers require the implementation agent's measurements (named in each
+section's "Open questions"). They are **not** in the execution order below and are promoted to
+PROPOSED — or closed — only when their open questions are answered.
 
 **Suggested execution order** (dependencies, not ranks):
 1. Diagnostic D1 (8-rank profile of the *current* FP8 step) — sizes RA-001 and RA-002 host/device
@@ -202,9 +254,7 @@ measured acceptance), k=4 = 3.33 (reference measured, tier D).
 
 ### RA-001 — Enable the HPU-graph decode tensor cache under MTP
 
-**Status:** IN REVIEW (the reading order mapped: hpu_model_runner.py wrap sites ~l.1118/~l.5030,
-PT_HPUGRAPH_DISABLE_TENSOR_CACHE ~l.1134; untested) · **Priority:** 2 · **Complexity:** Low ·
-**Owner (suggested):** primary agent
+**Status:** PROPOSED · **Priority:** 2 · **Complexity:** Low · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -245,7 +295,11 @@ Port the per-call cache policy into our runner:
    `disable_tensor_cache=True`; select the flag per forward from the call context: decode-shaped
    forwards (the spec-decode verify/draft buckets) → cache **on**; prefill/prompt-shaped forwards →
    cache **off**. The reference implementation reads the env var inside the wrapped forward, so the
-   policy follows the call without two wrapper instances.
+   policy follows the call without two wrapper instances. **Scope note (rev 4, verified on server):**
+   the drafter is wrapped through the same `_maybe_wrap_in_hpu_graph` (l.5060,
+   `self.drafter.model = _maybe_wrap_in_hpu_graph(self.drafter.model, ...)`), as is the vision
+   tower (l.996–1002, already `disable_tensor_cache=False`) — the port must cover the drafter wrap
+   or MTP draft replays keep the disabled policy and half the expected gain is lost.
 2. Env gate `VLLM_GLM_DECODE_TENSOR_CACHE=1` (default OFF) so the stock boot is bit-for-bit unchanged.
 3. Keep `max_graphs`/memory guards: if host RSS of a worker exceeds a threshold (suggested 12 GB
    each, 8 workers ≈ 96 GB on this 125 GB host), log and fall back to the disabled policy.
@@ -257,6 +311,16 @@ cache changes *which* buffers are reused, not the math).
 
 - The `disable_tensor_cache` parameter exists in our exact plugin (1.24.1) — verified in
   `/opt/glm53/venv/.../habana_frameworks/torch/hpu/graphs.py` (tier B source in the corpus).
+  **Signature verified on the server (rev 4):**
+  `wrap_in_hpu_graph(module, asynchronous=False, disable_tensor_cache=False, dry_run=None,
+  max_graphs=None, free_inplace=True, verbose=False, log_frequency=100)` — `dry_run` auto-forces
+  to True when `disable_tensor_cache=True`; there is **no `cache_tensors_list` parameter** in 1.24.1
+  (that mitigation is from the vllm-fork era; the documented in-place-tensor caveat of the
+  disabled mode is handled in our bridge by `free_inplace`, default True). Moving decode graphs to
+  the vendor-default mode (cache on, no forced dry-run capture) is the numerically safer direction
+  of the two — the known dry-run accuracy caveat (stale `local_scalar_dense`-class host reads at
+  capture, vllm-fork #738) applies to the disabled mode we keep for prefill, not to the enabled
+  mode decode moves to.
 - The reference fork runs the identical feature on the identical model/hardware/software and reports
   it as host-work-removing (tier D). The only question is whether the host-RAM cost fits *our* graph
   count — it does by a wide margin (DERIVED: 7 GB ÷ their ~2,000+ graphs ≈ 3.5 MB/graph × ~200
@@ -291,7 +355,12 @@ chain. The reference diff is available in the corpus (abotsis `hpu_model_runner.
   check + the byte-identity R003 logprob probe + 40-item suite, same-boot A/B per the EXP-Q15 gate
   policy).
 - **Memory:** host RAM is the constraint, not HBM. 83 GB available now; guard at 12 GB/worker.
-  HBM: unchanged (the 25.5 GiB graph ladder is already allocated either way).
+  HBM: **assumed unchanged, not established (rev 4)** — vendor docs say the cache retains "all
+  input, intermediate and output tensors" per graph. The 25.5 GiB graph ladder is allocated at
+  capture, so retained buffers may sit inside it — but that is an assumption. D3 measures the
+  per-rank HBM delta (not just host RSS); if it squeezes the KV pool, compensate with GMU or
+  `VLLM_GRAPH_RESERVED_MEM` (the vendor's "shrink KV pool, free HBM for warmup graphs" knob,
+  present in our stack's tutorial varlist).
 - **Compatibility:** if a future vllm-gaudi release changes the wrapper contract, the anchor check
   (fail-closed, per this repo's patch conventions) must catch it.
 - **Interaction:** the cache is *orthogonal* to async replay (which is a measured regression — see
@@ -342,10 +411,7 @@ removes that objection (DERIVED size above + 83 GB free host RAM measured today)
 
 ### RA-002 — Routing-aware fused block-FP8 dequant GEMV MoE kernel (sharpening Q21)
 
-**Status:** IN PROGRESS (Q21: the 1Cat block_fp8_dequant core compiled + gated into our variant
-library — TPC gate PASS, 3254 GUIDs; the torch-op shim blocked by the v0.26.0 registrar collision,
-EXP-Q21; the five sharpenings accepted as the design refinement) · **Priority:** 1 ·
-**Complexity:** High (weeks) · **Owner (suggested):** primary agent
+**Status:** PROPOSED · **Priority:** 1 · **Complexity:** High (weeks) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -369,6 +435,16 @@ fix for the Q21 step-2 blocker (§6), and the MTP-depth interaction table (§5).
   k=0, 9.6× at k=1, 5.4× at k=4**. The Q16 experiment (gather 16 of 36 experts) confirms the stock
   path reads all local experts and shows *why* naive gather loses: materializing a dequantized
   copy (index_select + fp32 down-GEMM) costs more than the savings.
+- **Upstream state of this idea (rev 4, corpus-verified):** routed-only expert decode is NOT
+  novel — vllm-gaudi ships two implementations: (i) `VLLM_HPU_MOE_GATHER=1` in `hpu_fp8.py`
+  (PR #1731, merged, in v0.30.0; a **cookbook backport fix for v0.26.0 — our version — exists at
+  `fixes/fp8-moe-gather/`**), for block-quantized FP8 MoE with dynamic activation scales and silu
+  experts, using the Habana FP8 GEMM op on the gathered weights; (ii) MiniMax
+  `_gather_swigluoai_moe` in `hpu_fused_moe.py` (index_select of `G = min(E_local, T×K)` experts +
+  bmm on MME, bit-exact vs the dense pass by construction, default-on for MiniMax-M3). Both keep
+  FP8 weights — unlike Q16, which dequantized (the failure mode). Whether the Synapse compiler
+  fuses `index_select` into the GEMM's DMA (1× bytes) or materializes the gather (2× bytes) is
+  unmeasured on our tree → **step 0** below.
 - MEASURED (cited): a plain M=1 GEMV streams 16.8 MB of weights at 1.94 TB/s (79% of spec) [GG:
   gaudi2-hbm-engine-bandwidth B10, tier D) — the hardware can serve the routed-only byte budget in
   ~1.5–4 ms/step at bs=1; the stock path cannot get there at any bandwidth because it moves
@@ -432,9 +508,19 @@ flowchart LR
 - GEMV pattern: `src/mxk8_core.h` in our repo implements dequant+dot / w13 GEMV + gated activation /
   w2 GEMV for MXFP4; the swap is the dequant unit (E2M1+E8M0 → E4M3+block-scales). v7/v8 reached
   66 tok/s on this model family (MEASURED, moe-decode-step.md).
-- Streaming ceiling: B10's M=1 GEMV at 16.8 MB = 1.94 TB/s (tier D) bounds the per-expert time from
-  above at 11.7–14.8 µs; the kernel only needs to *not* fall far short of it (load-pipelined,
+- Streaming ceiling: B10's M=1 GEMV at 16.8 MB = 1.94 TB/s (tier D) bounds the per-expert time
+  from above at 11.7–14.8 µs; the kernel only needs to *not* fall far short of it (load-pipelined,
   `#pragma loop_unroll(4) pipelined taken` as in the 1Cat core).
+- **Tile-size sensitivity (rev 4, new risk):** a third-party audit (g2-opt-manual, notes on the
+  Strata single-Gaudi2 port, tier D) measured that port's 5-tile TPC expert GEMV at **237 GB/s =
+  10% of HBM peak at the decode shape** and concluded the port is "latency- and issue-bound, not
+  bandwidth-bound"; it also ruled the "TPC beats the MME at one row" claim unsupported ("probably
+  a small-tile effect misdescribed as an M=1 hardware property"). B10's 1.94 TB/s was at a
+  16.8 MB tile; our design's 1.05 MB/TPC tile is 16× smaller **per TPC**. Consequence: the
+  row-parallel requirement stands, but **TPCs-per-expert is a design parameter** — D4 sweeps
+  24/8/3/1 TPCs per expert (1.05/3.15/8.4/25.2 MB tiles) to find the issue-bound knee before the
+  kernel is finalized. The pipelined-load variant (Strata's `GEMV_PIPE` issues column-pair loads
+  ahead; same class as our load-pipe unroll) is the known fix when small tiles are issue-bound.
 - Graph capture: custom TPC ops capture into HPU graphs in this tree (the mHC Sinkhorn kernel does,
   in production, `GLM5_NEXT_MHC_SINKHORN=kernel`).
 - **Unsupported assumptions to verify:** (i) the stock op really reads all local experts at runtime
@@ -516,6 +602,21 @@ framework project.
 
 #### 9. Implementation instructions
 
+0. **Step 0 — gather probe (1 boot, ~1 day, before any kernel work):** apply the cookbook
+   `fixes/fp8-moe-gather` backport (targeted at v0.26.0, patches `vllm_gaudi/ops/hpu_fp8.py`);
+   anchor-verify it against our l.219/l.283 region (fail-closed per patch conventions; GLM-5.3
+   qualifies on the fix's stated criteria: block-FP8, dynamic activation scales, silu experts —
+   confirm the last from the checkpoint quant config, don't assume). Boot with
+   `VLLM_HPU_MOE_GATHER=1`; measure (a) per-rank HBM bytes/step at bs=1 with the D2 method —
+   routed budget (≈4.3 GB) means the compiler fused the gather into the GEMM's DMA; ≈2× the
+   routed set means it materialized; 40+ GB means the env didn't take; (b) bs=1 and @16 tok/s.
+   **Decision:** if bytes hit the routed budget AND bs=1 improves proportionally, the byte target
+   of this proposal is met by a patch — steps 1–6 below demote to the fallback for residual
+   per-route overhead and the 4-HPU margin case. If bytes or throughput fall short, proceed with
+   the kernel, carrying the probe's numbers as the measured intermediate. This is a materially
+   different hypothesis from Q16 (RJ-02): Q16's loss was dequantization materialization
+   (index_select + fp32 down-GEMM); the upstream fix keeps FP8 weights on the Habana FP8 GEMM op,
+   so worst case is a 1× fp8 copy and best case is zero materialization.
 1. **D2 first (1 boot, ~30 min):** instrument `apply_monolithic` to log `x.shape[0]`,
    `topk_ids` distinct-local count vs 36, and (if available) per-op HBM counters for one layer;
    or run one bs=1 step with `hl-smi`/profiler per-rank HBM traffic. Record: does the stock op's
@@ -548,27 +649,27 @@ framework project.
 
 #### 11. Novelty assessment
 
-Q21 (RESEARCH status in TASKS) is the same track and is NOT superseded — this proposal adds what it
-lacks: (i) the byte/ceiling model that states *what the kernel must achieve* (24–27% of spec BW for
-200 t/s on 8 HPUs; 49–54% on 4 HPUs) rather than "beat stock"; (ii) the full-card row-parallel
-distribution as an explicit requirement (the v7/v8 per-route cost of 47/25/17.7 µs is the measured
-barrier, and it comes from not using the whole card per expert); (iii) the in-kernel intermediate as
-the Q16-lesson formalization; (iv) the single-op-library integration fix for the Q21 step-2 blocker;
-(v) the MTP-depth byte interaction (k=4 verify reads 40 main-MoE routes → ~5 experts/rank, 2.5×
-the k=1 set, plus 4 MTP-module draft passes of ~0.3–0.5 GB each — draft passes do NOT traverse
-the 42-layer stack). No prior experiment in this project attempted routed-only FP8 weight streaming.
+**Corrected in rev 4:** routed-only expert reads are not new in general. Upstream vllm-gaudi ships
+two gather implementations (PR #1731 `VLLM_HPU_MOE_GATHER`, v0.30.0, with a v0.26.0 cookbook
+backport; MiniMax `_gather_swigluoai_moe`, default-on for MiniMax-M3), and this project already
+ran Q16 (gather + dequant materialization, measured −45% at our 2-row shapes — RJ-02). What RA-002
+contributes over all of those: (i) **step 0** — the first measurement of the upstream FP8 gather's
+actual HBM behavior on our exact tree (the Q16 failure mode does not transfer to it: FP8 weights
+stay packed, and the Synapse compiler may fuse the gather into the GEMM's DMA, which no prior
+attempt tested); (ii) the fused dequant GEMV with **zero materialization** as the fallback that
+no upstream path has (upstream gathers either materialize or ride on the compiler's fusion, which
+is not something we can control); (iii) the **tile sweep** requirement — the Strata audit (tier D)
+shows TPC GEMVs at small per-TPC tiles are issue-bound at 10% of HBM peak, which neither Q16 nor
+the upstream gathers characterized; (iv) the full-card row-parallel distribution as an explicit
+requirement; (v) the single-op-library integration fix for the Q21 step-2 blocker; (vi) the
+MTP-depth byte interaction table. No prior experiment in this project measured routed-only FP8
+weight streaming bytes on our tree.
 
 ---
 
 ### RA-003 — max-num-seqs 16 (32 verify rows): the aggregate unlock
 
-**Status:** MEASURED → ADOPTED (EXP-NS16, 2026-11-08: the implementation agent ran this
-independently before receiving revision 1 — aggregate @16 183 -> **245-260 t/s** (converged ~258),
-bs=1 neutral (37.7 median), acceptance 1.80 held, accuracy unchanged; `--max-num-seqs 16` adopted
-into serve_mtp.sh. The doc's prediction ("183 toward 260-400") is CONFIRMED at the bottom of the
-range — the remaining gap to 400 is the decode-bucket graph warm-up (32-row shapes captured
-progressively) and the KV pool for long-sequence concurrency. · **Priority:** 3 ·
-**Complexity:** Low-Medium · **Owner (suggested):** primary agent
+**Status:** PROPOSED · **Priority:** 3 · **Complexity:** Low–Medium · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -701,10 +802,7 @@ math (DERIVED above).
 
 ### RA-004 — MTP k=4 as one graphed draft chain (without early-draft)
 
-**Status:** IN REVIEW (our EXP-Q11 refuted k=2 under the EAGER draft with the levers — -11% bs=1 /
--29% @16 — consistent with this proposal's premise that the draft chain must be graphed; the k=4
-chain design is gated on RA-002's in-graph draft) · **Priority:** 4 · **Complexity:** Medium-High ·
-**Owner (suggested):** primary agent
+**Status:** PROPOSED · **Priority:** 4 · **Complexity:** Medium–High · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -760,6 +858,13 @@ slower stack, tier D).
 - The reference ships this mode with measured MTP-4 numbers and 12/12 parity (tier D) — feasibility
   on the same model/hardware is demonstrated; the port is an adaptation (the Q01 port of the same
   family is already in-tree and CPU-verified).
+- **Independent cross-evidence (rev 4, tier D, gaudi2-single-card-strata):** a full single-Gaudi2
+  MoE deployment on SynapseAI 1.24.1 runs **4-row verification windows as fused launches**
+  (18.63 ms per window at 2K, device-side argmax, 155.7 tok/s at IQ4×Q8, ~2.9/4 acceptance) and
+  ships "fused four-step verification" GDN kernels — i.e., multi-step speculation fused into
+  single launches is a demonstrated Gaudi2 execution pattern, not a theoretical one. (Their draft
+  is DFlash2 with 58% acceptance at block 4 — different machinery; our k=4 acceptance assumption
+  of 3.33/5.0 rests on the abotsis reference measurement, not on Strata.)
 - `dry_run=False` is load-bearing for chained graphs (upstream measured deterministic garbage from
   the first post-capture replay under dry run — EXP-Q01 iteration notes).
 - The private-storage clone cost scales with the chain's module set (layer 45 + shared head ≈
@@ -862,11 +967,7 @@ graph *without* early-draft — the only untried cell of the {eager, split-graph
 
 ### RA-005 — 4-HPU target physics audit and deployment plan (decision document)
 
-**Status:** MEASURED (the 4-HPU point: EXP-Q14 pass — bs=1 33.26, @16 113.5, accuracy 100%,
-reproduced by this doc's model to <1%) · the owner decision memo: DELIVERED (this session's
-directive confirms the box is a dedicated development machine — Phase A (8-HPU levers) is the
-active track; Phase B re-runs the Q14 pass after the levers land) · **Priority:** 5 ·
-**Complexity:** None (doc)
+**Status:** PROPOSED · **Priority:** 5 (do immediately — no HPU time) · **Complexity:** None (doc)
 
 #### 1. Executive summary
 
@@ -942,9 +1043,7 @@ project — DECISIONS.md had the 8-HPU roofline only.)
 
 ### RA-006 — Graph-shape consolidation: pad-and-mask verify graph, padding-aware prefill buckets, recipe cache, dynamic-shape probe
 
-**Status:** IN REVIEW (the sites verified: extension/bucketing/padding_aware.py +
-common.py l.118-123; VLLM_BUCKETING_STRATEGY=pad unset; features.py l.106 D10; untested) ·
-**Priority:** 5 · **Complexity:** Low-Medium (B/C: days; A: days-week) · **Owner (suggested):** primary agent
+**Status:** PROPOSED · **Priority:** 5 · **Complexity:** Low–Medium (B/C: days; A: days–week) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
 
@@ -1116,6 +1215,204 @@ before being adopted — with the one correction that dynamic shapes do **not** 
 
 ---
 
+---
+
+### RA-007 — Prefill at intermediate/long depths: warm ladder, chunk strategy, non-graph host cost
+
+**Status:** **WORK IN PROGRESS** (research incomplete — load-bearing numbers require D11/D12, which
+only the implementation agent can run) · **Priority:** TBD (likely 6–7; the ≤8K band already meets
+the objective) · **Complexity:** Low (env/config A/B) if a gap is confirmed
+
+#### 1. Executive summary
+
+The prefill objective (3,000–6,000 tok/s) is **met at 0.5–8K warm** (3.3–5.7K, project-verified).
+What is not established: the **warm** ladder at 16K–64K. The recorded points above 8K
+(32K: 1,807 tok/s; 128K: 4,928 tok/s) are cold-inclusive (first-use graph fills) or
+cold-ambiguous, so "the objective is met at most depths" is a claim with a hole in the middle.
+Prefill chunks above the 2048-token capture cap run in **non-graph lazy mode** — the documented
+regime where "op accumulation time (host time) could become significantly higher compared to
+device time… make the model host bound" (habana-docs, tier B) — and the corpus shows vllm-gaudi v1
+reaching ~8,600 tok/s observed-peak prefill on a dense TP2 box, so the v1 prefill path is capable
+of the objective band in principle. This proposal measures whether our MoE stack hits it at
+intermediate depths and, if not, tests the chunk-size lever (`--max-num-batched-tokens` 8192 →
+16K/32K) and the host-side remainder (RA-008's mechanism class).
+
+#### 2. Current limitation
+
+- MEASURED (project): prefill 3.3–5.7K tok/s **warm at 0.5–8K** (objective band met); ladder
+  4K: 185 (cold, includes first-use capture) / 32K: 1,807 / 128K: 4,928 — the 32K point is
+  **not confirmed warm**.
+- DERIVED: prefill chunks > 2048 tokens cannot be graph-captured at our row counts — an 8K-row
+  prefill graph would pin ≈ 8192 × 4096 × 2 B × ~10 activation tensors ≈ **29 GB of HBM**
+  (transient working set ~2.56 GB/layer fits, but HPU graphs hold memory statically) — so the
+  2048 capture cap is **memory-driven, not arbitrary**, and "just capture the prefill shapes" is
+  not available. Non-graph lazy execution is the only path for large prefill chunks.
+- CONTEXT (tier D): Strata single-card (custom engine, IQ4, 512 experts) holds prefill roughly
+  flat at 3,562 → 2,404 tok/s from 16K → 254K (8,192-row window) — a different engine, but it
+  shows the flatness target; vllm-gaudi v1 dense TP2: ~8,600 tok/s observed-peak prefill.
+
+#### 3. Proposed architecture (pending D11/D12)
+
+1. **D11 (gate):** clean warm prefill ladder — 4K/8K/16K/32K/64K/128K prompts, warm-client first
+   (the RESEARCH-001 addendum 9 protocol), first-use compilation excluded and reported separately,
+   free HBM recorded per size. **Promotion decision:** if warm 16K–64K ≥ 3,000 tok/s, the
+   objective is met at all depths and this proposal closes (leaving only RA-006-B/D10's 1M-TTFT
+   stall question, which is a separate experiment).
+2. **If a gap is found, two levers, chosen by D12's host/device split of one 8K warm chunk:**
+   - **Device-bound:** `--max-num-batched-tokens` 8192 → 16,384 → 32,768 A/B. Larger chunks:
+     fewer chunks per prompt (128K prompt: 16 → 4 → 2 chunks), fewer distinct (query × ctx-block)
+     recipe shapes per prompt, better MME tiling per layer (1K → 2K → 4K rows per card). vLLM
+     docs recommend > 8,192 for throughput (tier B). Cost: a single 32K chunk blocks 1–2 decode
+     steps under chunked prefill — must be measured at 16-stream co-scheduling, not standalone.
+   - **Host-bound:** RA-008's mechanism class (recipe/boundary count, `PT_HPU_MAX_COMPOUND_OP_SIZE`)
+     applied to the prefill path; note the two obvious host levers — `VLLM_DELAYED_SAMPLING` and
+     `--num_scheduler_steps` — are **v0-only and absent from our v1 tree** (RJ-08/RJ-09), so the
+     host-side prefill levers are exactly RA-008's, not a separate set.
+3. Keep the 1M-context end-of-prefill stall (upstream `exp`-bucketing finding, ~4/5 of 1M TTFT)
+   in RA-006-B/D10 — it is the long-context tail, a different mechanism (deferred host
+   materialization on the sampling path), not the chunk-throughput question here.
+
+#### 4. Technical feasibility
+
+- Chunking is a standard vLLM knob (`max_num_batched_tokens`, tier B docs); the v1 scheduler
+  prioritizes decode and chunks the remainder (tier B). Non-graph lazy prefill is the documented
+  default path for shapes above the capture cap (tier B). MME GEMM at 1–4K rows/card is the
+  normal prefill regime.
+- **Unsupported assumptions (this is why the status is WIP):** (i) whether warm 16K–64K is below
+  3,000 tok/s at all (D11); (ii) whether warm prefill at our row counts is host-bound or
+  device-bound (D12 — the gpt-oss trace shows bs=1 *decode* is host-launch-bound, prefill is
+  unmeasured); (iii) which prompt length the project's prefill objective assumes (owner question —
+  if 8K, the target is already met and only the 1M-TTFT tail remains).
+
+#### 5. Expected performance impact (theoretical, gated on D11)
+
+- If a gap exists and is chunk-amortizable: 32K warm 1.8K → 3–4K tok/s (objective met at all
+  depths); 128K TTFT −25–50% (4 → 2 chunks at 32K budget, fewer first-use shapes).
+- If D12 shows host-bound: impact = RA-008's, applied to prefill (unknown until D1 prices it).
+- Worst case: gap exists but is MME-efficiency-bound at moderate rows — no config lever; record
+  and close (the objective band would then be met only at the benchmark's actual input length).
+
+#### 6–8. Complexity / risks / dependencies
+
+- **Complexity:** Low (D11 is one boot; the chunk A/B is env + one boot each).
+- **Risks:** decode ITL under co-scheduling at 32K chunks (measured at 16 streams, not standalone);
+  HBM: transient 32K-row working set ~2.56 GB/layer fits at TP8, must be verified at TP4 (D11
+  records free HBM per size); accuracy: none (no numerical change — pure scheduling).
+- **Dependencies:** D11, D12 (both new gaps); RA-006-B if the 1M-TTFT tail is in scope for the
+  same boot.
+
+#### 9. Open questions (why this is WORK IN PROGRESS)
+
+1. D11 — warm prefill ladder 4K–128K (the promotion gate).
+2. D12 — host/device split of one warm 8K chunk.
+3. Owner: which prompt length does the prefill objective assume for pass/fail?
+4. TP4 HBM headroom at 32K chunks (recorded in D11).
+
+**Promotion rule:** after D11+D12 (≈1–2 boots), restate as PROPOSED with the measured lever
+choice, or close as "objective met at all depths".
+
+---
+
+### RA-008 — Recipe-boundary and collective-boundary reduction (structural host-floor attack)
+
+**Status:** **WORK IN PROGRESS** (research incomplete — load-bearing numbers require D1/D6) ·
+**Priority:** TBD (likely 4–5; it is the host-floor remainder after RA-001) · **Complexity:**
+Low (env-knob A/B) to High (op-class restructuring), depending on D1/D6
+
+#### 1. Executive summary
+
+This validation round established two structural sources of host work on the decode critical path:
+(i) the recipe replays themselves (322/step at ~74 µs host each — v0.24 measurement, D1 re-derives
+on our tree), and (ii) — new, verified this round — **every collective forces a `mark_step()`**
+in `vllm_gaudi/distributed/device_communicators/hpu_communicator.py` (3 call sites: all_reduce
+l.42, all_gather l.59, third site l.82), a documented bridge workaround for lazy collectives.
+With 162 all-reduces per step (measured, D6 open on the breakdown), that is **≥162 extra recipe
+boundaries per step** stacked on the layer boundaries — host bookkeeping that scales with the
+collective count, not the payload. The collectives themselves are already cheap to *launch*:
+`PT_HPU_ENABLE_LAZY_COLLECTIVES` is auto-enabled by our vllm-gaudi (`platform.py:432`, verified)
+and the HCCL job thread runs async by default (`PT_HPU_DISABLE_ASYNC_COLLECTIVE` default false,
+tier B). What is not cheap is the **boundary** each one creates. RA-001 removes the per-replay
+allocation work; this proposal attacks the *count* of boundaries — the structural remainder, and
+the path to the host ≤ 9–10 ms that Consequence 3 (4-HPU 200 stretch) requires beyond RA-001's
+estimated 30–60% cut.
+
+#### 2. Current limitation
+
+- MEASURED (project, v0.24 MXFP4 tree): 322 recipe launches/step × ~74 µs ≈ 23.8 ms host;
+  162 ARs/step × ~20 µs ≈ 3.4 ms device; ~5.5 ms host work with device idle at the step boundary.
+- MEASURED (project): 8 active streams run a ~82 ms step against ~21 ms device byte-time →
+  ~61 ms unexplained host-side term (~2.5× the bs=1 host floor) — D1 must decompose it; a
+  boundary-count mechanism is the leading candidate for the row-independent portion.
+- VERIFIED (this round, server): the per-collective `mark_step()` sites in
+  `hpu_communicator.py`; the auto-enable of lazy collectives in `platform.py:432`; the async HCCL
+  job thread (tier B). The 74 µs/replay figure is v0.24 — D1 re-derives it on the FP8 tree.
+
+#### 3. Proposed architecture (pending D1/D6)
+
+Reduce the number of host-visible boundaries per step, in order of effort:
+
+1. **Env-knob A/B (Low):** `PT_HPU_MAX_COMPOUND_OP_SIZE` (default INT64_MAX; "Limits internal
+   graph size to specified number of ops. Reduces the lazy mode memory overhead. This may affect
+   performance", tier B) — fewer, larger recipes ⇒ fewer replays and fewer allocation cycles;
+   A/B 3 values with D1 re-run and HBM recorded. (Bridge also exposes
+   `PT_HPU_MAX_COMPOUND_OP_SYNC` / `PT_HPU_MAX_COMPOUND_OP_SIZE_SS` — same family, probe if the
+   first moves the needle.)
+2. **Collective-count reduction (Medium–High):** D6 identifies the op class behind the 72
+   all-reduces beyond the expected 90 (45 layers × 2: attention-O + MoE-reduce; mHC mixing is
+   local — verified in `mhc.py`). Whichever class it is (candidate: the MTP-module projections,
+   KDA/DSA state ops, or an op-class choice in the attention layout), restructure it to fewer
+   collectives. The reference pattern exists on this hardware: the Strata single-Gaudi2 port runs
+   "chained layer launches sharing one workspace" and fused tail kernels — one launch per layer
+   chain, no host round trip (tier D).
+3. **Keep both:** this is orthogonal to RA-001 (RA-001 cuts the *cost per replay*; this cuts the
+   *number of replays/boundaries*) — stack them.
+
+#### 4. Technical feasibility
+
+- The boundary mechanism is verified in our exact tree (mark_step sites, auto-env, async HCCL
+  thread — sources in §2). The compiler knob exists in 1.24.1 `env_flags.yaml` (tier B). The
+  chained-launch direction is demonstrated on 1.24.1 by Strata (tier D).
+- **Unsupported assumptions (why WIP):** (i) the per-boundary cost on *our* tree (D1 — the 74 µs
+  is v0.24; it may be smaller or larger, and D1 must separate replay-submission cost from
+  collective mark_step cost); (ii) the identity of the 72 extra ARs (D6); (iii) the HBM side
+  effect of larger compound ops (larger recipes hold more live tensors — measure in the A/B);
+  (iv) whether the v1 runner's own mark_step policy (`VLLM_HPU_FORCE_MARK_STEP`, default true in
+  our envs) interacts with the collective mark_steps.
+
+#### 5. Expected performance impact (theoretical, gated on D1)
+
+- If a boundary costs ~74 µs (v0.24 per-replay estimate) and ≥162 of them are on the critical
+  path: halving the boundary count cuts the host floor ~50% (12–26 ms → 6–13 ms) — comparable
+  in class to RA-001, and **additive** with it. This is the only identified path to
+  host ≤ 9–10 ms, which Consequence 3 (4-HPU 200 t/s stretch) requires.
+- Conservative: 20–30% of the floor (boundaries cheaper than replays); worst case: neutral
+  (boundaries are mostly device-side DMA setup, host-cheap) — in which case D1's decomposition
+  redirects the host search to the 61 ms multi-row term (Consequence 5) instead.
+
+#### 6–8. Complexity / risks / dependencies
+
+- **Complexity:** Low for the env-knob A/B; Medium–High for op-class restructuring (touches model
+  code → full accuracy gate).
+- **Risks:** compound-op-size changes can raise HBM (larger live tensors) and alter scheduling —
+  HBM must be recorded in the A/B; op-class restructuring risks the near-tie FP class (same-boot
+  A/B gate); the bridge's mark_step workaround may be re-required in future versions (anchor the
+  patch, fail-closed per repo conventions).
+- **Dependencies:** D1, D6 (both existing gaps, sharpened in rev 4); RA-001 for the stacked
+  result; the Strata port as the design reference for chained launches (corpus source
+  `gaudi2-single-card-strata`).
+
+#### 9. Open questions (why this is WORK IN PROGRESS)
+
+1. D1 — per-replay AND per-collective-boundary host cost on the FP8 tree (decompose the 74 µs).
+2. D6 — AR count per op class; identify the 72 beyond the expected 90.
+3. HBM delta of the `PT_HPU_MAX_COMPOUND_OP_SIZE` A/B.
+4. Interaction with `VLLM_HPU_FORCE_MARK_STEP` (default true in our envs).
+
+**Promotion rule:** after D1+D6, restate as PROPOSED naming the specific op class(es) to
+restructure and the knob value, or fold the residue into RA-001's re-profiling and close.
+
+---
+
 ## Rejected ideas (investigated, not pursued — with reasons)
 
 | ID | Idea | Why rejected | What would reopen it |
@@ -1127,6 +1424,9 @@ before being adopted — with the one correction that dynamic shapes do **not** 
 | RJ-05 | MoE expert offload / host-RAM expert cache (reference `VLLM_GLM_MOE_CACHE_EXPERTS` pattern) | Host→HPU is ~20.7–24.4 GB/s per card (PCIe Gen4, MEASURED [GG: 8-card node study, tier D]); a cold 25.2 MB expert costs ≥ 1+ ms to fetch — orders of magnitude above its HBM stream time (11.7–14.8 µs). The reference runs it at GMU 0.35 (HBM-starved regime we do not have). | HBM pressure at 4 HPUs that RA-003/RA-004 create beyond the 11.1 GiB free (unlikely per the KV math). |
 | RJ-06 | Cross-lane DSA-indexer top-2048 reuse at long context (MTP verify lanes share one key selection) | Analyzed: at 1M context the indexer K-pool read is ~256 MB/DSA-layer/card (TP8) → ~1.4 ms/token total — not the decode bottleneck (the weight floor dominates). The accuracy risk (verify logits computed over a different key set → acceptance shift beyond the 0.5 pp gate class) is real and the gain is not. | A measured 1M-context + MTP decode where the indexer/KV read exceeds 20% of the step (A024 territory). |
 | RJ-07 | Split-mode draft graphs + early-draft (Q01 as combined with the adopted levers) | Measured non-stacking (EXP-Q19: 164–173 vs 183–185 @16): the replay sync serializes the draft step, defeating the pipelining. The split mode stays available env-gated for non-early-draft configurations (RA-004 uses the chain, not the split). | Nothing at k=1 (the levers-only config wins by measurement). |
+| RJ-08 | `VLLM_DELAYED_SAMPLING` (host CPU reduction between steps) | **v0-only feature, absent from our tree (server-verified, rev 4).** vllm-gaudi PR #433 removed it: "VLLM_DELAYED_SAMPLING is for v0 and not used here"; the vendor feature gate is `Engine('v0')`; the v0 runner additionally required `is_single_step and not spec_decode_enabled` — doubly inapplicable to our v1 + MTP stack. | A v1 delayed-sampling implementation lands in vllm-gaudi. |
+| RJ-09 | `--num_scheduler_steps` multi-step scheduling (amortize one schedule over N decode steps) | **v0-era feature, not in v1 (server-verified, rev 4):** implemented in vllm-fork (PR #441; their best n=64); our v1 runner has no multi-step scheduler (grep-verified). v1's engine loop schedules one step per call. | v1 multi-step lands in vllm-gaudi — it would directly attack the multi-row host term of Consequence 5, so re-test immediately if it appears. |
+| RJ-10 | FP8 KV cache (`CACHE_DTYPE_BYTES` / `--kv-cache-dtype fp8`) | Reference fork, **same model**: "I've had not a ton of luck with fp8 kvcache on gaudi -- it's coherent but it's failed needle tests more than it should" (abotsis, vllm-gaudi #1549, tier D). Our gates make long-context recall the dominant risk term: 1M needle at 860,739 tokens (Q12: 100%) + 0.5 pp accuracy budget. KV is not the decode bottleneck (the weight floor dominates) and capacity suffices for the stated targets (1M ≈ 1–2 seqs). | A vendor fix to the needle behavior, or a 1M × multi-seq capacity requirement beyond the stated targets. |
 
 ## Research gaps (questions requiring the implementation agent's measurements)
 
@@ -1134,14 +1434,16 @@ before being adopted — with the one correction that dynamic shapes do **not** 
 |---|---|---|---|---|
 | D1 | Per-recipe host cost and recipe count on the **current FP8 tree** (the 322 × 74 µs figure is the v0.24 MXFP4 stack's); **and** the decomposition of the measured ~82 ms step at 8 active streams (device byte-time ~21 ms → ~61 ms host-side at multi-row, ~2.5× the bs=1 host floor — sampler/scheduler/logprob scaling with rows) | Sizes RA-001's expected gain and RA-002's host assumption; the multi-row term is the binding constraint on 800@16 at *both* 8 and 4 HPUs — the single most load-bearing unverified number set | 8-rank torch.profiler (CPU+HPU), 10 warm steps bs=1 + 8 active + 16 active, method in `docs/results/moe-decode-step.md` §1/§5 | 1 boot |
 | D2 | Does the stock `mixture_of_experts` op read all 36 local experts at bs=1, or only the routed ones? | Converts the 40 GB/step premise (and thus the whole RA-002 ceiling) from high-confidence inference to fact | Per-rank HBM traffic counter or profiler during one bs=1 step with routing instrumentation (Q13 histogram hook) | 1 boot |
-| D3 | Host-RAM cost of the decode tensor cache at our ~200-graph population | RA-001's guard threshold | `resource.getrusage` per worker, cache on/off (inside RA-001's A/B) | included |
-| D4 | Achieved GB/s of a 25.2 MB expert GEMV at full-card row-parallel distribution | RA-002's per-route target (beat 1.5 TB/s to clear 200 t/s with margin) | TPC micro-bench of the new kernel (RA-002 step 5b) | included |
+| D3 | Host-RAM **and per-rank HBM** cost of the decode tensor cache at our ~200-graph population (rev 4: vendor docs say the cache retains "all input, intermediate and output tensors" per graph — the HBM delta is an assumption, not a zero) | RA-001's guard threshold + KV-pool headroom | `resource.getrusage` per worker + `hl-smi` per-rank HBM before/after, cache on/off (inside RA-001's A/B) | included |
+| D4 | Achieved GB/s of a 25.2 MB expert GEMV at full-card row-parallel distribution — **rev 4: with a tile sweep (24/8/3/1 TPCs per expert = 1.05/3.15/8.4/25.2 MB per TPC)** to find the issue-bound knee (the Strata audit measured a 5-tile TPC GEMV at 237 GB/s = 10% of peak; B10's 1.94 TB/s was at a 16.8 MB tile) | RA-002's per-route target (beat 1.5 TB/s to clear 200 t/s with margin) and the TPCs-per-expert design parameter | TPC micro-bench of the new kernel (RA-002 step 5b) — or of the step-0 gather path's GEMM if the probe runs first | included |
 | D5 | EP route histogram at bs=1/k=1/k=4 and 16-active (Q13) | Sizes the straggler term in every routed-kernel ceiling (slowest rank ≈ 2× mean at bs=1) | Q13's env-gated histogram hook, one decode batch per config | 1 boot |
-| D6 | Why 162 all-reduces per step (45 layers × 2 = 90 expected; mHC mixing is local — verified in `mhc.py` source) | 3.4 ms/step; if ~72 of them are avoidable by an op-class change, that is free at bs=1 | 8-rank trace, AR count per op class (moe-decode-step.md §2 method) | with D1 |
+| D6 | Why 162 all-reduces per step (45 layers × 2 = 90 expected; mHC mixing is local — verified in `mhc.py` source). **Rev 4 mechanism:** each collective in `hpu_communicator.py` forces a `mark_step()` (3 call sites, server-verified) → ≥162 extra recipe boundaries on the host critical path per step (RA-008) | 3.4 ms/step device; if ~72 are avoidable by an op-class change, that is free at bs=1 **plus** the boundary host cost (RA-008's structural lever) | 8-rank trace, AR count per op class (moe-decode-step.md §2 method); pair with D1's per-boundary host pricing | with D1 |
 | D7 | `PT_HPU_LAZY_ACC_PAR_MODE` 0 vs 1 with view-based custom ops | RA-002 build constraint (Q21 playbook says 0; serve script pins 1) | Two boots, custom op parity check | included |
 | D8 | The 128 vs 640 tokens/hybrid-block KV semantics (F003 says 128, EXP-Q10 says 640) | RA-003's KV sizing and every future pool math | Read the auto-sizing log at one boot; record the formula | 5 min |
 | D9 | MTP-module weight composition and per-draft-pass bytes: which tensors does one draft forward read (own attention? the shared expert? `shared_head`? the main `lm_head`?) | Sizes the k=4 byte budget (this doc assumes 0.3–0.5 GB/pass aggregate, ±50%); the checkpoint contains exactly 42 MoE layers, so the draft MoE is shared or absent — verify, don't assume | Checkpoint weight-name inspection + one draft-pass profiler window (fold into D2) | included |
 | D10 | Dynamic-shape per-launch patch cost on our 1.24.1 bridge (`ht.enable_dynamic_shape()`, 2-size-range micro-graph, non-graphed lazy); and whether the 1M-context end-of-prefill stall (upstream `exp`-bucketing finding, ~4/5 of 1M TTFT on a 27B/TP4 box) exists on our stack | RA-006-D decision (dynamic shapes vs padding for prefill bucket counts); RA-006-B sizing. Note: dynamic shapes are NOT available in HPU graphs (tier B docs) — this is a prefill/warmup question only | Micro-bench (no full model) + one 1M warm-TTFT window under `VLLM_BUCKETING_STRATEGY=pad` vs default | 1 boot |
+| D11 | **Warm** prefill ladder: clean warm tokens/s at 4K/8K/16K/32K/64K/128K prompts (warm-client first, first-use compilation excluded and reported separately; free HBM recorded per chunk size) — the project's verified prefill numbers cover 0.5–8K only | RA-007 promotion gate: is the 3–6K objective met at intermediate depths (32K: 1,807 is cold-ambiguous)? Also records TP4 HBM headroom at 32K chunks | One boot, the bench prefill ladder with the RESEARCH-001 addendum-9 warm protocol | 1 boot |
+| D12 | Host/device split of one **warm 8K prefill chunk** (moe-decode-step.md method applied to the prefill path; non-graph lazy regime) | RA-007's lever choice: chunk-size A/B (device-bound) vs RA-008's boundary class (host-bound). The gpt-oss trace established host-launch-bound for *decode* bs=1 — prefill is unmeasured | 8-rank torch.profiler over ~5 warm 8K-chunk prefills | with D11 |
 
 ## Implementation agent instructions (next actions, in order)
 
@@ -1150,8 +1452,9 @@ before being adopted — with the one correction that dynamic shapes do **not** 
    set the proposal statuses as the review proceeds.
 2. **RA-005 decision memo to the owner** (no HPU time): the 4-HPU target table + the (a)/(b)/(c)
    options. This is the only item that changes *what to build*.
-3. **D1 + D2 + D6 in one profiling window** (same boot family, method already documented in the
-   repo). These three measurements re-anchor every number in this document on our exact tree.
+3. **D1 + D2 + D6 in one profiling window, plus D11 + D12** (same boot family; decode method
+   already documented in the repo, prefill method per the gap table). These measurements re-anchor
+   every number in this document on our exact tree — including the RA-007/RA-008 promotion gates.
 4. **RA-001** (days): port the per-call tensor-cache policy, A/B per §10. Fastest credible host-floor
    cut; independent of everything else.
 5. **RA-003** (days, can share RA-001's boot family): max-num-seqs 16 + KV sizing + 32-row verify
@@ -1161,41 +1464,27 @@ before being adopted — with the one correction that dynamic shapes do **not** 
    `PT_HPU_RECIPE_CACHE_CONFIG` warmup measurement (8 workers, cached vs cold).
    **RA-006-A** (pad-and-mask 10-row verify graph + scratch slots + degenerate routing) after
    RA-001, gated on the byte-identity parity test.
-6. **RA-002** (weeks, continues Q21 step 3): implement with the five sharpenings (byte target,
-   full-card row-parallel, in-kernel intermediate, single op library, MTP-depth table); D4 is its
-   first gate.
+6. **RA-002** (weeks, continues Q21 step 3): **start with step 0 (the v0.26.0 gather probe — 1
+   boot, ~1 day)** before any kernel work; if it hits the routed byte budget, the custom kernel
+   (five sharpenings: byte target, full-card row-parallel with the D4 tile sweep, in-kernel
+   intermediate, single op library, MTP-depth table) becomes the fallback. D4 is its first kernel
+   gate.
 7. **RA-004** (after RA-002): k=4 chain graph; update Q11's dependency from "Q01" to "RA-004".
 8. After each: update the queue per the operating rule (did the bottleneck move?), and update the
    `Status:` fields here.
+9. **WIP promotion gates (rev 4):** RA-008 restated or closed after D1+D6; RA-007 restated or
+   closed after D11+D12 (plus the owner's answer on the objective's assumed prompt length);
+   RA-002's kernel scope restated after step 0. Update the `Status:` fields in the same edit as
+   the evidence.
 
 ## Research history
 
 | Date | Rev | Author | Findings / changes |
 |---|---|---|---|
+| 2026-11-08 | 4 | independent research architect (GaudiGrimoire deep-validation round) | Re-validated every load-bearing claim of RA-001…RA-006 against the corpus + the deployed tree (server-verified line numbers). Changes: (i) **RA-002 novelty corrected** — upstream vllm-gaudi ships two routed-only MoE gather implementations (PR #1731 `VLLM_HPU_MOE_GATHER`, v0.30.0, with a **cookbook backport fix for our v0.26.0**; MiniMax `_gather_swigluoai_moe`, default-on) — added **step 0: apply the backport and measure HBM bytes/step** (materially different from Q16's dequant materialization: FP8 stays packed, the Synapse compiler may fuse the gather into the GEMM's DMA); the custom TPC kernel demotes to fallback if the probe hits the byte target; novelty section rewritten; (ii) RA-002 **tile-size risk** from the g2-opt-manual Strata audit (5-tile TPC GEMV = 237 GB/s = 10% of HBM peak, issue-bound; "TPC beats MME at one row" unsupported) — D4 now requires a tile sweep (24/8/3/1 TPCs per expert); (iii) RA-001 — 1.24.1 `wrap_in_hpu_graph` signature server-verified (no `cache_tensors_list`; `dry_run` auto), **drafter wrap (l.5060) added to scope**, HBM-retention assumption made explicit → D3 extended to per-rank HBM; (iv) RA-004 — Strata cross-evidence (fused 4-row verification windows + fused four-step verification run on Gaudi2 1.24.x); (v) **host-lever triage → three rejections:** RJ-08 `VLLM_DELAYED_SAMPLING` (v0-only; removed by vllm-gaudi PR #433; absent from our tree, server-verified), RJ-09 `--num_scheduler_steps` multi-step (v0-era; no v1 implementation, server-verified), RJ-10 FP8 KV cache (reference fork, same model: needle-test failures; our 1M needle gate + 0.5 pp budget dominate); `PT_HPU_ENABLE_LAZY_COLLECTIVES` found **already auto-enabled** (`platform.py:432`) — not a lever; (vi) **new structural fact:** every collective forces a `mark_step()` in `hpu_communicator.py` (3 sites, verified) → ≥162 recipe boundaries/step → new **RA-008 (WORK IN PROGRESS)**; (vii) prefill re-scoped (objective met at 0.5–8K warm; the 16K–64K warm ladder is unverified; graph-capturing 8K-row prefills is HBM-infeasible at ~29 GB, DERIVED) → new **RA-007 (WORK IN PROGRESS)**; (viii) HBM bandwidth figures standardized (1,696 measured / 1,945 cost model / 2,147 TPC envelope / 2,450 spec). RA-003/RA-005/RA-006 and all target-physics conclusions unchanged. |
 | 2026-11-07 | 1 | independent research architect | Initial audit of the fork (TASKS/EXPERIMENTS/CURRENT_STATE/DECISIONS/ACCURACY, all EXP-* reports, `docs/results/moe-decode-step.md`, RESEARCH-001 + addenda 1–11, port source, live process and deployed tree, checkpoint config). GaudiGrimoire consultation (log below). Independent byte model + ceilings (Executive summary). Five proposals: RA-001…RA-005. Seven rejections (RJ-01…RJ-07). Eight research gaps (D1…D8). |
 | 2026-11-07 | 3 | independent research architect (community input) | Owner supplied a Discord exchange on pad-and-mask / bucketing / dynamic shapes on Gaudi. All specific claims verified against corpus + deployed tree: (i) `VLLM_BUCKETING_STRATEGY=pad` (PR #762, padding-aware) **present in our v0.26.0 but unused** (verified on server); (ii) bucketing/padding is the documented upstream continuous-batching mechanism; (iii) **dynamic shapes are real in the 1.24.1 SDK + bridge** (`synGeometryMinSizes/MaxSizes`, `ht.enable_dynamic_shape()`, `PatchDynamicTensors` — tier B) **but HPU Graphs are static-only** (habana-docs, tier B) → not a decode-hot-path lever, prefill probe only (D10); (iv) disk recipe cache documented, unused in our scripts (verified). Added **RA-006** (pad-and-mask verify graph + padding-aware prefill buckets + recipe cache + dynamic-shape probe), the RA-002 padded-row/degenerate-routing contract, the RA-003 separate-large-shapes note, D10, and the upstream 1M-context TTFT datapoint (28% warm-TTFT cut with `pad` bucketing, tier D) as motivation for RA-006-B. |
 | 2026-11-07 | 2 | independent research architect (owner correction) | **Draft-pass byte model corrected.** Rev 1 charged the k MTP draft passes with full 42-layer MoE reads (72 main-MoE routes/step at k=4 → 22.1 GB/card at TP4). The draft chain runs through the MTP module (~0.3–0.5 GB/pass aggregate — the checkpoint has exactly 42 MoE layers; composition to verify per D9). Corrected k=4 bytes: TP8 7.7 GB, TP4 15.9 GB. Consequences: (i) the owner's active-weights roofline check (18–28 GB/token → 340–530 t/s at 4 HPUs) is confirmed — 200 t/s is **inside** the 4-HPU roofline; (ii) 200 @ 4 HPU reclassified from "plan as unreachable" to **gated stretch goal, est. 15–25% probability** (host ≤ ~9–10 ms + 89–100% of spec + routing kernel); base case 126–230; (iii) 200 @ 8 HPU confirmed as base-case target (host ≤ 10–13 ms + 47–86%); (iv) the stock-op model now reproduces the measured 39.1 (TP8) and 33.2 (TP4) t/s to <1%, validating the all-weights-read premise; (v) aggregate tables updated (16 active hits 69–89% of experts at k=1/4, routing-aware saves 11–40% there). No proposal ranking or mechanism changed; RA-002/RA-004/RA-005 numbers updated throughout. |
-
-### Implementation-agent review (2026-11-08)
-
-- Document committed to the repo (was untracked); all six `Status:` fields updated per the
-  review above.
-- **RA-003 independently CONFIRMED**: the implementation agent ran max-num-seqs 16 before
-  receiving this document (EXP-NS16) — aggregate @16 183 → 245–260 t/s, converged ~258, adopted
-  into serve_mtp.sh. The doc's 260–400 prediction band is confirmed at its bottom edge; the
-  decode-bucket warm-up and the KV pool for long-sequence concurrency are the residual items.
-- **RA-005's owner memo: DELIVERED** — the owner directive confirms the box is a dedicated
-  development machine; Phase A (8-HPU levers) is active, Phase B re-runs the Q14 pass after the
-  levers land. The gated-stretch-goal recommendation for 200@4HPU stands as recorded.
-- **RA-002 = Q21**: the 1Cat block_fp8_dequant core is compiled + gated into our variant library
-  (TPC gate PASS); the torch-op shim is blocked by the v0.26.0 registrar collision (order-
-  independent, both venvs, gdb tooling-limited — EXP-Q21). The five sharpenings are accepted;
-  D4 (the micro-bench gate) is pending the shim fix or a stack upgrade.
-- **RA-004 cross-reference correction**: our EXP-Q11 refuted k=2 under the EAGER draft with the
-  levers (-11% bs=1 / -29% @16) — consistent with this proposal's graphed-chain premise; the Q11
-  dependency now points at RA-002/RA-004.
-- **D1/D2/D6 profiling window**: queued as the next measurement action (the doc's numbers re-anchor
-  on our exact tree); RA-001 and RA-006-B/C follow in the same boot family per the instructions.
 
 ### GaudiGrimoire consultation log (2026-11-07)
 
@@ -1220,6 +1509,14 @@ before being adopted — with the one correction that dynamic shapes do **not** 
 | `PT_HPU_RECIPE_CACHE_CONFIG` | Disk recipe cache: "only one process compiles the recipe, and other processes read it from disk"; path/delete/size/NFS config; scale-up scenario | B / habana-docs Runtime_Flags | RA-006-C (8-worker warmup ÷4–8); verified unset in our scripts |
 | `1M context TTFT prefill stall bucketing pad` | Qwen4Exp port (27B-FP8, TP4, 1M, chunked prefill 8192): default `exp` bucketing pays "a silent end-of-prefill stall worth roughly four-fifths of the ~1M-token TTFT" (deferred host-side materialization on the sampling path); `pad` dissolves it to ~3–4% of TTFT, −28% warm TTFT @1M, +14–20% @262K (4/4 runs) | D / vllm-gaudi issue "Compiled-plane (HPU-graph) numerics + plan findings on the Qwen4Exp port" | RA-006-B motivation (same problem class as our Q07c fixed per-prompt cost); D10 second half |
 | `there are no dynamic shapes shape set padding bucketing normal` | "Every tensor shape is baked into the compiled graph. Asking for dynamic shapes does not produce a shape-polymorphic graph — the request is turned into static compilation... padding and bucketing are normal engineering techniques here rather than hacks" (marked ASSUMED vendor in a community manual) | D / g2-opt-manual §1.4.1 | RA-006 framing; consistent with the tier-B "HPU graphs static-only" doc |
+| `Gaudi 2 HBM bandwidth GB/s` | spec 2.45 TB/s (whitepaper, tier B); **compiler cost model 1,945 GB/s** — `libSynapse` 1.24.1 `getHbmBwGBps()` returns 0x799 (tier C decompile); **measured 1,696 GB/s = 69% of spec** on an 8-card node (access ≥256 B, tier D); cookbook GEMV envelope ~2.2 TB/s | B/C/D | standardized the BW columns (1,696 / 1,945 / 2,147 / 2,450) across RA-002/004/005 tables |
+| `disable_tensor_cache experimental dry_run cache_tensors_list` | vllm-fork #738 (tier D): disable=True is "experimental", frees in-place tensors it cannot identify (the `cache_tensors_list` mitigation), forces dry_run → `local_scalar_dense` accuracy caveats; **1.24.1 `wrap_in_hpu_graph` has NO `cache_tensors_list` parameter (server-verified signature)** — the in-place caveat is handled by `free_inplace` (default True); decode moving to the vendor-default cache-on mode is the numerically safer direction | D + B (server-verified) | RA-001 §4/§7; D3 |
+| `VLLM_HPU_MOE_GATHER 1731 gathered expert decode MiniMax` | upstream routed-only MoE decode exists in two forms: PR #1731 (v0.30.0, `hpu_fp8.py`, block-FP8 + dynamic-activation-scale + silu checkpoints, Habana FP8 GEMM op, **cookbook backport fix for v0.26.0 at `fixes/fp8-moe-gather/`**) and MiniMax `_gather_swigluoai_moe` (index_select of G=min(E_local, T×K) + bmm, bit-exact vs dense by accumulation-order construction, default-on for MiniMax-M3) | D + B source | RA-002 step 0 + novelty rewrite; distinguishes Q16 (dequant materialization, −45%) from the FP8 gather |
+| `PT_HPU_ENABLE_LAZY_COLLECTIVES mark_step async` | lazy collectives are "required for using tensor parallelism with HPUGraphs" (kzawora-intel, tier D); run async on the HCCL job thread by default (`PT_HPU_DISABLE_ASYNC_COLLECTIVE` default false, tier B); **vllm-gaudi auto-sets the env to true when unset (`platform.py:432`, server-verified)**; `hpu_communicator.py` forces `htorch.core.mark_step()` before every collective — 3 call sites (server-verified) → a recipe boundary per AR | B/D + server | RA-008 mechanism; D6 sharpened; lazy collectives confirmed NOT a lever (already on) |
+| `gaudi2-single-card-strata benchmarks GEMV issue-bound tile` | Strata single-Gaudi2 (Qwen3.8-Flash-Next, 48 layers, 512 experts, IQ4_XS): decode 155.7 t/s @2K (DFlash2 block 4, ~2.9/4 acceptance, 18.63 ms per 4-row window); prefill 3,562 → 2,404 t/s at 16K → 254K (8,192-row window); **g2-opt-manual audit: 5-tile TPC expert GEMV = 237 GB/s = 10% of HBM peak → "latency- and issue-bound, not bandwidth-bound"; "TPC beats the MME at one row" verdict: unsupported, small-tile effect** | D | RA-002 D4 tile sweep (per-TPC tile size determines issue-bound vs bandwidth-bound); RA-004 cross-evidence (fused multi-step verification launches work on Gaudi2 1.24.x) |
+| `VLLM_DELAYED_SAMPLING removed v1 num_scheduler_steps` | delayed sampling: vllm-gaudi PR #433 "is for v0 and not used here"; vendor feature gate `Engine('v0')`; v0 runner required `is_single_step and not spec_decode_enabled`; **absent from our v0.26.0 tree (server-verified grep)**. Multi-step: v0-era (vllm-fork PR #441, best n=64); **no multi-step scheduler in our v1 tree (server-verified grep)** | D/B + server | RJ-08, RJ-09 |
+| `abotsis GLM-5.3-Flash 11.5 tok/s fp8 kvcache needle MTP` | reference fork, same model (vllm-gaudi #1549, 2026-08): exhausted options at ~11.5 t/s bs=1 decode on their stack; MTP "about half the acceptance that it should be"; "fp8 kvcache on gaudi — it's coherent but it's failed needle tests more than it should"; "push/pull between vllm's async scheduler and the Gaudi's own ARC scheduler" | D | RJ-10; context (our stack: 38.3 t/s bs=1, k=1 acceptance 94% — the Q18 levers + MTP port are working relative to the reference) |
+| `prefill throughput vllm-gaudi TP2 8600 peak` | vllm-gaudi v1, dense model, TP2, 4K ISL/1K OSL × 32 concurrent: **~8,600 tok/s observed-peak prefill**, total 2,885 tok/s, TTFT median 1.13 s (tier D) — the v1 prefill path reaches the 3–6K objective band per card on dense models; our open case is MoE + non-graph large chunks | D | RA-007 framing (the gap, if any, is at intermediate/long depths on our stack) |
 
 **Cross-checks performed outside the corpus:** checkpoint `config.json` (model dimensions → byte
 model, cross-checked to the 328.3 GB total within 1.4%); deployed tree

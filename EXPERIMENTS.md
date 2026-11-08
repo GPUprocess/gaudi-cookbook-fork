@@ -905,3 +905,26 @@ MTP latency benefit kept.
 - The decode-bucket graphs for bs up to 16 capture on first use (the warm-up
   reps paid ~30-60 s per new shape; production should pre-warm, D003).
 - The bs=1 path is unchanged (the bs-1 graphs are the same shapes).
+
+## EXP-Q21 final diagnosis state (2026-11-08, boot q21q)
+
+The rebuilt op library (with the restored TORCH_LIBRARY defs — the schema string
+verified in the binary) loads at serving time WITHOUT the registrar collision
+(confirming: the collision was an artifact of the probe import order, where
+habana_frameworks.torch.core is imported without the plugin and the op library's
+dlopen pulls the plugin fresh). The serving-time `torch.ops.load_library`
+SUCCEEDS — but the op remains invisible to `torch.ops.custom_op` ("NOT
+registered" in all 8 workers).
+
+**Remaining question (next session, minimal repro):** the registration
+order/namespace interplay in the worker processes — mxk_op_lazy.cpp's static
+`TORCH_LIBRARY_FRAGMENT(custom_op)` + `TORCH_LIBRARY_IMPL(custom_op, HPU)` blocks
+run at the same .so load; our def adds to the same namespace. Whether the HPU-impl
+registration for OUR op hits the same dispatcher-init quirk (silently swallowed by
+load_library), or the schema def is shadowed, is diagnosable with our op.cpp ALONE
+in a standalone .so + the serving-order imports (the minimal repro that the
+earlier probes missed by using the wrong import order).
+
+**The qualification path is otherwise clear:** once the op is Python-visible, the
+dequant qualification runs on-device against a GLM weight shard (the kernel is
+compiled and gated), then the fused GEMV variants.
