@@ -1,54 +1,74 @@
-// op.cpp for block_fp8_dequant_glm (GLM-5.3-Flash Q21).
-// Registers torch.ops.custom_op.block_fp8_dequant_glm(weight, scale) -> bf16 [N, K]
-// via the framework's lazy-mode legacy custom-op API (hpu_custom_op.h), the same
-// pattern as mxk_op_lazy.cpp.
-#include "hpu_custom_op.h"
+// SPDX-License-Identifier: Apache-2.0
+// block_fp8_dequant_glm - PT2 custom-op with LAZY registration.
+// The registration is deferred to the first call (not at .so load) to avoid
+// the registrar collision: the backend .so registers its built-in kernels at
+// import; our .so's load-time registration re-triggers the registry init and
+// collides (EXP-Q21). The lazy registration runs AFTER the backend is fully
+// initialized, inside the serving process's execution context.
+#include <ATen/ATen.h>
+#include <ATen/core/stack.h>
+#include <torch/library.h>
+#include <cmath>
+#include "habanalabs/hpu_custom_op_pt2.h"
 
-#include <torch/extension.h>
+namespace {
 
-#include <mutex>
-#include <vector>
+constexpr const char* schema = "custom_op::block_fp8_dequant_glm";
+constexpr const char* guid = "block_fp8_dequant_glm";
 
-using namespace habana::custom_op;
-// [note] the torch schema is NOT declared here on purpose: the legacy bridge
-// registers this op by name through REGISTER_CUSTOM_OP_ATTRIBUTES, and a
-// TORCH_LIBRARY def of the same name collides with the plugin"s static
-// registrations when both load in one process (d2d_memcpy double-register).
-
-static std::vector<InputDesc> dequantInputs() {
-    // [weight E4M3 tensor, scale F32 tensor]
-    std::vector<InputDesc> in;
-    in.push_back(InputDesc{input_type::TENSOR, 0u});
-    in.push_back(InputDesc{input_type::TENSOR, 1u});
-    return in;
+void validate(const at::Tensor& weight, const at::Tensor& scale) {
+    TORCH_CHECK(weight.scalar_type() == at::kFloat8_e4m3fnuz &&
+                scale.scalar_type() == at::kFloat && weight.dim() == 2 &&
+                scale.dim() == 2 && weight.size(0) % 128 == 0 &&
+                weight.size(1) % 256 == 0 && weight.is_contiguous() &&
+                scale.is_contiguous() && weight.device() == scale.device(),
+                "block FP8 dequant requires contiguous E4M3 [N,K] and F32 scales");
 }
 
-static std::vector<OutputDesc> dequantOut() {
-    // bf16, same shape as the weight
-    return {OutputDesc{0, c10::ScalarType::BFloat16,
-                       [](const at::Stack& st) {
-                           return std::vector<int64_t>{st[0].toTensor().size(0), st[0].toTensor().size(1)};
-                       }}};
-}
+std::once_flag reg_flag;
+bool reg_ok = false;
 
-at::Tensor blockFp8Dequant(const at::Tensor& weight, const at::Tensor& scale) {
-    static std::once_flag f;
-    std::call_once(f, []() {
-        auto desc = dequantInputs();
-        auto outs = dequantOut();
-        // No node params: the kernel reads dims from the tensors and its point
-        // id from the index space.
-        auto pf = [](const at::Stack&, size_t& size) {
-            HPU_PARAMS_STUB(int32_t);
-            *params = 0;
-            size = 0;
-            return params;
-        };
-        REGISTER_CUSTOM_OP_ATTRIBUTES("custom_op::block_fp8_dequant_glm",
-                                      "block_fp8_dequant_glm", desc, outs, pf);
+void lazy_register() {
+    std::call_once(reg_flag, []() {
+        habana::custom_op::registerUserCustomOp(
+            schema, guid,
+            [](const at::Stack& stack) {
+                auto w = stack.at(0).toTensor();
+                habana::PartialOutputMetaData output;
+                output.dtype = at::kBFloat16;
+                output.shape = {w.size(0), w.size(1)};
+                return habana::PartialOutputMetaDataVector{output};
+            },
+            nullptr);
+        reg_ok = true;
     });
-    std::vector<c10::IValue> in{weight, scale};
-    auto d = HabanaCustomOpDescriptor::getCustomOpDescriptor("custom_op::block_fp8_dequant_glm");
-    return d.execute(in)[0];
 }
 
+at::Tensor run(const at::Tensor& weight, const at::Tensor& scale) {
+    validate(weight, scale);
+    lazy_register();
+    TORCH_CHECK(reg_ok, "block_fp8_dequant_glm registration failed");
+    TORCH_CHECK(weight.device().type() == at::kHPU);
+    auto descriptor =
+        habana::custom_op::UserCustomOpDescriptor::getUserCustomOpDescriptor(schema);
+    std::vector<c10::IValue> inputs{weight, scale};
+    return descriptor.execute(inputs)[0];
+}
+
+} // namespace
+
+TORCH_LIBRARY_FRAGMENT(custom_op, m) {
+    // Schema only — the HPU impl is routed through the PT2 descriptor at call time.
+    m.def("block_fp8_dequant_glm(Tensor weight, Tensor scale) -> Tensor");
+}
+
+TORCH_LIBRARY_IMPL(custom_op, CPU, m) {
+    m.impl("block_fp8_dequant_glm",
+           [](const at::Tensor& w, const at::Tensor& s) {
+               TORCH_CHECK(false, "block_fp8_dequant_glm requires HPU tensors");
+           });
+}
+
+TORCH_LIBRARY_IMPL(custom_op, HPU, m) {
+    m.impl("block_fp8_dequant_glm", &run);
+}

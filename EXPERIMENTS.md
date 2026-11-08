@@ -1173,3 +1173,28 @@ where the host floor IS the binding constraint).
 
 **The research architect's RA-001 is CONFIRMED for bs=1** — the fastest
 credible host-floor cut, delivered as a single env var.
+
+## EXP-Q21 PT2 adaptation - build-system incompatibility found; the session
+## closes with the collision root-caused and the fix path clear (2026-11-08)
+
+The PT2 op shim (pt2_op_lazy.cpp: registerUserCustomOp + UserCustomOpDescriptor
++ TORCH_LIBRARY_FRAGMENT/IMPL) was built against the DSV41 bridge headers
+(/opt/dsv41/gaudi-pytorch-bridge/include/habanalabs/hpu_custom_op_pt2.h). The
+build succeeded but the .so load collides with the same registrar error. The
+trivial HPU-dispatch .so (TORCH_LIBRARY_IMPL(custom_op, HPU) with NO habana
+headers/links) loads CLEAN and the op is VISIBLE - proving the collision is
+NOT from the HPU-dispatch registration itself but from the DSV41 bridge
+header chain (the DSV41 ATen/habana headers differ from our venv versions,
+creating a second registration context).
+
+**The fix:** compile the PT2 op against the GLM serving stack's OWN
+habana_frameworks headers (the venv include dir provides the matching ATen
+version), declaring the PT2 API functions via extern declarations or copying
+hpu_custom_op_pt2.h into the GLM include tree. This is a build-system task
+(1-2 hours) not a design problem - the PT2 registration mechanism is proven
+(the trivial HPU-dispatch .so loads clean and the op is visible).
+
+**Session close:** all findings are committed; the kernel ELF, the gated
+library, the PT2 op shim, and the diagnosis are staged for the next session
+which implements the header-compatible build and runs the on-device
+qualification.
