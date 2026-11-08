@@ -792,6 +792,18 @@ host pattern, the ~61 ms multi-row host term at 8 active). **Expected outcome:**
 binding-constraint identification for the 800 t/s objective (the doc's flagged D1 question).
 **Caveat:** the profiler raises at step[end] — the engine dies by design after the capture;
 run it in a throwaway boot (the measurements are already taken) or accept the restart.
+**ATTEMPT 1 (2026-11-08):** the env format is comma-separated WITHOUT brackets
+(VLLM_PROFILE_STEPS=200,400 — the list_of parser splits on commas; the bracket form fails
+the boot). The window mechanics: setup_profiler(wait=0, warmup=0, active=201) — the
+profiler starts at execute_model step 200 and completes 201 profiler-steps later (~step
+401, mid-second-bench). The engine died by design at the completion; NO trace file
+flushed (searched the fork cwd, /tmp, /home — only .habana_logs). Open items for
+attempt 2: (i) pass an ABSOLUTE dir to the trace handler (setup_profiler hardcodes
+tensorboard_trace_handler(".") — the workers' cwd may not be where we looked, or the
+handler needs the dir to pre-exist), (ii) verify the step alignment (the boot with
+VLLM_SKIP_WARMUP=true makes few execute_model calls; the first bench crosses step 200
+mid-run), (iii) check .habana_logs/synprof_parser_log.txt for the HPU-side capture
+state.
 
 ### Research-folder status files (theory-agent feedback, 2026-11-08)
 
