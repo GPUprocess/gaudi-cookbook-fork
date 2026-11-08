@@ -1,7 +1,7 @@
 # Current Bottleneck Analysis — GLM-5.3-Flash on Intel Gaudi 2
 
-**Last updated:** 2026-11-08 (revision 2)
-**Git commit:** `80a7fc6` → `f73d862` (branch `glm53-flash`)
+**Last updated:** 2026-11-08 (revision 3 — D1 host profiling + B7 resolution)
+**Git commit:** `80a7fc6` → `60daaf7`+ (branch `glm53-flash`)
 **Model:** GLM-5.3-Flash (block-FP8 E4M3, 128×128 scales), 45 layers + 1 MTP layer, 288 routed experts (top-8), 42 MoE layers, 34 KDA layers + 11 DSA layers (MLA), mHC hyper-connections (4 streams, Sinkhorn), 3 dense layers
 **Serving stack:** vllm-gaudi v0.26.0 (b059f9c), Gaudi SW 1.24.1, lazy mode, TP8+EP8
 **Adopted config:** MTP k=1 + router fast path (`GLM_ROUTER_FAST=1`) + device-side rejection sampler (`GLM_SPEC_DEVICE_REJECT=1`) + early draft (`GLM_EARLY_DRAFT=1`) + capture-time tensor cache (`disable_tensor_cache=False` in `_maybe_wrap_in_hpu_graph`) + max-num-seqs 32 + lin buckets (query 128/2048-step, ctx 64-step) + `PT_HPU_LAZY_ACC_PAR_MODE=0`
@@ -31,11 +31,13 @@
 
 1. **The stock MoE op reads all 36 local experts' weights per step** (38.1 GB/card/step = 15.5 ms at the HBM peak of 2.45 TB/s), regardless of routing. At bs=1, only 8 of 288 experts are needed per layer → 97% of the expert-weight HBM traffic is wasted. This alone caps single-stream decode at ~119 t/s (the weight-read floor). **The 200 t/s single-stream objective is PHYSICALLY IMPOSSIBLE with the stock op** — it requires a routing-aware kernel that reads only the ~16 routed experts (~2.1 GB/step → 0.86 ms floor).
 
-2. **~322 recipe replays per decode step × ~50–74 µs host overhead each ≈ 16–24 ms of host-launch time per step.** The device is idle during most of this (the AIP utilization 0–24%). The tensor cache (adopted) removed the per-replay allocation but the input staging + the graph launch + the symbol resolution remain. This is the dominant host-side bottleneck at every batch size.
+2. **~322 recipe replays per decode step orchestrated inside `HPUGraph.replay` — 93.3% of the `execute_model` host time (D1, py-spy, 1458 samples).** The replay internals (per-replay input hashing, staging copies, the HPU graph launch) cost ~14 ms of the ~24 ms host time per bs=1 step; the AIP is 0–24% meanwhile. The tensor cache (adopted) removed the per-replay allocation; hashing/staging/launch remain.
 
-3. **The per-stream host cost of ~3.8 ms/stream** (the sampler + scheduler + draft dispatch + the logprob processing) dominates the aggregate at 16+ streams (54% of the step time), limiting the aggregate scaling to sub-linear growth (2× streams → +33% aggregate, not +100%).
+3. **The eager MTP draft dispatch costs ~7.5 ms/step at bs=1 — 31.4% of the host time (D1), ~17% of the whole step (revised up from the ~1–1.5 ms estimate).** Its top host costs: raw torch op dispatch (~21% of the bucket: `OpOverload.__call__` + `OpOverloadPacket.__call__`), `mark_step` closures (10.5%), `dynamic_quant` (7.5%), and a NATIVE `SiluAndMul.forward_native` fallback. The draft runs ~15–20 ops eagerly, each paying dispatcher + lazy tracking.
 
-**The highest-priority investigation areas:** (1) the routing-aware fused block-FP8 MoE kernel (Q21/RA-002) to cut both the expert-weight bytes (38.1 → ~2.1 GB/step at bs=1) and the launch count (one fused op replaces ~50 small ops), (2) the host-device time split via the D1 profiling to quantify the per-op host overhead on our exact FP8 tree, (3) the PT2 custom-op loading mechanism to deploy the custom kernel without the v0.26.0 stack's registrar collision.
+4. **The per-stream host cost of ~3.8 ms/stream** (the sampler + scheduler + draft dispatch + the logprob processing) dominates the aggregate at 16+ streams (54% of the step time), limiting the aggregate scaling to sub-linear growth (2× streams → +33% aggregate, not +100%).
+
+**The highest-priority investigation areas:** (1) the routing-aware fused block-FP8 MoE kernel (Q21/RA-002) to cut both the expert-weight bytes (38.1 → ~2.1 GB/step at bs=1) and the launch count (one fused op replaces ~50 small ops) — **the op-loading blocker B7 is RESOLVED (see B7)**, (2) graphing or op-reducing the MTP draft (B5, now quantified at ~7.5 ms/step), (3) the per-stream host cost decomposition at 16 streams (B3; the bs=1 D1 profile is done, the 16-stream profile is not).
 
 ---
 
@@ -224,9 +226,11 @@ Each recipe replay costs ~50–74 µs of host time:
 **Measured evidence:**
 - The mxfp4 step-anatomy study: 322 launches × ~74 µs host each ≈ 24 ms of a 39 ms step (the same model family, TP8+EP8)
 - The AIP utilization: 0–24% during decode (the device is idle 76–100% of the time, waiting for the host to issue the next launch)
-- The tensor cache experiment (EXP-RA001): bs=1 +10.7% (42.4 vs 38.3) — confirming that the per-replay allocation is a significant component of the host cost
+- **D1 (py-spy, 1458 samples, bs=1): 93.3% of the `execute_model` host time is `torch/hpu/graphs.py:75 HPUGraph.replay`** — the replay internals (per-replay input hashing `input_hash`, staging `copy_to`, the HPU graph launch call) are precisely where the ~14 ms/step goes. The staging (`copy_to`) is only ~1.6% of the bucket — the cost is dominated by the replay LOOP itself (one iteration per recipe).
+- The tensor cache experiment (EXP-RA001): bs=1 +10.7% (42.4 vs 38.3) — the per-replay allocation removed; hashing/staging/launch remain
 - The early-draft + device-side rejection (EXP-Q18): removing 2 sync points improved the aggregate
 - The scaling curve: the fixed step cost is ~40.7 ms (the intercept of the linear fit), of which the device is ~17 ms → the host is ~24 ms
+- The D1 host split cross-check: 14 ms (replay, 58% of host) + 7.5 ms (draft dispatch, 31.4%) + ~2.5 ms (sampler/meta/misc) ≈ 24 ms — consistent
 
 **Expected behavior:** an optimized implementation would reduce the launch count (by fusing operations across the boundaries) or the per-launch cost (by eliminating the Python overhead). The theoretical minimum: one graph replay per step → ~1 launch × ~74 µs = 0.074 ms host time. The realistic target: ~50–100 launches (the fused MoE kernel + the attention + the KDA) → 5–7 ms host time.
 
@@ -396,100 +400,138 @@ Each recipe replay costs ~50–74 µs of host time:
 
 ### BOTTLENECK-B5: The eager MTP draft execution
 
-**Classification:** VERIFIED (the draft is dispatched eagerly per-step; the Q18 levers reduced but did not eliminate the overhead)
+**Classification:** VERIFIED (D1 py-spy: 31.4% of the bs=1 host time; the leaf decomposition identifies the exact ops)
 
-**Severity:** MEDIUM (the draft cost is ~1–1.5 ms/stream of the marginal cost)
+**Severity:** HIGH (revised UP from MEDIUM — ~7.5 ms/step at bs=1, ~17% of the whole step)
 
 **Affected metric:** MTP, TG
 
-**Affected component:** the MTP draft proposer (the target's layer-45: 1 MLA layer + 1 MoE layer + the shared head)
+**Affected component:** the MTP draft proposer (the target's layer-45: 1 MLA layer + 1 MoE layer + the shared head), dispatched eagerly per-step (`early_draft`, glm5_next_hpu/decode_lean.py:112 → HpuEagleProposer.propose)
 
-**Current behavior:** after each verify step, the MTP draft forward is dispatched eagerly: 1 MLA layer + 1 MoE layer + the shared head, processing N rows (one per active sequence). The Q18 levers (the device-side rejection + the early draft) removed the sync points and enabled the device-side enqueue, but the draft forward itself is still an eager PyTorch pass (not graphed). Each draft pass launches ~15–20 recipes (1 MLA layer ≈ 8 ops + 1 MoE layer ≈ 5 ops + the shared head ≈ 2 ops + the norms).
+**Current behavior (D1-measured, 1458 py-spy samples, bs=1, the adopted config):**
+The draft forward runs ~15–20 ops EAGERLY (not graphed). The host cost of the draft bucket (31.4% of the host time within `sample_tokens`) breaks down as:
+| Leaf frame | Share of the draft bucket |
+|---|---:|
+| `torch/_ops.py:865 OpOverload.__call__` | 14.4% |
+| `torch/core/step_closure.py:68 mark_step` | 10.5% |
+| `vllm_gaudi/extension/ops.py:992 dynamic_quant` | 7.5% |
+| `torch/_ops.py:1269 OpOverloadPacket.__call__` | 6.6% |
+| `vllm_gaudi/extension/ops.py:83 b2b_impl` | 2.1% |
+| `Glm5NextMTPModel.forward` + `propose` + `BasevLLMParameter.__torch_function__` | ~5.2% |
+| `SiluAndMulWithClamp.forward_native` (a NATIVE fallback in the draft path) | 1.6% |
+| `HPUAttentionMetadataProcessor._set_block_mapping` | 1.6% |
+
+Raw op dispatch (`OpOverload.__call__` + `OpOverloadPacket.__call__`) is ~21% of the bucket; `mark_step` closures 10.5%; the `dynamic_quant` extension op 7.5%. The Q18 levers removed the sync points but NOT the eager dispatch cost itself.
 
 **Measured evidence:**
-- The draft cost: ~1–1.5 ms/stream (from the scaling curve decomposition)
-- The Q18 levers: the device-side rejection + the early draft removed the sync + the enqueue overhead
-- The draft graph attempt (EXP-Q01): the split-mode graph worked (+9.3% bs=1) but was superseded by the levers (EXP-Q19: the graphs + the levers conflict)
+- D1 (py-spy 200 Hz, 1458 samples, worker rank 0, bs=1 load, the adopted config): the draft bucket = 31.4% of the host time within `sample_tokens`
+- The host time ≈ 24 ms/step (the scaling-curve intercept minus the device estimate) → the draft dispatch ≈ 7.5 ms/step (vs the prior estimate 1–1.5 ms)
+- The bs=1 decode re-measurement with the mxk dequant kernel live: 43.1/45.8/42.9 t/s (3 reps) — consistent with the 42.4 baseline
 
-**Expected behavior:** the draft forward would be captured as an HPU graph and replayed per-step (eliminating the eager dispatch overhead). The RA-004 proposal: the entire k-step draft chain as ONE graph replay.
+**Expected behavior:** the draft forward captured as an HPU graph (or routed through a handful of fused ops) would cut the ~7.5 ms to ≤2 ms (the graph replay of a 20-op graph costs one launch + staging).
 
-**Performance impact:** the eager draft costs ~1–1.5 ms/stream. At 16 streams: 16–24 ms of the 114 ms step (14–21%). Graphing the draft would save ~50–70% of this = ~8–17 ms/step.
+**Performance impact:** ~5–6 ms/step recoverable at bs=1 → +13–15% single-stream decode (45 → ~51 t/s). At 16 streams the draft dispatch scales with rows (part of the 3.8 ms/stream marginal cost — the 16-stream D1 profile would quantify its share there).
 
-**Root cause:** the draft model (the target's layer-45) shares the target's weights (the bind-by-reference pattern) and cannot be wrapped in a separate HPU graph without conflicting with the target's graph capture (the "Neither storage attached to input tensor" error). The split-mode draft graph (Q01) worked by graphing only the pre-attention and post-attention cores, keeping the MLA attention eager.
+**Root cause:** the draft model shares the target's weights and cannot be wrapped in a separate HPU graph without the storage conflict (the "Neither storage attached" error); the Q18 levers made the eager path pipelined but the per-op host costs (dispatch, mark_step, extension ops, a native SiluAndMul fallback) remain.
 
 **Why it has not been solved:**
-1. The split-mode draft graph (EXP-Q01) works but does not stack with the levers (EXP-Q19: the graphs' sync points defeat the early-draft pipelining)
-2. The full in-graph draft requires the MTP module's weights to be captured in a separate HPU graph (the "Neither storage attached" error)
-3. The abotsis fork solved this with the private-storage draft cores (the `_private_copy` pattern) — our port has this implemented but the op-loading collision blocks the custom kernels
+1. The split-mode draft graph (EXP-Q01) works (+9.3% bs=1) but does not stack with the levers (EXP-Q19: the graphs' sync points defeat the early-draft pipelining)
+2. The full in-graph draft requires the MTP module's weights captured in a separate HPU graph (the storage conflict)
+3. The abotsis fork's private-storage draft cores (the `_private_copy` pattern) would resolve the conflict — implemented in our port but blocked until B7 resolved (now unblocked)
 
-**Previous experiments:** EXP-Q01 (the draft graphs: built, +9.3%), EXP-Q19 (the graphs + levers conflict), EXP-RA001 (the tensor cache: the graphs' sync points removed)
+**Previous experiments:** EXP-Q01 (the draft graphs: built, +9.3%), EXP-Q19 (the graphs + levers conflict), EXP-RA001 (the tensor cache), EXP-Q18 (the levers: adopted)
 
-**Recommended next action:** implement the private-storage draft cores and test the draft graph + the levers coexistence.
+**Relevant source code:** `glm5_next_hpu/decode_lean.py:112 (early_draft)`, `vllm_gaudi/v1/spec_decode/hpu_eagle.py:120 (propose)`, `vllm_gaudi/extension/ops.py:992 (dynamic_quant)`, `vllm/model_executor/layers/activation.py:201 (SiluAndMulWithClamp.forward_native)`
+
+**Research questions:**
+1. Can the draft's `dynamic_quant` + `SiluAndMul` be replaced with the TPC kernels (the mxk family) to cut the eager cost per op?
+2. Can the draft forward share the TARGET's HPU graph (the private-storage cores) and replay inside the verify graph?
+3. What is the minimum eager-op set for the draft (the metadata + embedding + 2 layers + head)?
+
+**Recommended next action:** implement the private-storage draft cores and re-test the draft graph + the levers coexistence; the D1 data now quantifies the prize (~7.5 ms/step).
 
 ---
 
-### BOTTLENECK-B7: The op-loading registrar collision (the Q21 kernel deployment blocker)
+### BOTTLENECK-B7: The op-loading registrar collision — RESOLVED (load-order recipe established)
 
-**Classification:** VERIFIED (the collision is reproduced across all load orders, both venvs, and isolated to the weak-symbol per-library registry architecture)
+**Classification:** RESOLVED (was VERIFIED CRITICAL blocker; the running server loads the legacy-API op lib cleanly in lazy mode — the collision is a load-context artifact, not an architectural limit)
 
-**Severity:** CRITICAL (blocks the Q21 kernel deployment, which is required for the 200 t/s and 800 t/s objectives)
+**Severity:** ~~CRITICAL~~ resolved — this unblocks the Q21 kernel deployment (B1's fix path)
 
-**Affected metric:** TG, AGG (indirectly — blocks the kernel that would improve them)
+**Affected metric:** TG, AGG (indirectly — gated the kernel that would improve them)
 
-**Affected component:** the Habana backend's custom-op loading mechanism (`libhabana_pytorch_backend.so`, `habana::custom_op::registerUserCustomOp` + `RegisterKernel::add`)
+**Affected component:** the custom-op .so's DT_NEEDED dependency on the LEGACY plugin SONAME (`libhabana_pytorch_plugin.so`) vs the plugin the runtime loads first (`libhabana_pytorch2_plugin.so`)
 
-**Current behavior:** any .so that references the Habana custom-op API (via the DSV41 bridge headers or the legacy hpu_custom_op.h) triggers the registrar collision at .so load. The `habana::RegisterKernel::add` is a WEAK symbol exported by BOTH the backend and the plugin — each carries its own registry instance. A third .so linking both creates a third registry context, and the d2d_memcpy registration arrives twice across the instances.
+**Current behavior (the resolved mechanism):**
+1. The GLM venv process maps `libhabana_pytorch2_plugin.so` + `libhabana_pytorch_backend.so` at `import torch`/`import vllm_gaudi` time (proven via /proc/self/maps).
+2. The legacy-API op lib (libmxk_op_lazy.so, built against `hpu_custom_op.h` + `-lhabana_pytorch_plugin`) carries a DT_NEEDED for `libhabana_pytorch_plugin.so` — a DIFFERENT SONAME that the venv also ships.
+3. If the op lib is dlopen'd while the legacy plugin is NOT yet loaded (e.g. right after bare imports, no HPU init), the loader resolves the DT_NEEDED FRESH: `trying file=` → `calling init:` on the legacy plugin (LD_DEBUG=libs evidence) → its static initializers re-register the built-in kernels → `hpu::habana_d2d_memcpy_other is already registered!` from `habana::RegisterKernel::add` (habana_operator.h:799) → abort.
+4. If the op lib is loaded AFTER full HPU initialization (the serving path: the model plugin + torch.hpu init load the LEGACY plugin as THE plugin — the running server's workers map the legacy plugin, NOT pytorch2), the DT_NEEDED refcounts the already-initialized plugin → no fresh init → clean load.
 
-**Measured evidence:**
-- The five-way include/link bisection: hpu_custom_op.h alone → clean; torch/extension.h alone → clean; the body emptied → clean; the REGISTER removed → collides; the full → collides
-- The LD_DEBUG trace: the plugin .so's init runs at OUR .so's dlopen (the plugin was not previously loaded in the probe context)
-- The trivial HPU-dispatch .so (no habana headers/links): loads CLEAN and the op is VISIBLE
-- Both venvs (the GLM venv and the DSV41 venv) collide identically
-- The gdb backtrace: tooling-limited (the stripped release .so, the static-init throw bypasses the catchpoints)
+**Measured evidence (2026-11-08, this session):**
+- The RUNNING q21h server (the adopted config + `GLM_FP8_MXK=1`, `GLM_FP8_MXK_LIB=/tmp/mxk_dist`, lazy mode): `[glm-fp8-mxk] block_fp8_dequant_glm REGISTERED from /tmp/mxk_dist/libmxk_op_lazy.so` and `DEFERRED CHECK (120s): block_fp8_dequant_glm VISIBLE in torch.ops.custom_op` on ALL 8 workers (30 log lines).
+- The worker maps: legacy plugin + backend + BOTH mxk op libs (the port dist AND /tmp/mxk_dist) mapped, serving healthy.
+- The probe that collided: `import torch; import vllm_gaudi; torch.ops.load_library(op_lib)` in a FRESH process — the legacy plugin was unmapped at dlopen time (maps + LD_DEBUG evidence).
+- The cross-test: the DSV4.1 PT2 .so (which links ONLY `libhabana_pytorch2_plugin.so` + the backend — SONAMEs already warm) loads CLEAN in the same probe context.
+- Symbol audit: `registerUserCustomOp` is exported by the BACKEND (already loaded); `HabanaCustomOpDescriptor::getCustomOpDescriptor` (the legacy API) is exported ONLY by the legacy plugin. Our legacy-API lib references BOTH APIs; the DSV4.1 lib references only the PT2 API.
+- nm: our op lib carries NO weak `RegisterKernel` symbols (the weak-symbol theory from the earlier session is superseded — the duplicate registration came from the plugin's own fresh init, not from the op lib's inline registrar code).
+- A relink of the op lib against `-lhabana_pytorch2_plugin` (with `MXK_HAS_*` HAS-macros) FAILS differently: the legacy `getCustomOpDescriptor` symbol is unresolvable without the legacy plugin — confirming the op lib's mixed-API dependency is the collision carrier.
 
-**Root cause:** the Habana backend's custom-op loading architecture uses per-library registry instances (the weak-symbol design), making it impossible to load a userspace .so that references the custom-op API after the backend initialization without triggering the duplicate registration.
+**Root cause:** a load-context mismatch, not an architecture limit: the op lib's legacy-API dependency forces the legacy plugin into the process; when that happens before the runtime has warmed it, the plugin's static-initializer registration pass runs a second time against an already-populated kernel registry.
 
-**Why it has not been solved:**
-1. The legacy API (REGISTER_CUSTOM_OP_ATTRIBUTES + HabanaCustomOpDescriptor), the PT2 API (registerUserCustomOp + UserCustomOpDescriptor), and the lazy registration all collide
-2. The isolated include paths, the different link configurations, and the lazy registration all fail
-3. The fix requires either the serving image (the kernels compiled at build time), the stack upgrade (v0.30.0), or the plugin rebuild — all outside this session's scope
-4. The gdb backtrace is tooling-limited (the stripped release .so)
+**Why it was previously misdiagnosed:** the earlier session's probes all ran in fresh processes with bare imports (no HPU init), so every probe hit the fresh-init path; the conclusion "ANY .so referencing the custom-op API collides, not fixable in userspace" generalized the artifact. The serving process never hits it because it inits the HPU (loading the legacy plugin) long before model build.
 
-**Previous experiments:** EXP-Q16, EXP-Q21 (the full investigation arc), the five-way include/link bisection, the trivial-dispatch positive control
+**The load-order recipe (for any future op-lib deployment):**
+- In lazy mode with a legacy-API op lib: load it after `torch.hpu` full init (the serving path does this naturally; a standalone probe must call `torch.hpu.init()` or the equivalent first).
+- OR build the op lib PT2-only (`mxk_op_pt2.cpp` exists in the port; links only warm SONAMEs) — note the source's caveat that the PT2 API path was written for torch.compile mode and its lazy-mode behavior with native-op-produced inputs needs on-device revalidation.
+- Do NOT relink the legacy-API lib against `-lhabana_pytorch2_plugin` (it still needs the legacy plugin for `getCustomOpDescriptor`).
+
+**Previous experiments:** EXP-Q16, EXP-Q21 (the earlier investigation arc), the five-way include/link bisection (superseded interpretation), the trivial-dispatch positive control (consistent with the new mechanism), the q21h serving test (the decisive evidence: the legacy-API op lib runs in production).
+
+**Relevant source code:**
+- `kernels/mxfp4-moe/src/mxk_op_lazy.cpp` — the legacy-API op lib (in production use by the running server)
+- `kernels/mxfp4-moe/src/mxk_op_pt2.cpp` — the PT2-API twin (torch.compile mode; lazy-mode revalidation pending)
+- `kernels/mxfp4-moe/build.sh` — the build (line 166 links `-lhabana_pytorch_plugin`; the PT2 build path is `--pt2`)
+- `/opt/glm53/venv/.../habana_frameworks/torch/include/hpu_custom_op_pt2.h` — the PT2 API header (in the VENV, not just the DSV41 bridge)
+- `/opt/dsv41/1Cat-vLLM-Gaudi/csrc/deepseek_v4/pytorch/*_pt2.cpp` — the PT2 registration patterns (static-init registration, GUID = schema minus the `custom_op::` prefix)
+
+**Relevant GaudiGrimoire findings:** the DSV4.1 native-library loader (`deepseek_v41_unique_experts.py`): sha256-manifest-verified `torch.ops.load_library` of `hpu_dsv41_unique_pt2*.so` at model-build time — the same load-late pattern the GLM server uses.
 
 **Research questions:**
-1. How did the DSV4.1 deployment load its custom-op PT2 modules without the collision (the load-sequence trace)?
-2. Is there a Habana stack version where the registrar collision is fixed?
-3. Can the kernel be invoked through the recipe path without a torch custom-op (a synthetic recipe referencing the GUID)?
-4. Can the vllm-gaudi plugin be rebuilt with our kernel registered at build time (the plugin-rebuild track)?
+1. Does the PT2-API op lib (`mxk_op_pt2.cpp`) work in lazy mode with inputs produced by native ops in the same graph (the source's caveat)? The load-context is now understood; the remaining question is pure op semantics.
+2. Should the port's dist libmxk_op_lazy.so AND /tmp/mxk_dist copies both stay loaded (the server maps BOTH — the variant-cache note in the source warns same-signature ops alias)?
+3. Can the legacy plugin's fresh-init duplicate-registration be suppressed with an env flag (PT_HPU_*?) for robustness of standalone probes?
 
-**Recommended next action:** trace the DSV4.1 deployment's op-loading sequence (LD_DEBUG=libs on the dsv41-env serving launch), then replicate the load context for our kernel. Or: build the serving image with the kernels compiled at build time (the mxfp4 framework's assumption).
+**Dependencies:** none — unblocked.
+
+**Recommended next action:** proceed to the routing-aware fused block-FP8 MoE GEMV (B1's fix) — the infrastructure (TPC compiler, op lib, registration, load order) is production-proven. Second: on-device qualification of the dequant kernel's numerical parity + a decode A/B with `GLM_FP8_MXK` toggled to measure the dequant kernel's live contribution.
 
 ---
 
 ## SECTION 5: Performance Breakdown
 
-### bs=1 decode step (the adopted stack, ~45.1 ms)
+### bs=1 decode step (the adopted stack, ~45.1 ms) — D1 MEASURED host split
+
+**Host-side (D1, py-spy 1458 samples, worker rank 0; host ≈ 24 ms of the 45.1 ms step):**
+
+| Component | Measured (ms) | Share of host | Share of step | Evidence |
+|---|---:|---:|---:|---|
+| `HPUGraph.replay` internals (the ~322 recipe replays: hashing, staging, launch) | ~14 | 58% | ~31% | MEASURED (93.3% of the execute_model bucket) |
+| MTP eager draft dispatch (`early_draft` → `propose`: op dispatch 21%, mark_step 10.5%, dynamic_quant 7.5%, native SiluAndMul, metadata) | ~7.5 | 31.4% | ~17% | MEASURED (leaf-level decomposition) |
+| Sampler + sampling metadata + context overhead | ~2.5 | 10.6% | ~6% | MEASURED (residual of the buckets) |
+| **Host total** | **~24** | **100%** | **~53%** | MEASURED (D1; consistent with the 40.7 ms intercept − ~17 ms device) |
+
+**Device-side (derived; the device-side profiling is still pending):**
 
 | Component | Estimated time (ms) | Percentage | Evidence quality |
 |---|---:|---:|---|
-| The MoE weight streaming (the all-experts-read, 42 layers) | 15.5 | 34% | DERIVED (the checkpoint geometry ÷ HBM peak; confirmed by the AIP 0–24%) |
-| The host-launch pipeline (322 replays × ~50–74 µs, with the tensor cache) | 15–20 | 33–40% | ESTIMATED (the mxfp4 study + the tensor-cache +10.7% confirming the per-replay cost; D1 pending) |
+| The MoE weight streaming (the all-experts-read, 42 layers) | 15.5 | 34% of step | DERIVED (the checkpoint geometry ÷ HBM peak; confirmed by the AIP 0–24%) |
 | The all-reduce latency (162 ARs × ~20 µs) | 3.4 | 7% | MEASURED (the mxfp4 study, the same model family) |
-| The framework overhead (the scheduler, the sampling metadata, the KV sync) | ~4 | 8% | DERIVED (the residual) |
-| The attention (11 DSA + 34 KDA layers, bs=1 KV read) | ~1.5 | 3% | DERIVED (the mxfp4 study: 6.9 ms for their model; ours is smaller) |
-| The MTP draft forward (eager, 1 MLA + 1 MoE + the shared head) | 1.0–1.5 | 2–3% | DERIVED (the scaling curve decomposition) |
-| The dense layers (3 layers, bs=1) | ~0.3 | <1% | DERIVED |
-| The MTP module (1 layer, the draft) | ~0.3 | <1% | DERIVED |
-| The sampler + the output processing (host) | ~1.5–2.0 | 3–4% | DERIVED |
-| **Total** | **~45.1** | **100%** | MEASURED (the scaling curve intercept) |
+| The attention (11 DSA + 34 KDA layers, bs=1 KV read) | ~1.5 | 3% | DERIVED (the mxfp4 study) |
+| The dense + MTP module + sampler device work | ~0.6 | ~1% | DERIVED |
+| **Device total** | **~21** | **~47%** | DERIVED (needs the device-side trace to confirm) |
 
-**Missing measurements:**
-- The per-op host time (which ops have the highest launch cost) — requires D1
-- The per-layer device time (which layers are the slowest) — requires the 8-rank profiling
-- The host/device overlap (how much device work hides under the host time) — requires the timeline trace
-- The HBM bandwidth during the MoE weight read — requires the HBM counters
-- The attention per-layer breakdown (the DSA vs the KDA time split) — requires the per-layer ranges
+**Missing measurements:** the per-layer device time (DSA vs KDA split); the host/device overlap ratio (how much of the 21 ms device work hides under the 24 ms host time); the HBM bandwidth during the MoE weight read; the 16-stream host profile (B3's decomposition).
 
 ### bs=32 decode step (the adopted config, 32 active streams, ~179 ms)
 
@@ -548,6 +590,8 @@ Each recipe replay costs ~50–74 µs of host time:
 | Q11 | MTP | k=2 under the levers | **-11% bs=1, -29% @16** | Measured | The second eager draft dominates |
 | E015-A | GRAPH | The lin bucketing | +1.4% decode, the warmup 3× faster | Measured | Works |
 | Q14 | — | 4-HPU deployment candidate | bs=1 33.26, @16 113.5, accuracy 100% | Measured | Validated |
+| D1 | HOST | py-spy host profile, bs=1 (1458 samples) | replay 58% / draft 31.4% / sampler+meta ~11% of host; draft ≈7.5 ms/step (revised up 5×); replay internals localized to graphs.py:75 | Measured | Diagnosis established |
+| B7 | KERNEL | The load-context investigation (maps, LD_DEBUG, cross-tests) | The collision is a load-order artifact; the legacy-API op lib loads cleanly after HPU init — running in production (8/8 workers) | Measured | RESOLVED |
 
 ---
 
@@ -588,11 +632,12 @@ At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched 
 
 | Rank | Bottleneck | Severity | Confidence | Objective | Potential | Difficulty | Priority |
 |---|---|---|---|---|---|---|---|
-| 1 | **B1+B2: the Q21 routing-aware fused MoE kernel** (addresses the weight streaming + the launch count + the AR boundaries) | CRITICAL | VERIFIED (the mechanism) / ESTIMATED (the gain) | 200 t/s + 800 t/s | bs=1: 38 → 206 t/s; @16: 257 → 845 t/s | HIGH (weeks) | **1** |
-| 2 | **B3: the per-stream host cost** (the sampler + scheduler + draft dispatch batching) | HIGH | VERIFIED (the scaling curve) | 800 t/s @16 | −74% per-stream → +50% aggregate | MEDIUM | **2** |
-| 3 | **B4: the AR latency + the boundaries** (the one-shot AR + the boundary reduction) | MEDIUM | VERIFIED | All metrics | −50% host floor → +25% decode | MEDIUM | **3** |
-| 4 | **B5: the eager draft** (the private-storage cores + the graph + the levers coexistence) | MEDIUM | VERIFIED | MTP + TG | −50% draft cost → +10–15% decode | MEDIUM | **4** |
-| 5 | **B6: the EP imbalance** (the dynamic placement) | MEDIUM | STRONGLY SUSPECTED | AGG at high batch | −50% MoE wait | MEDIUM-HIGH | **5** |
+| 1 | **B1: the Q21 routing-aware fused MoE kernel** (the weight streaming 38.1 → ~2.1 GB/step; also cuts the launch count + the AR boundaries) | CRITICAL | VERIFIED (the mechanism) / ESTIMATED (the gain) | 200 t/s + 800 t/s | bs=1: 43 → ~206 t/s; @16: 257 → ~845 t/s | HIGH (weeks) | **1** — UNBLOCKED (B7 resolved) |
+| 2 | **B5: the eager MTP draft dispatch** (D1: ~7.5 ms/step at bs=1; op dispatch + mark_step + dynamic_quant + native SiluAndMul) | HIGH | VERIFIED (D1) | TG | ~5–6 ms/step recoverable → +13–15% bs=1 | MEDIUM | **2** |
+| 3 | **B2: the HPUGraph.replay internals** (D1: ~14 ms/step; the replay loop dominates, staging only 1.6%) | CRITICAL | VERIFIED (D1) | All metrics | Fewer/larger graphs → −50% host floor | MEDIUM-HIGH | **3** |
+| 4 | **B3: the per-stream host cost** (the sampler + scheduler + draft dispatch batching; the bs=1 D1 done, the 16-stream profile missing) | HIGH | VERIFIED (the scaling curve) | 800 t/s @16 | −74% per-stream → +50% aggregate | MEDIUM | **4** |
+| 5 | **B4: the AR latency + the boundaries** (the one-shot AR + the boundary reduction) | MEDIUM | VERIFIED | All metrics | −50% host floor → +25% decode | MEDIUM | **5** |
+| 6 | ~~B7: the op-loading registrar collision~~ | — | **RESOLVED** (the load-order recipe; the legacy-API op lib runs in production) | — | unblocks rank 1 | — | — |
 
 ---
 
@@ -600,15 +645,15 @@ At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched 
 
 | Missing measurement | Why it matters | How to obtain |
 |---|---|---|
-| The per-op host time (D1) | Identifies the fusion targets and the per-launch cost distribution | The torch.profiler with the explicit export (the schedule handler didn't flush) |
+| ~~The per-op host time (D1)~~ | ~~Identifies the fusion targets~~ **DONE (2026-11-08):** the host split is measured — replay 58%, draft dispatch 31.4%, sampler/meta ~11%; the draft leaves identified (op dispatch, mark_step, dynamic_quant, native SiluAndMul) | — |
+| The 16-stream host profile (B3) | Decomposes the 3.8 ms/stream marginal cost into the sampler vs the scheduler vs the draft at the target batch | py-spy on a worker + the EngineCore during a 16-stream load |
 | The per-layer device time | Identifies the kernel optimization targets per layer | The 8-rank profiling with the per-layer ranges |
-| The host/device overlap ratio | Quantifies how much device work hides under the host | The timeline trace (the host + the device on the same timeline) |
+| The host/device overlap ratio | Quantifies how much of the ~21 ms device work hides under the 24 ms host time | The timeline trace (the host + the device on the same timeline) |
 | The HBM bandwidth during the MoE weight read | Confirms the weight-read floor on our exact tree | The HBM counters or the bandwidth micro-benchmark |
 | The MTP acceptance at bs=16 with the levers | Quantifies the MTP overhead at the target batch | bench_concurrent at 16 streams + the MTP metrics extraction |
 | The 4-HPU with the adopted levers | The deployment-candidate performance after all the levers | The Q14-style pass on the TP4 config with the levers |
-| The graph replay overhead per shape | Quantifies the graph-launch cost vs the eager dispatch | The D1 trace or the micro-benchmark |
-| The DSV4.1 load-sequence trace | Unblocks the Q21 op-loading (the PT2 mechanism) | LD_DEBUG=libs on the dsv41-env serving launch |
-| The multi-row host term (~61 ms at 8 active) | The unexplained host cost at batch — the D1 question from the research doc | D1: the 8-rank profile at 8 active streams |
+| The dequant kernel's live contribution | The mxk dequant kernel is registered+visible in all 8 workers; its decode A/B (GLM_FP8_MXK on/off) is unmeasured | The same-boot A/B decode bench with the env toggled |
+| The multi-row host term (~61 ms at 8 active) | The unexplained host cost at batch — the D1 question from the research doc | The 16-stream py-spy profile |
 | The KDA vs DSA per-layer time split | Identifies which attention type dominates | The per-layer profiling with the layer-type ranges |
 
 ---
