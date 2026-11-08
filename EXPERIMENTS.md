@@ -1018,3 +1018,23 @@ hpu_dsv4_control_mme_pt2 module's pattern.
 **Fallback if the PT2 adaptation is complex:** load the DSV4.1 PT2 module
 itself and register our block-FP8 op through its infrastructure (the module is
 on-host and proven).
+
+## EXP-Q21 PT2 probe: the registerUserCustomOp path also collides at .so load
+## (2026-11-08)
+
+The PT2 op library (libblock_fp8_pt2.so: our op registered via
+habana::custom_op::registerUserCustomOp through the PT2 bridge) collides with
+the SAME registrar error at .so load (after the imports, both load orders).
+The PT2 registration internally resolves to the same legacy registry — the
+weak-symbol per-library instance architecture (EXP-Q21) applies to it too.
+
+**The DSV4.1 deployment's difference:** its PT2 modules loaded inside the
+DSV41 fork's plugin init chain (dsv41-env.sh + the DSV41 vllm-gaudi fork's
+native-library loader), in a load context this session's probes could not
+replicate. The next-session task: trace the DSV4.1 deployment's actual load
+sequence (LD_DEBUG=libs on the dsv41 serving launch) and replicate that order
+for our op library — or serve our kernel from the DSV41-style isolated image.
+
+**Session state:** the kernel is compiled and gated; the PT2 op shim is built
+(and its registration API understood); the load-context study is the remaining
+gate. All staged in the repo for the next session.
