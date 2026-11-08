@@ -1254,3 +1254,82 @@ instead).
 **The infrastructure is READY**: the kernel, the op registration, the runtime
 hooks, and the serving integration are all in place. The next session focuses
 on the numerical verification and the MoE kernel implementation.
+
+## EXP-Q21 final op-shim diagnosis (2026-11-08)
+
+**The collision mechanism (fully isolated):**
+- The DSV41 bridge's `habanalabs/hpu_custom_op_pt2.h` includes
+  `<torch/csrc/jit/ir/ir.h>` and, transitively, the Habana operator
+  registration headers (`backend/habana_operator.h`) that define INLINE
+  static registrar objects.
+- When our op .so is compiled with the DSV41 include path
+  (`-I/opt/dsv41/gaudi-pytorch-bridge/include`), these inline registrar
+  objects are compiled INTO our .so.
+- At our .so's dlopen, the registrar objects' static initializers run and
+  try to register the built-in HPU kernels (including
+  `hpu::habana_d2d_memcpy_other`) in the SHARED kernel registry.
+- The registry already has these kernels (the backend .so registered them
+  during `import habana_frameworks.torch.core`) → "already registered" →
+  collision.
+
+**The five-way bisection confirmed:**
+- trivial_hpu.so (hpu_custom_op.h, the LEGACY API): LOADS CLEAN
+- trivial_te.so (torch/extension.h, the venv include path): LOADS CLEAN
+- trivial_hpu_dispatch.so (TORCH_LIBRARY_IMPL(custom_op, HPU), no habana
+  headers/links): LOADS CLEAN AND THE OP IS VISIBLE
+- bisect_op.so (our op.cpp with the body EMPTIED): LOADS CLEAN
+- bisect2_op.so (the REGISTER removed, the descriptor call kept): COLLIDES
+- libfp8_deq_op.so (the full original): COLLIDES
+- libblock_fp8_pt2_lazy.so (the PT2 lazy registration, the DSV41 headers):
+  COLLIDES
+
+**The offender:** the DSV41 bridge's include chain
+(`-I/opt/dsv41/gaudi-pytorch-bridge/include`), NOT the torch dispatcher
+registration and NOT the legacy API.
+
+**The fix:** compile the op .so WITHOUT the DSV41 bridge include path.
+Declare the PT2 API functions via extern declarations (matching the mangled
+symbols in the backend .so), or copy the PT2 header into an isolated include
+dir and stub out the habana registrar includes. The trivial_hpu_dispatch.so
+proves that the HPU-dispatch registration works cleanly without the DSV41
+headers.
+
+**The qualification path after the fix:**
+1. Load the op .so (clean, no collision)
+2. Call torch.ops.custom_op.block_fp8_dequant_glm(weight, scale) on HPU
+3. Verify the dequant output vs the stock path
+4. Micro-bench the kernel vs the stock MoE op
+
+**All artifacts staged:** the kernel ELF, the gated library, the op.cpp
+(with the lambda fix), the glue.inc, the installer, the runtime — all in
+the repo and on the host.
+
+## EXP-Q21 collision FINAL — the registrar is unavoidable in userspace .so
+## (2026-11-08)
+
+Every combination tested:
+- The DSV41 bridge include path + the habana link: COLLIDES
+- The isolated PT2 header + NO habana link: COLLIDES (the symbol resolution
+  from the already-loaded backend triggers the registrar)
+- The isolated PT2 header + the backend link: COLLIDES
+- The trivial .so with NO habana headers and NO habana link: LOADS CLEAN
+  AND THE OP IS VISIBLE
+
+**Conclusion:** the `habana::custom_op::registerUserCustomOp` symbol,
+referenced by ANY .so compiled after the backend is loaded, pulls in the
+backend's registrar code (via the symbol resolution or the inline template
+instantiation), which re-registers the built-in kernels. This is an
+ARCHITECTURAL property of the Habana backend's custom-op loading mechanism
+on v0.26.0/1.24.1 — not fixable in userspace.
+
+**The Q21 kernel qualification requires:**
+(a) The serving image (the mxfp4 framework's assumption: the kernel is
+    compiled INTO the vllm-gaudi plugin at image build time, avoiding the
+    runtime .so load), or
+(b) The stack upgrade to v0.30.0 (where the fp8-moe-gather is native and
+    the registrar architecture may differ), or
+(c) The plugin-rebuild track (registering our kernel INSIDE the vllm-gaudi
+    plugin .so at build time).
+
+**All three paths require a build/deploy step outside this session's scope.**
+The kernel ELF, the gated library, and the op shim are staged and ready.
