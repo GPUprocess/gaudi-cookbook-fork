@@ -992,3 +992,29 @@ correct and load cleanly; only the torch-op shim's LOAD mechanism needs the
 stack change. The kernel qualification can also run through the recipe path
 once a graph references the GUID (no torch op needed) — a possible
 next-session angle via a synthetic recipe.
+
+## EXP-Q21 — the PT2 custom-op API discovery: the proven op-loading mechanism
+## on this host (2026-11-08)
+
+The DSV4.1 native build (/opt/dsv41/build/dsv41-native/) contains a PT2
+custom-op module — `hpu_dsv4_control_mme_pt2.cpython-312-x86_64-linux-gnu.so` —
+plus the compiled kernel libraries (libdeepseek_v4_gaudi2_kernels.so,
+libdeepseek_v41_unique_kernels.so). The DSV4.1 deployment loaded its custom
+kernels through the PT2 custom-op API (torch.library with the PT2 bridge), NOT
+the legacy hpu_custom_op.h path that collides on this stack.
+
+**Why this matters:** the legacy registrar collision (EXP-Q21) is specific to
+the legacy hpu_custom_op.h API's static registration pattern. The PT2 API
+registers through torch.library with Meta implementations — a different
+mechanism that provably works on this host (the DSV4.1 serving ran it).
+
+**The Q21 unblocking step:** adapt the block_fp8_dequant_glm op shim to the
+PT2 custom-op API. The mxfp4 build.sh supports `--pt2` (libmxk_op_pt2.so) but
+excludes it with --extra-kernel (the lazy-mode op.cpp API); the DSV41 build
+system compiled both. The adaptation: rewrite op.cpp with the PT2 registration
+(torch.library.defme + the HPU dispatch through the PT2 bridge), following the
+hpu_dsv4_control_mme_pt2 module's pattern.
+
+**Fallback if the PT2 adaptation is complex:** load the DSV4.1 PT2 module
+itself and register our block-FP8 op through its infrastructure (the module is
+on-host and proven).
