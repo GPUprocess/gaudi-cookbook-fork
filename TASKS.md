@@ -776,6 +776,23 @@ profiling window -> RA-001 -> RA-003 (done) -> RA-006-B/C -> RA-002 -> RA-004.
   measurement; A: the pad-and-mask 10-row verify graph (gated on byte-identity parity, after
   RA-001). Bottleneck: GRAPH/INFRA.
 
+### D1+D2+D6 PROFILING WINDOW (the research doc's prescribed first action)
+
+**Mechanism (verified in the deployed stack):** vllm-gaudi's step profiler —
+`VLLM_PROFILE_STEPS="[start,end]"` (extension/features.py l.73; HPUWorker.execute_model
+l.575-587: the profiler starts at step[start], steps through, STOPS at step[end] by raising
+`RuntimeError('Step profiling finished!')` — the trace lands via
+tensorboard_trace_handler('.') in the CWD, gzipped). Activities: CPU + HPU; with_stack.
+**D1 protocol:** boot the adopted config with `VLLM_PROFILE_STEPS="[200,210]"` (10 warm
+decode-only steps after the bench warm-up), run bench_decode (bs=1) then
+bench_concurrent --streams 16 (the multi-row host term), collect the per-rank gzipped
+traces from the workers' CWD, analyze: the step period, the device span, the compute-busy
+time, the launch count, the host gaps — re-anchoring the doc's table (the 322-launch/74us
+host pattern, the ~61 ms multi-row host term at 8 active). **Expected outcome:** the
+binding-constraint identification for the 800 t/s objective (the doc's flagged D1 question).
+**Caveat:** the profiler raises at step[end] — the engine dies by design after the capture;
+run it in a throwaway boot (the measurements are already taken) or accept the restart.
+
 ### Research-folder status files (theory-agent feedback, 2026-11-08)
 
 The research sources live in the workspace at glm53_optimize/research/ with
