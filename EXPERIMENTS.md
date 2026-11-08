@@ -965,3 +965,30 @@ issue. The in-worker visibility check (TASKS Q21 opener) remains the path: the
 worker context differs from every probe context, and the schema may be
 registering but visibility-checked too early, or the HPU-impl registration for
 our op is silently skipped in the worker's dispatcher state.
+
+## EXP-Q21 collision — the root architectural cause: per-library registry
+## instances via weak symbols (2026-11-08)
+
+`habana::RegisterKernel::add` is a WEAK symbol exported by BOTH
+libhabana_pytorch_backend.so (0x141c150) and libhabana_pytorch_plugin.so
+(0x777610) — each carries its own copy of the registrar class with its own
+static registry instance. A third .so (our op shim) that links both and
+includes the Habana registrar headers creates its own TU-level registry
+context; the d2d_memcpy registration arrives twice across the instances and
+the guard throws.
+
+This explains every observation: the order-independence (any load of a second
+registrar-carrying .so after the first registration collides), the stock
+library failing identically, both venvs, and the TPC library loading clean
+(it carries no registrar — pure kernel ELFs + glue).
+
+**The fix is architectural**: the op registration must happen THROUGH one
+registry instance — the plugin's own init (the plugin-rebuild track), or the
+stack version whose loader deduplicates (v0.30.0 upgrade path). A third .so
+cannot be made safe on this stack version without the plugin rebuild.
+
+**Q21's kernel work is unaffected**: the TPC ELF + the gated library are
+correct and load cleanly; only the torch-op shim's LOAD mechanism needs the
+stack change. The kernel qualification can also run through the recipe path
+once a graph references the GUID (no torch op needed) — a possible
+next-session angle via a synthetic recipe.
