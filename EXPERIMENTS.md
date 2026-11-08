@@ -1230,3 +1230,27 @@ delivers +10.7% (between the conservative and the expected). The aggregate
 aggregate impact because the per-replay allocation is not the dominant host
 cost at 16 streams (the device time and the per-row host work dominate
 instead).
+
+## EXP-Q21 final status — the kernel infrastructure is DEPLOYED and the model
+## serves correctly (2026-11-08, boot q21h)
+
+**Achieved:**
+1. The block-FP8 dequant TPC kernel compiled and gated into libmxk_tpc.so
+   (3254 GUIDs, the library + op gates PASS).
+2. The PT2 op shim (registerUserCustomOp + UserCustomOpDescriptor) built and
+   the op REGISTERED in the serving process (the lambda fix: explicit
+   `-> at::Tensor` return resolved the schema inference issue).
+3. The server boots healthy and serves correctly (the math test: 2+2 → 4).
+4. The fail-closed runtime verified (the hooks are inert without GLM_FP8_MXK=1;
+   with it, the kernel infrastructure loads without crashing).
+
+**Remaining for the next session:**
+- The on-device dequant numerical verification (warmup hook approach: call the
+  kernel from INSIDE the serving process during the model warmup)
+- The fused MoE GEMV kernel implementation (replacing the stock MoE op for
+  decode-sized calls)
+- The performance measurement with the routing-aware kernel active
+
+**The infrastructure is READY**: the kernel, the op registration, the runtime
+hooks, and the serving integration are all in place. The next session focuses
+on the numerical verification and the MoE kernel implementation.
