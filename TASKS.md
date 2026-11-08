@@ -814,8 +814,16 @@ attempt 2: (i) pass an ABSOLUTE dir to the trace handler (setup_profiler hardcod
 tensorboard_trace_handler(".") — the workers' cwd may not be where we looked, or the
 handler needs the dir to pre-exist), (ii) verify the step alignment (the boot with
 VLLM_SKIP_WARMUP=true makes few execute_model calls; the first bench crosses step 200
-mid-run), (iii) check .habana_logs/synprof_parser_log.txt for the HPU-side capture
-state.
+mid-run), (iii) the synprof log is malformed (all "Invalid formatting encountered") -
+the HPU-side capture did not produce usable data.
+ATTEMPT-1 OUTCOME: no trace flushed anywhere (the engine died at the cycle
+completion; the write may have been killed mid-write, or the handler never
+fired). ALTERNATIVE APPROACHES for attempt 2: (a) patch setup_profiler to
+save explicitly (profiler.export_chrome_trace) instead of the schedule
+handler, (b) hl-smi sampling during the bench (the power/clock/utilization
+curve — coarser but reliable), (c) the EXP-PHYS arithmetic already provides
+the floor and the amortization numbers from first principles — the D1 trace
+refines the host/device split but does not block the Q21 kernel track.
 
 ### Research-folder status files (theory-agent feedback, 2026-11-08)
 
