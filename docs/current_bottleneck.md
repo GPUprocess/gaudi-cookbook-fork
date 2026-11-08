@@ -1,17 +1,19 @@
 # Current Bottleneck Analysis — GLM-5.3-Flash on Intel Gaudi 2
 
-**Last updated:** 2026-11-08
-**Git commit:** the adopted config HEAD (branch `glm53-flash`)
-**Model:** GLM-5.3-Flash (block-FP8 E4M3, 128×128 scales), 45 layers + 1 MTP layer, 288 routed experts (top-8), 42 MoE layers, KDA/DSA hybrid attention, mHC hyper-connections
+**Last updated:** 2026-11-08 (revision 2)
+**Git commit:** `80a7fc6` → `f73d862` (branch `glm53-flash`)
+**Model:** GLM-5.3-Flash (block-FP8 E4M3, 128×128 scales), 45 layers + 1 MTP layer, 288 routed experts (top-8), 42 MoE layers, 34 KDA layers + 11 DSA layers (MLA), mHC hyper-connections (4 streams, Sinkhorn), 3 dense layers
 **Serving stack:** vllm-gaudi v0.26.0 (b059f9c), Gaudi SW 1.24.1, lazy mode, TP8+EP8
-**Adopted config:** MTP k=1 + router fast path + device-side rejection sampler + early draft + capture-time tensor cache + max-num-seqs 32 + lin buckets (128/2048-step query, 64-step ctx)
-**Hardware:** 8× Intel Gaudi 2 (HL-225), 96 GB HBM each, 2.45 TB/s HBM peak per card, 125 GB host RAM
+**Adopted config:** MTP k=1 + router fast path (`GLM_ROUTER_FAST=1`) + device-side rejection sampler (`GLM_SPEC_DEVICE_REJECT=1`) + early draft (`GLM_EARLY_DRAFT=1`) + capture-time tensor cache (`disable_tensor_cache=False` in `_maybe_wrap_in_hpu_graph`) + max-num-seqs 32 + lin buckets (query 128/2048-step, ctx 64-step) + `PT_HPU_LAZY_ACC_PAR_MODE=0`
+**Hardware:** 8× Intel Gaudi 2 (HL-225), 96 GB HBM each, 2.45 TB/s HBM peak per card, 125 GB host RAM, 160 CPU cores
+**Model precision:** block-FP8 E4M3 (128×128 scales) for MoE/dense/MLA projections; BF16 for KDA/DSA attention, embeddings, lm_head, MTP shared head
+**Weight mass:** MoE routed experts 305.5 GB (93.0%), attention+KDA+indexer 14.2 GB, dense 0.45 GB, shared experts 1.06 GB, embed+lm_head+MTP head 3.81 GB (BF16)
 
 ---
 
 ## SECTION 1: Executive Summary
 
-**Current measured performance (the adopted stack, steady state):**
+**Current measured performance (the adopted stack, steady state, 8 HPUs):**
 
 | Metric | Current | Target | Gap |
 |---|---|---|---|
@@ -19,18 +21,21 @@
 | Aggregate @16 streams | **~257 t/s** | 800 t/s | **3.1×** |
 | Aggregate @32–64 streams | **400–452 t/s** | — | saturated |
 | Prefill (warm, 0.5–8K) | **3.3–5.7K t/s** | 3–6K t/s | **met** |
-| Maximum context | **1M validated** | 1M | **met** |
-| 4-HPU (TP4+EP4) | bs=1 33.3, @16 113.5 | — | candidate validated |
+| Prefill (warm, 3.5–4K) | 2,538–2,787 t/s | 3–6K t/s | slightly below |
+| Maximum context | **1,062,400 tokens** | 1M | **met** |
+| 4-HPU (TP4+EP4) bs=1 | 33.3 t/s | — | candidate |
+| 4-HPU @16 | 113.5 t/s | — | candidate |
+| Accuracy | 100% (the adopted config) | ≤0.5 pp regression | **met** |
 
 **The three most important bottlenecks:**
 
-1. **The stock MoE op reads all 36 local experts' weights per step** (38.1 GB/card/step = 15.5 ms at the HBM peak), regardless of routing. At bs=1, only 8 of 288 experts are needed per layer → 97% of the expert-weight HBM traffic is wasted. This alone caps single-stream decode at ~119 t/s (the weight-read floor).
+1. **The stock MoE op reads all 36 local experts' weights per step** (38.1 GB/card/step = 15.5 ms at the HBM peak of 2.45 TB/s), regardless of routing. At bs=1, only 8 of 288 experts are needed per layer → 97% of the expert-weight HBM traffic is wasted. This alone caps single-stream decode at ~119 t/s (the weight-read floor). **The 200 t/s single-stream objective is PHYSICALLY IMPOSSIBLE with the stock op** — it requires a routing-aware kernel that reads only the ~16 routed experts (~2.1 GB/step → 0.86 ms floor).
 
-2. **~322 recipe replays per decode step × ~50–74 µs host overhead each ≈ 16–24 ms of host-launch time per step.** The device is idle during most of this (the AIP utilization 0–24%). The tensor cache (adopted) removed the per-replay allocation but the launch + staging remain.
+2. **~322 recipe replays per decode step × ~50–74 µs host overhead each ≈ 16–24 ms of host-launch time per step.** The device is idle during most of this (the AIP utilization 0–24%). The tensor cache (adopted) removed the per-replay allocation but the input staging + the graph launch + the symbol resolution remain. This is the dominant host-side bottleneck at every batch size.
 
-3. **The per-stream host cost of ~3.8 ms/stream** (the sampler + scheduler + draft dispatch + the logprob processing) dominates the aggregate at 16+ streams (54% of the step time), limiting the aggregate scaling to sub-linear growth.
+3. **The per-stream host cost of ~3.8 ms/stream** (the sampler + scheduler + draft dispatch + the logprob processing) dominates the aggregate at 16+ streams (54% of the step time), limiting the aggregate scaling to sub-linear growth (2× streams → +33% aggregate, not +100%).
 
-**The highest-priority investigation areas:** (1) the routing-aware fused MoE kernel (Q21/RA-002) to cut both the expert-weight bytes and the launch count, (2) the host-device time split via the D1 profiling to quantify the per-op host overhead on our FP8 tree, (3) the in-worker op visibility check to unblock the custom-kernel deployment.
+**The highest-priority investigation areas:** (1) the routing-aware fused block-FP8 MoE kernel (Q21/RA-002) to cut both the expert-weight bytes (38.1 → ~2.1 GB/step at bs=1) and the launch count (one fused op replaces ~50 small ops), (2) the host-device time split via the D1 profiling to quantify the per-op host overhead on our exact FP8 tree, (3) the PT2 custom-op loading mechanism to deploy the custom kernel without the v0.26.0 stack's registrar collision.
 
 ---
 
@@ -38,18 +43,24 @@
 
 | Metric | Current result | Target | Gap | Configuration | Confidence |
 |---|---:|---:|---:|---|---|
-| Single-stream decode (bs=1) | 42.4 t/s | 200 t/s | 4.7× | MTP k=1, TP8+EP8, 32K window, max-num-seqs 32, all levers + the capture-time tensor cache | MEASURED (8+ reps, multiple boots) |
-| Aggregate @16 streams | ~257 t/s | 800 t/s | 3.1× | Same config, 16 concurrent streams | MEASURED (4+ reps, multiple boots) |
-| Aggregate @32–64 streams | 400–452 t/s | — | saturated | max-num-seqs 32, 32–64 client streams | MEASURED (3+ reps each) |
-| Prefill (warm, 0.5–8K) | 3.3–5.7K t/s | 3–6K t/s | met at most depths | Same config, gen=1 to isolate TTFT | MEASURED (3 reps/depth) |
-| Prefill (warm, 3.5–4K) | 2,538–2,787 t/s | 3–6K t/s | below band | the 2048→4096 lin-bucket transition | MEASURED |
-| TTFT (warm, 2K) | 0.31 s | — | — | gen=1 | MEASURED |
-| Maximum context | 1,062,400 tokens | 1M | met | 1660 hybrid blocks, needle at 860,739 | MEASURED |
-| 4-HPU bs=1 | 33.26 t/s | — | — | TP4+EP4, GMU 0.95, capture 128 | MEASURED |
+| Single-stream decode (bs=1) | 42.4 t/s (median, 8 warm reps) | 200 t/s | 4.7× | MTP k=1, TP8+EP8, 32K window, max-num-seqs 32, all levers + capture-time tensor cache | MEASURED (multiple boots) |
+| Aggregate @16 streams | ~257 t/s | 800 t/s | 3.1× | Same config, 16 concurrent client streams | MEASURED (4+ reps, multiple boots) |
+| Aggregate @32 streams | ~379–400 t/s | — | saturated | max-num-seqs 32, 32 client streams | MEASURED |
+| Aggregate @48–64 streams | 372–452 t/s | — | saturated | max-num-seqs 32, 48–64 client streams | MEASURED |
+| Prefill (warm, gen=1, 0.5–2K) | 3,338–5,697 t/s | 3–6K t/s | met | Same config | MEASURED (3 reps/depth) |
+| Prefill (warm, 3.5–4K) | 2,538–2,787 t/s | 3–6K t/s | slightly below | the 2048→4096 lin-bucket transition | MEASURED |
+| Prefill (warm, 6–8K) | 3,782–5,663 t/s | 3–6K t/s | met | | MEASURED |
+| TTFT (warm, 2K tokens, gen=1) | 0.31 s | — | — | | MEASURED |
+| Maximum context | 1,062,400 tokens | 1,000,000 | met | 1660 hybrid blocks, needle at 860,739 | MEASURED |
+| 4-HPU bs=1 (TP4+EP4) | 33.26 t/s | — | — | GMU 0.95, capture 128, KV 320 blocks | MEASURED |
 | 4-HPU @16 | 113.5 t/s | — | — | same | MEASURED |
 | 4-HPU accuracy | 100% | ≤0.5 pp regression | met | suite v1, 2 reps | MEASURED |
-| 8-HPU accuracy | 100% (the adopted config) / 97.5% (the R003 chaos item) | ≤0.5 pp regression | met (the same-boot A/B) | suite v1, 5 reps | MEASURED |
-| MTP acceptance | 1.80–1.85 of 2.0 | — | — | k=1, per-position 73–98% | MEASURED |
+| 8-HPU accuracy | 100% (adopted) / 97.5% (R003 chaos) | ≤0.5 pp regression | met (same-boot A/B) | suite v1, 5 reps | MEASURED |
+| MTP acceptance (bs=1) | 1.80–1.85 of 2.0 | — | — | k=1, per-position 73–98% | MEASURED |
+| MTP acceptance (bs=16) | 1.71–1.80 of 2.0 | — | — | varies with batch | MEASURED |
+| HBM per card (decode) | 65.5–68.2 GB of 96 GB | — | — | includes weights + KV + graphs | MEASURED |
+| Host RSS per worker | 0.73–0.88 GB (tensor cache off) / 0.93 GB (on) | — | — | | MEASURED |
+| AIP utilization (decode) | 0–24% | — | — | the device is mostly idle | MEASURED |
 
 ---
 
@@ -57,265 +68,573 @@
 
 ```mermaid
 graph TD
-    subgraph "Host Process"
-        API[OpenAI API Server] --> ENGINE[AsyncLLM Engine]
-        ENGINE --> SCHED[Scheduler]
-        SCHED --> |scheduler_output| CORE[EngineCore]
-        CORE --> |execute_model| WORKERS
+    subgraph "Host Process (API server + engine core)"
+        API[OpenAI API Server<br/>HTTP :8000] --> ENGINE[AsyncLLM Engine<br/>vLLM v1 architecture]
+        ENGINE --> SCHED[vLLM Scheduler<br/>continuous batching<br/>max-num-seqs 32]
+        SCHED --> |SchedulerOutput| CORE[EngineCore<br/>multiprocess executor]
+        CORE --> |execute_model<br/>per step| WORKERS
     end
 
-    subgraph "8 HPU Workers (TP8+EP8, spawn)"
-        W0[Worker_TP0_EP0] --- M0[Model: Glm5NextForCausalLM]
-        W1[Worker_TP1_EP1] --- M1[Model]
-        W2[Worker_TP2_EP2] --- M2[Model]
-        W3[Worker_TP3_EP3] --- M3[Model]
-        W4[Worker_TP4_EP4] --- M4[Model]
-        W5[Worker_TP5_EP5] --- M5[Model]
-        W6[Worker_TP6_EP6] --- M6[Model]
-        W7[Worker_TP7_EP7] --- M7[Model]
+    subgraph "8 HPU Workers (TP8+EP8, spawned)"
+        direction LR
+        W0["Worker_TP0_EP0<br/>rank 0: experts 0-35<br/>attn heads 0-7"] --- M0[Glm5NextForCausalLM<br/>HPU graph wrapped]
+        W1["Worker_TP1_EP1<br/>rank 1: experts 36-71"] --- M1[Model]
+        W2["Worker_TP2_EP2<br/>rank 2: experts 72-107"] --- M2[Model]
+        W3["Worker_TP3_EP3<br/>rank 3: experts 108-143"] --- M3[Model]
+        W4["Worker_TP4_EP4<br/>rank 4: experts 144-179"] --- M4[Model]
+        W5["Worker_TP5_EP5<br/>rank 5: experts 180-215"] --- M5[Model]
+        W6["Worker_TP6_EP6<br/>rank 6: experts 216-251"] --- M6[Model]
+        W7["Worker_TP7_EP7<br/>rank 7: experts 252-287"] --- M7[Model]
     end
 
-    subgraph "Per-worker execution (MTP k=1 step)"
-        VERIFY[Verify forward: 2N rows through 45 layers] --> SAMPLE[Rejection sampler + the bonus token]
-        SAMPLE --> DRAFT[Draft forward: N rows through the MTP layer-45]
-        DRAFT --> PREP[Input prep + KV update for the next step]
-    end
-
-    subgraph "HPU Graph execution"
-        GRAPHS[HPU Graphs: 144 prompt + 16 decode shapes] --> |replay| VERIFY
-        GRAPHS --> |replay| DRAFT
+    subgraph "Per-step execution (MTP k=1)"
+        direction TB
+        VERIFY["1. Verify forward<br/>2N rows (N seqs × 2 candidate tokens)<br/>through 45 layers (34 KDA + 11 DSA)<br/>HPU graph replay"] --> SAMPLE["2. Rejection sampler<br/>device-side (ADOPTED)<br/>+ bonus token"]
+        SAMPLE --> DRAFT["3. Draft forward<br/>N rows through MTP layer-45<br/>(1 MLA + 1 MoE) — EAGER"]
+        DRAFT --> PREP["4. Input prep for next step<br/>KV update + accepted token rollout<br+ early draft enqueue (ADOPTED)"]
     end
 ```
 
-**Model loading:** GLM-5.3-Flash block-FP8 (328.3 GB checkpoint) loaded via the safetensors, sharded TP8 (the attention + the dense) + EP8 (the routed experts). Each rank holds 36 local experts (288/8), 1/8 of the attention heads, and 1/8 of the dense layers.
+### Model loading and weight distribution
 
-**Attention:** 34 KDA layers (the gated delta net, linear attention with 128-token chunks) + 11 DSA layers (MLA: kv_lora_rank 512, 64 heads × 256-dim NoPE + 256-dim V, top-2048 key-indexer). NoPE on the DSA layers. mHC hyper-connections (4 streams per token, 20-iteration Sinkhorn mixing, fused TPC kernel).
+GLM-5.3-Flash block-FP8 (328.3 GB checkpoint) loaded via safetensors mmap:
+- **Routed experts (305.5 GB, 93.0%):** 288 experts × 42 MoE layers, each expert has w13 [2×2048, 4096] FP8 + w2 [4096, 2048] FP8 + block scales. Sharded EP8: each rank holds 36 experts (288/8).
+- **Attention + KDA + indexer (14.2 GB):** sharded TP8 (each rank holds 1/8 of the heads and the KV projections).
+- **Dense layers (0.45 GB):** 3 layers, sharded TP8.
+- **Shared experts (1.06 GB):** 1 per MoE layer, sharded TP8.
+- **Embed + lm_head + MTP head (3.81 GB, BF16):** the embedding is TP-sharded (vocab parallel); the lm_head is NOT sharded (replicated).
 
-**Expert execution:** 42 sparse MoE layers, 288 routed experts (top-8 routing via sigmoid + group), 1 shared expert per layer. The stock fused-MoE op processes all tokens through all 36 local experts' weights per call (the weight read is batch-independent). The routed experts are loaded as block-FP8 E4M3 with 128×128 FP32 scales.
+Each rank's total weight: ~38.2 GB (TP8+EP8) or ~76.3 GB (TP4+EP4).
 
-**MTP:** the target's layer-45 repurposed as the draft head. Per step: (1) the verify forward (N×2 rows through all 45 layers), (2) the rejection sampler + the bonus token, (3) the draft forward (N rows through the MTP layer), (4) the input preparation for the next step. The Q18 levers (the device-side rejection + the early draft) removed the sync points but the draft is still dispatched eagerly.
+### HPU graph execution
 
-**Graph execution:** the model is wrapped in HPU graphs (`wrap_in_hpu_graph` with `disable_tensor_cache=False` since the RA-001 patch). 144 prompt shapes (the lin buckets) + 16 decode shapes are captured on first use. Each step replays the cached graphs.
+The model is wrapped with `wrap_in_hpu_graph(HpuModelAdapter(model), disable_tensor_cache=False)` (the RA-001 patch changed `True` to `False`). This captures each unique input shape as an HPU graph and replays it for subsequent calls:
+- **144 prompt shapes** from the lin bucketing (query: 128/2048-step up to 8192; ctx: 64-step)
+- **16 decode shapes** from the decode bucket ladder
+- **MTP verify shapes** (the k=1 verify = 2N rows, bucketed separately)
+- **MTP draft shapes** (the draft runs EAGERLY, not graphed — the Q18 levers made the eager draft efficient enough)
 
-**KV cache:** hybrid — the KDA layers use 128-token chunks with per-layer recurrent state (the candidate-slot machinery for MTP); the DSA/MLA layers use paged KV cache with 640-token hybrid blocks. The pool: 1280 blocks = ~723,155 tokens at the current config.
+With the tensor cache enabled (`disable_tensor_cache=False`), the graph's input/output tensors are RETAINED between replays (not replaced with empty tensors), removing the per-replay allocation + teardown. This delivered +10.7% bs=1 (EXP-RA001 proper).
 
-**Communication:** 162 all-reduce operations per decode step (one per layer per TP boundary), each ~20 µs in the small-message regime (~24 KB at bs=1). HCCL backend.
+### KV cache
+
+Hybrid layout:
+- **KDA layers (34):** 128-token chunks with per-layer recurrent state. MTP uses candidate-slot machinery (S+1 slots per sequence for the speculative tokens).
+- **DSA/MLA layers (11):** paged KV cache with the block size determined by the hybrid page-aligned layout. The MLA latent cache: kv_lora_rank 512 + 64×256 V per token.
+
+The KV pool at the adopted config: 1280 hybrid blocks → ~723,155 tokens (varies with the config). The block-to-token mapping depends on the layer mix (the KDA and MLA layers have different page sizes; the padding-aware alignment ensures they match).
+
+### Communication
+
+162 all-reduce operations per decode step (one per layer per TP boundary: 45 layers + 1 MTP layer, with ~3.5 ARs per layer for the tensor-parallel attention + MoE output). Each AR is ~24 KB at bs=1 (the hidden states 4096 × BF16 × 3 = 24 KB per token). HCCL backend. Each AR forces a mark_step() recipe boundary.
 
 ---
 
 ## SECTION 4: Detailed Bottleneck Register
 
-### BOTTLENECK-B1: MoE expert-weight streaming (the all-experts-read op)
+---
 
-**Classification:** VERIFIED
+### B1: MoE expert-weight streaming (the all-experts-read op)
 
-**Severity:** CRITICAL (for the 200 t/s single-stream objective; MEDIUM for the aggregate)
+**Classification:** VERIFIED (the op source confirms the behavior; the weight-read floor arithmetic matches the measured performance; the AIP 0–24% confirms the device is memory-bound during the MoE phase)
 
-**Affected metric:** TG (single-stream), AGG (marginal at 16+ streams)
+**Severity:** CRITICAL (for the 200 t/s single-stream objective — the stock op makes it physically impossible; HIGH for the aggregate)
 
-**Affected component:** the stock `mixture_of_experts` op (vllm-gaudi `ops/hpu_fp8.py`, `apply_monolithic` path)
+**Affected metric:** TG (single-stream), AGG (the device-side component at all batch sizes)
 
-**Current behavior:** the stock `mixture_of_experts` op processes the input through ALL 36 local experts' weights per call, regardless of which experts the router selected. Each rank holds 36 experts × 25.2 MB/expert/layer (w13: 2×2048×4096 FP8 = 16.8 MB + w2: 4096×2048 FP8 = 8.4 MB). Across 42 MoE layers: 36 × 25.2 MB × 42 = 38.1 GB/card/step. At the HBM peak of 2.45 TB/s: 15.5 ms/step of pure weight streaming.
+**Affected component:** the stock fused-MoE op (`vllm_gaudi/ops/hpu_fp8.py`, `apply_monolithic` path, the `mixture_of_experts` Habana op)
+
+**Current behavior:** the stock `mixture_of_experts` Habana op takes the full per-expert weight list as input and processes the input tokens through ALL 36 local experts' weights, regardless of which experts the router selected. The weight read is: 36 experts × (w13 [2×2048, 4096] + w2 [4096, 2048]) × 1 byte (FP8) = 36 × 25.2 MB = 907 MB per MoE layer per rank. Across 42 MoE layers: 38.1 GB per card per step.
+
+This is **batch-independent**: whether 1 token or 64 tokens are processed, the same 36 experts' weights are streamed from HBM. The only variable is the GEMV arithmetic (which scales with tokens but is negligible compared to the weight streaming at decode batch sizes).
 
 **Measured evidence:**
-- The checkpoint geometry: 328.3 GB total, 305.5 GB (93%) in the routed experts (verified within 1.4% against the config dimensions)
-- The weight-read floor: 38.1 GB ÷ 2.45 TB/s = 15.5 ms (DERIVED)
+- The checkpoint geometry: 305.5 GB of routed-expert weights (93.0% of the 328.3 GB total), verified within 1.4% against the config dimensions (288 experts × 42 layers × [2×2048×4096 + 4096×2048] × 1 byte ÷ 8 ranks)
+- The weight-read floor: 38.1 GB/card ÷ 2.45 TB/s = 15.5 ms/step (DERIVED)
 - The measured bs=1 step time: 45.1 ms → the weight read is 34% of the step
-- The AIP utilization of 0–24% during decode confirms the device is memory-bound
+- The AIP utilization: 0–24% during decode → the device is memory-bound (the GEMV arithmetic is trivial; the bottleneck is the weight streaming)
+- The mxfp4 step-anatomy study (the same model family): the MoE kernel time is 82% of the step at batch 16
 
-**Expected behavior:** a routing-aware kernel reads only the routed experts' weights. At bs=1 (8 routes of 288): ~16 of 36 local experts are distinct → 16/36 = 44% of the current weight read → ~6.8 ms/step (an 8.7 ms saving). At bs=16 (128 routes of 288): ~36 of 36 → no saving (all experts are touched).
+**Expected behavior:** a routing-aware kernel reads only the routed experts' weights. At bs=1 MTP k=1: the verify has 2 rows × 8 routes = 16 routes; the draft has 1 row × 8 routes = 8 routes; total ~24 route-slots but only ~16 distinct experts per layer (some overlap). Per rank: ~16 of 36 local experts → 16/36 = 44% of the current weight read → ~6.8 ms/step (an 8.7 ms saving). The weight-read floor drops from 15.5 to ~6.8 ms.
 
-**Performance impact:** at bs=1, the routing-aware kernel saves ~8.7 ms/step → the step drops from ~45 to ~36 ms → **~51 t/s single-stream** (+31%). This is the PREREQUISITE for 200 t/s.
+**Performance impact:**
+- At bs=1: the step time drops from ~45 to ~36 ms → **~51 t/s single-stream** (+31%)
+- Combined with the host-launch reduction (B2) and the graphed draft (B5): the path to 200 t/s becomes open (the step budget drops to ~9.3 ms with the routed-only weight read + the fused single-op + the host ≤ 2.5 ms)
+- At bs=16: no improvement (all 36 experts are already touched at 128 routes)
 
-**Root cause:** the stock `mixture_of_experts` op signature takes the full per-expert weight list.
+**Root cause:** the stock `mixture_of_experts` Habana op's signature takes the full per-expert weight list — the op processes all experts unconditionally. The routing information (top-k indices) is used for the output weighting (the weighted sum of the expert outputs), not for the weight access pattern. The op cannot skip unread experts without a different kernel design.
 
-**Why unsolved:** (1) the Q16 gather lost 45%, (2) the fused kernel is blocked on the op-loading collision, (3) the PT2 loading mechanism is discovered but needs the header-compatible build.
+**Why it has not been solved:**
+1. **The Q16 gather experiment** (EXP-Q16): the gather + stock GEMM decomposition (index_select the routed experts → GEMM on the gathered set) lost 45% at bs=1 — the `index_select` copy of the routed expert weights is itself HBM-bound (copying 16 experts × 25.2 MB = 403 MB takes ~0.16 ms at peak, but the scattered access pattern + the temporary allocation add overhead that exceeds the savings from the reduced weight streaming).
+2. **The Q21/RA-002 fused kernel** (the routing-aware in-register dequant GEMV): the kernel is compiled and gated into the variant library, but the torch-op shim cannot load on this stack (the registrar collision — see B7 below). The kernel ELF is ready; the deployment mechanism is blocked.
+3. **The PT2 custom-op API** (the DSV4.1-proven loading mechanism): discovered as the alternative to the legacy hpu_custom_op.h path, but the adaptation requires the header-compatible build (the DSV41 bridge's ATen version differs from our venv's).
 
-**Previous experiments:** EXP-Q16, EXP-Q21, RA-002
+**Previous experiments:** EXP-Q16 (the gather: negative), EXP-Q21 (the kernel: built to the stack limit), RA-002 (the research architect's sharpened design with the five constraints: byte target, full-card row-parallel, in-kernel intermediate, single op library, MTP-depth table)
 
-**Relevant source:** `/opt/glm53/vllm-gaudi/vllm_gaudi/ops/hpu_fp8.py`, `/opt/dsv41/1Cat-vLLM-Gaudi/csrc/flashinfer_gaudi/kernels/block_fp8_dequant_gaudi2.c`, `kernels/mxfp4-moe/src/mxk8_core.h`
+**Relevant source code:**
+- `/opt/glm53/vllm-gaudi/vllm_gaudi/ops/hpu_fp8.py` — the stock MoE op (`apply_monolithic` l.219, the fp8-moe-gather patch l.283)
+- `/opt/dsv41/1Cat-vLLM-Gaudi/csrc/flashinfer_gaudi/kernels/block_fp8_dequant_gaudi2.c` — the reference E4M3 dequant TPC kernel (40 lines: the load-pipe expansion + the conversion lanes + the scale multiply)
+- `kernels/mxfp4-moe/src/mxk8_core.h` — the mxfp4 GEMV kernel structure (dequant + dot, w13 GEMV + gated activation, w2 GEMV) — the structural template for our FP8 kernel
+- `kernels/mxfp4-moe/extra/block_fp8_dequant_glm/` — our staged kernel (the TPC ELF compiled, the op shim built, the glue written)
+- `/opt/dsv41/1Cat-vLLM-Gaudi/csrc/deepseek_v4/pytorch/` — the DSV4.1 MoE kernel variants (moe_fp8_prequant, direct_finalize, prefetch_w2, horizontal — the tuning playbook for our 288-expert MoE)
 
-**Research questions:** the E4M3 dequant + the GEMV in a single TPC pass; the clamped SwiGLU in-register; the expert caching
+**Relevant GaudiGrimoire findings:**
+- The mxfp4 step-anatomy study (docs/results/moe-decode-step.md): the MoE kernel time is 82% of the step at batch 16; the slowest EP rank costs 2× the mean (the balls-in-bins statistics)
+- The 1Cat block_fp8_dequant kernel: the E4M3 dequant reads the packed weights via `v_f8_ld_tnsr_b` with SW_UNPACK + `v_convert_f8_to_bf16_b` (the load-pipe expansion into the conversion lanes), multiplies by the FP32 scale (rounded to BF16), and stores the BF16 result
+- The Habana `mixture_of_experts` op source (habana_eager/ops/mixture_of_experts.cpp, tier B): confirms the all-experts-read behavior (the op signature takes the full per-expert weight list)
+- The 1Cat MoE variant family (moe_fp8_prequant, direct_finalize, prefetch_w2, horizontal, fused_reduce): the tuning playbook for our 288-expert MoE at TP8+EP8
 
-**Recommended next action:** the PT2 header-compatible build → the on-device dequant qualification → the fused MoE GEMV kernel
+**Research questions:**
+1. Can the TPC kernel dequantize E4M3 + multiply by the FP32 scale in a single pass through the load pipe (the `v_f8_ld_tnsr_b` SW_UNPACK + `v_convert_f8_to_bf16_b` pattern from the 1Cat kernel)?
+2. Can the GEMV accumulate in FP32 across the K dimension while reading E4M3 weights (the precision requirement for the 128×128 block scales)?
+3. Can the clamped SwiGLU activation (`swiglu_limit` 10.0) be applied in-register during the w13 GEMV phase (avoiding the intermediate materialization)?
+4. What is the minimum routed-expert set that covers 99.9% of the routes at bs=1..4 across 42 layers (the expert-caching opportunity: pre-load the hot experts into the TPC local memory)?
+5. Can the w2 GEMV accumulate across the I dimension while reading the w2 weights, using the routing weights for the weighted sum (the direct-finalize pattern from the DSV4.1 kernel family)?
+
+**Potential optimization directions:**
+- The routing-aware fused MoE kernel: one TPC kernel per MoE layer that reads only the routed experts' weights (the block_fp8_dequant pattern extended with the GEMV + the activation), dequantizes in-register, computes the w13 GEMV, applies the clamped SiLU-and-mul, and computes the w2 GEMV with the routing-weight sum
+- The expert caching: pre-load the hot experts (identified by the routing histogram) into a faster memory tier
+- The weight layout optimization: reorganize the expert weights for the sequential access pattern (the coalesced read)
+- The weight compression: MXFP4 for the cold experts (halves the bytes; requires the accuracy validation)
+
+**Dependencies:** the op-loading mechanism must work (the PT2 adaptation or the serving image with the kernels compiled at build time)
+
+**Recommended next action:** implement the PT2 op-loading fix (the header-compatible build), then run the on-device dequant qualification, then implement the fused MoE GEMV kernel following the mxk8_core.h pattern adapted for block-FP8.
 
 ---
 
-### BOTTLENECK-B2: Host-launch pipeline (the recipe replay overhead)
+### B2: Host-launch pipeline (the recipe replay overhead)
 
-**Classification:** VERIFIED
+**Classification:** VERIFIED (the AIP 0–24% utilization + the step-anatomy study confirm the host-launch dominance; the tensor-cache experiment confirmed the per-replay cost)
 
-**Severity:** CRITICAL
+**Severity:** CRITICAL (for both the 200 t/s and 800 t/s objectives)
 
-**Affected metric:** TG, AGG
+**Affected metric:** TG, AGG (the host-side component at all batch sizes)
 
-**Current behavior:** ~322 recipe replays per decode step × ~50–74 µs host each.
+**Affected component:** the vllm-gaudi lazy-mode execution engine, the HPU graph wrapper (`habana_frameworks/torch/hpu/graphs.py`), the vLLM model runner
 
-**Measured evidence:** the AIP 0–24%; the tensor cache +10.7% bs=1 (confirming the per-replay cost); the mxfp4 study's 322 × 74 µs ≈ 24 ms.
+**Current behavior:** the model execution is split into ~322 recipe replays per decode step. The lazy-mode engine traces each PyTorch operation, compiles it to an HPU recipe (a graph of TPC/MME operations), and replays it as a separate HPU graph launch. The all-reduce operations force `mark_step()` boundaries, splitting the lazy graph into ~162 segments (one per layer per TP boundary). Each segment may contain multiple recipes.
 
-**Performance impact:** 33–40% of the bs=1 step; the 800 @16 target needs the host ≤ 17 ms (from ~15–20 ms current + the per-stream growth).
+Each recipe replay costs ~50–74 µs of host time:
+- The input tensor staging: the HPU addresses are computed and the input pointers are set (the tensor cache removes the allocation but the staging remains)
+- The graph launch: the HPU command is submitted to the device
+- The output collection: the output tensor references are updated
+- The Python overhead: the PyTorch dispatcher, the autograd, the framework bookkeeping
 
-**Root cause:** the lazy-mode execution model splits the graph at each all-reduce and each mark_step.
+**Measured evidence:**
+- The mxfp4 step-anatomy study: 322 launches × ~74 µs host each ≈ 24 ms of a 39 ms step (the same model family, TP8+EP8)
+- The AIP utilization: 0–24% during decode (the device is idle 76–100% of the time, waiting for the host to issue the next launch)
+- The tensor cache experiment (EXP-RA001): bs=1 +10.7% (42.4 vs 38.3) — confirming that the per-replay allocation is a significant component of the host cost
+- The early-draft + device-side rejection (EXP-Q18): removing 2 sync points improved the aggregate
+- The scaling curve: the fixed step cost is ~40.7 ms (the intercept of the linear fit), of which the device is ~17 ms → the host is ~24 ms
 
-**Why unsolved:** the tensor cache removed the allocation; the staging/launch remain; the boundary reduction requires the operation fusion.
+**Expected behavior:** an optimized implementation would reduce the launch count (by fusing operations across the boundaries) or the per-launch cost (by eliminating the Python overhead). The theoretical minimum: one graph replay per step → ~1 launch × ~74 µs = 0.074 ms host time. The realistic target: ~50–100 launches (the fused MoE kernel + the attention + the KDA) → 5–7 ms host time.
 
-**Levers:** RA-001 (adopted), RA-008, RA-006-A, the Q21 single-op.
+**Performance impact:** the host-launch pipeline is the largest single bottleneck at bs=1 (~15–20 ms of the 45.1 ms step = 33–40%). Cutting it by 50% (via the operation fusion + the boundary reduction) would save ~10 ms/step → +25% bs=1 decode.
 
-**Recommended next action:** D1 profiling to decompose the host time per op.
+**Root cause:** the vllm-gaudi lazy-mode execution model: each PyTorch operation is traced by the Habana bridge's lazy executor, compiled to an HPU recipe, and replayed as a separate HPU graph launch. The all-reduce operations force `mark_step()` boundaries (each AR must complete before the next layer's computation begins). The MTP adds more boundaries (the draft/verify split). The result: ~322 separate HPU graph launches per decode step, each with the host-side overhead.
+
+**Why it has not been solved:**
+1. The tensor cache (EXP-RA001, ADOPTED) removed the per-replay tensor allocation but not the staging/launch/symbol-resolution overhead
+2. The recipe-boundary reduction (RA-008) requires understanding which mark_step() boundaries can be safely removed (the all-reduce boundaries are semantically necessary for the TP correctness; the non-AR boundaries may be fusable)
+3. The HPU graph capture with fewer, larger graphs requires the pad-and-mask approach (RA-006-A) to handle variable-length sequences within a single graph shape
+4. The Q21 fused MoE kernel would replace ~50 small ops with one op, cutting the launch count for the MoE layers (the largest op group)
+
+**Previous experiments:** EXP-RA001 (the tensor cache: adopted, +10.7%), the mxfp4 step-anatomy study (the launch-count + the per-launch cost), EXP-Q18 (the device-side rejection + the early draft: adopted, removing 2 sync points), EXP-OPT-001 (the AIP utilization measurement)
+
+**Relevant source code:**
+- `/opt/glm53/vllm-gaudi/vllm_gaudi/v1/worker/hpu_model_runner.py` — the model execution path (the forward pass, the graph wrapping, the per-step orchestration)
+- `/opt/glm53/venv/.../habana_frameworks/torch/hpu/graphs.py` — the vendor HPU graph wrapper (the replay machinery, the tensor cache, the dry_run logic)
+- `/opt/glm53/venv/.../habana_frameworks/torch/hpu/__init__.py` — the HPU backend initialization
+- `/opt/glm53/vllm-gaudi/vllm_gaudi/ops/hpu_fp8.py` — the MoE op (the largest op group by launch count)
+
+**Relevant GaudiGrimoire findings:**
+- The mxfp4 step-anatomy study: 322 launches × ~74 µs host each ≈ 24 ms; "the host runs ahead during the forward and is on the critical path only at the step boundary"
+- The Habana HPU Graphs documentation (tier B): "HPU Graphs feature overcomes this bottleneck by bypassing all the op accumulations by recording a static version of the entire graph, and then replaying it"
+- The HCCL all-reduce: each AR forces a mark_step() boundary, splitting the lazy graph
+- The Qwen3.8 port's experience: "PT_HPU_ENABLE_ALLREDUCE_GRAPH_SPLIT=0 cut the recipe count to ~12 per group and gave 2× on an 8-layer test model, but breaks batched decode on the real model"
+
+**Research questions:**
+1. What is the minimum number of recipe launches per decode step (the theoretical lower bound given the all-reduce semantics)?
+2. Can the all-reduce operations for adjacent layers be batched (reducing the boundary count from 162 to ~20)?
+3. Can the mark_step() calls between the MoE layers be eliminated (keeping the all-reduce but removing the graph split)?
+4. What fraction of the 74 µs per-launch cost is the Python overhead vs the HPU driver overhead?
+5. Can the non-AR mark_step() boundaries be safely removed (which boundaries are semantically necessary)?
+
+**Potential optimization directions:**
+- The operation fusion: combining consecutive element-wise + GEMM operations into single recipes (reducing the op count)
+- The all-reduce batching: accumulating the activations across multiple layers before the all-reduce (reducing the AR count)
+- The entire-step graph capture: capturing the decode step (all 45 layers) as one HPU graph with the dynamic-shape handling via padding
+- The C++ execution loop: replacing the Python model runner with a C++ executor (eliminating the Python overhead per launch)
+- The async launch pipeline: overlapping the host launch of step N+1 with the device execution of step N
+
+**Dependencies:** D1 (the profiling trace) to quantify the per-launch cost on our exact tree
+
+**Recommended next action:** D1 profiling (the 8-rank trace of the decode step) to decompose the host time into the launch + the Python + the sync components, then prioritize the reduction targets.
 
 ---
 
-### BOTTLENECK-B3: Per-stream host cost
+### BOTTLENECK-B3: Per-stream host cost (the sampler + scheduler + draft dispatch)
 
-**Classification:** VERIFIED
+**Classification:** VERIFIED (the scaling curve directly measures the marginal cost per stream)
 
-**Severity:** HIGH (for the 800 t/s @16; MEDIUM for bs=1)
+**Severity:** HIGH (for the 800 t/s aggregate @16 objective; MEDIUM for the single-stream)
 
-**Affected metric:** AGG (the dominant at 16+), TG
+**Affected metric:** AGG (the dominant at 16+ streams), TG (secondary at bs=1)
 
-**Current behavior:** each stream adds ~3.8 ms to the step (the sampler + the scheduler + the draft dispatch + the logprob + the output processing).
+**Affected component:** the vLLM v1 scheduler, the rejection sampler output processing, the MTP draft proposer, the output processor
 
-**Measured evidence:** the scaling curve: 40.7 + N × 3.8 ms (R² > 0.99).
+**Current behavior:** each additional concurrent stream adds ~3.8 ms to the step time. The per-stream work includes:
+- The sampling probability computation (the softmax/top-k/top-p on the host, the rejection walk output processing)
+- The scheduler's batch composition (the request ordering, the KV block allocation, the preemption logic, the sequence group management)
+- The MTP draft input preparation (the token embedding lookup, the position computation, the KV cache slot allocation, the draft attention metadata)
+- The logprob processing (the top-N extraction when requested)
+- The output detokenization batching (the incremental detokenization for the streaming responses)
+- The KV cache update (the accepted-token rollout, the draft-token speculation slots)
 
-**Performance impact:** at 16 streams, the per-stream host cost is 61 ms of the 114 ms step (54%). The 800 target needs this at ≤ 16 ms.
+**Measured evidence:**
+- The scaling curve: the step time grows linearly at ~3.8 ms/stream (R² > 0.99 across 1–64 streams, multiple boots)
+- At 16 streams: the per-stream host cost is 61 ms of the 114 ms step = 54% — the DOMINANT component at 16+ streams
+- The per-stream throughput drops from 40.1 t/s (bs=1) to 16.2 t/s (bs=16) — a 2.5× reduction
+- The mxfp4 step-anatomy study: the host work scales with rows (the sampler + the scheduler + the draft dispatch are per-row operations)
 
-**Root cause:** the per-stream Python operations in the scheduler/sampler/draft proposer.
+**Expected behavior:** an optimized implementation would reduce the per-stream host cost to ≤1 ms/stream by:
+- Batching the sampler output processing across all streams (one host call for N streams)
+- Pre-allocating the KV blocks per sequence (avoiding the per-step allocation)
+- Computing the draft input preparation on-device (avoiding the host round-trip)
+- Using C++ for the scheduler hot path (eliminating the Python overhead)
 
-**Levers:** RA-004 (the graphed draft chain), the batch sampler, the on-device draft preparation.
+**Performance impact:** at 16 streams, the per-stream host cost is 61 ms of the 114 ms step. Cutting it to 16 ms (4× reduction) would save 45 ms/step → the aggregate would increase from ~257 to ~380 t/s (+48%). This is the DOMINANT lever for the 800 t/s @16 objective.
 
-**Recommended next action:** D1 at 16 streams to decompose the per-stream cost.
+**Root cause:** the per-stream work is implemented as per-stream Python operations (not batched across streams). The vLLM v1 scheduler processes each request individually. The MTP draft proposer prepares each sequence's input individually. The framework is designed for flexibility, not for the minimum host overhead.
+
+**Why it has not been solved:**
+1. The device-side rejection sampler (ADOPTED, EXP-Q18) moved the accept/reject walk to the device but the host still processes the output (the token IDs extraction, the KV update, the next-step input preparation)
+2. The early-draft lever (ADOPTED, EXP-Q18) enqueued the draft immediately after the sampler but the input preparation is still per-sequence
+3. The scheduler's batch composition is a core vLLM design choice (not easily changed without a fork)
+4. The Python framework adds ~1–2 µs per operation (the PyTorch dispatcher, the autograd, the tensor wrapping)
+
+**Previous experiments:** EXP-Q18 (the levers: adopted), EXP-NS16/NS32/NS64 (the scaling curve), the mxfp4 step-anatomy study (the per-row host measurement)
+
+**Relevant source code:**
+- `/opt/glm53/vllm/vllm/v1/core/scheduler.py` — the request scheduler
+- `/opt/glm53/vllm/vllm/v1/sample/rejection_sampler.py` — the rejection sampler output processing
+- `/opt/glm53/vllm-gaudi/vllm_gaudi/v1/spec_decode/hpu_eagle.py` — the MTP proposer (the input preparation)
+- `/opt/glm53/vllm-gaudi/vllm_gaudi/v1/worker/hpu_model_runner.py` — the input preparation + the output processing
+
+**Relevant GaudiGrimoire findings:**
+- The mxfp4 step-anatomy study: the host work scales with rows (the sampler + the scheduler + the draft dispatch are per-row operations)
+- The DSV4.1 PT2 modules (hpu_dsv4_control_mme_pt2.so): the DSV4.1 deployment moved the control-path computation to PT2 custom ops, reducing the host overhead
+- The abotsis fork's decode_lean.py: the GLM_MXK/GLM_SPEC_DEVICE_REJECT/GLM_EARLY_DRAFT levers that we adopted
+
+**Research questions:**
+1. Can the sampler output processing be batched across all streams (one host call for N streams)?
+2. Can the KV block allocation be pre-allocated per sequence (avoiding the per-step allocation)?
+3. Can the draft input preparation be done on-device (avoiding the host round-trip)?
+4. What is the minimum per-stream host work for a decode step (the theoretical lower bound)?
+5. Can the scheduler's batch composition be replaced with a pre-computed schedule (amortizing the scheduling cost)?
+
+**Potential optimization directions:**
+- The batch sampler: one host call that processes all N streams' sampling output
+- The pre-allocated KV blocks: allocate the KV cache for the max sequence length at admission time
+- The on-device draft preparation: compute the draft input (the token embedding, the position, the KV slot) on the device
+- The C++ scheduler: replace the Python scheduler with a C++ implementation
+- The persistent kernels: keep the kernels resident on the device and stream the inputs (eliminating the launch overhead entirely)
+
+**Dependencies:** D1 (the profiling trace) to decompose the per-stream host cost into the sampler vs the scheduler vs the draft components
+
+**Recommended next action:** D1 profiling at 16 streams to decompose the per-stream host cost into its components, then prioritize the reduction targets.
 
 ---
 
 ### BOTTLENECK-B4: All-reduce latency + EP imbalance
 
-**Classification:** VERIFIED
+**Classification:** VERIFIED (the AR count and latency are measured; the EP imbalance is from the step-anatomy study)
 
-**Severity:** MEDIUM
+**Severity:** MEDIUM (for the aggregate; LOW for the single-stream)
 
 **Affected metric:** AGG, TG
 
-**Current behavior:** 162 ARs × ~20 µs ≈ 3.4 ms/step + the EP imbalance (~10 ms at high batch).
+**Affected component:** the HCCL all-reduce (per layer per TP boundary), the expert parallelism dispatch
 
-**Levers:** RA-008 (the collective-boundary reduction), the expert placement, the one-shot AR.
+**Current behavior:** 162 all-reduce operations per decode step (one per layer: 45 layers + 1 MTP draft = 46 layer boundaries × ~3.5 ARs per layer for the TP8 tensor-parallel attention + MoE output). Each AR is ~20 µs in the small-message regime (~24 KB at bs=1). Additionally, the EP imbalance: the slowest EP rank's expert kernels cost ~2× the mean rank (the balls-in-bins statistics of the expert routing: 16 routes into 8 ranks give the busiest rank ~4.5 routes vs the mean 2).
+
+**Measured evidence:**
+- The mxfp4 step-anatomy study: 162 ARs × ~20 µs ≈ 3.4 ms/step; the expert kernels: the slowest rank 19.5 ms vs the mean 9.6 ms
+- The independent 8-card Gaudi2 measurements: the 24 KB all-reduce at ~20–30 µs (the small-message regime, GG: comm-gaudi2-8card.json)
+- The EP imbalance: 16 routes into 8 ranks give the busiest rank ~4.5 routes vs the mean 2 (the balls-in-bins statistics); two-thirds of the gap would remain with uniform independent routing
+
+**Expected behavior:** the optimized implementation would reduce the AR count (by batching or fusing) and the EP imbalance (by the expert placement optimization or the wider groups).
+
+**Performance impact:** the AR latency is ~3.4 ms/step (7% of the bs=1 step). The EP imbalance adds ~10 ms at high batch (the slowest-rank penalty). Combined: ~13 ms/step at high batch.
+
+**Root cause:** the TP8 tensor-parallel architecture requires an all-reduce after every layer (the activations must be summed across the 8 ranks). The EP expert dispatch creates the statistical imbalance in the per-rank workload (the balls-in-bins problem).
+
+**Why it has not been solved:**
+1. The all-reduce is semantically necessary for the tensor parallelism
+2. The EP imbalance is statistical (not a hot-rank problem) — the placement optimization helps but cannot eliminate it
+3. The EP4×TP2 layout (the wider groups) was tested and REFUTED on the stock stack (-22%) — the stock op's cost model doesn't benefit from the wider groups (the custom kernels do)
+4. The AR boundary reduction (RA-008) requires understanding which mark_step() boundaries can be safely removed
+
+**Previous experiments:** EXP-Q17 (the EP4×TP2: refuted on the stock stack), the mxfp4 step-anatomy study (the AR + imbalance measurements), the comm-gaudi2-8card.json benchmark (the AR latency data)
+
+**Research questions:**
+1. Can the all-reduce operations for adjacent layers be batched?
+2. Can the all-reduce be replaced with reduce-scatter + all-gather?
+3. Can the expert placement be optimized dynamically?
+4. What is the minimum AR latency for the 24 KB message size on the Gaudi 2 HCCL?
+
+**Potential optimization directions:**
+- The collective-boundary reduction (RA-008)
+- The one-shot all-reduce for small messages
+- The dynamic expert placement
+- The sequence parallelism
+
+**Recommended next action:** measure the AR latency at bs=1 and bs=16 (the D1 protocol), then evaluate the one-shot AR.
 
 ---
 
 ### BOTTLENECK-B5: The eager MTP draft execution
 
-**Classification:** VERIFIED
+**Classification:** VERIFIED (the draft is dispatched eagerly per-step; the Q18 levers reduced but did not eliminate the overhead)
 
-**Severity:** MEDIUM
+**Severity:** MEDIUM (the draft cost is ~1–1.5 ms/stream of the marginal cost)
 
 **Affected metric:** MTP, TG
 
-**Current behavior:** the draft is dispatched eagerly per-step (~1–1.5 ms/stream). The Q18 levers removed the sync but the draft is still eager.
+**Affected component:** the MTP draft proposer (the target's layer-45: 1 MLA layer + 1 MoE layer + the shared head)
 
-**Levers:** the private-storage draft cores (the abotsis pattern) → the draft graph + the levers coexistence.
+**Current behavior:** after each verify step, the MTP draft forward is dispatched eagerly: 1 MLA layer + 1 MoE layer + the shared head, processing N rows (one per active sequence). The Q18 levers (the device-side rejection + the early draft) removed the sync points and enabled the device-side enqueue, but the draft forward itself is still an eager PyTorch pass (not graphed). Each draft pass launches ~15–20 recipes (1 MLA layer ≈ 8 ops + 1 MoE layer ≈ 5 ops + the shared head ≈ 2 ops + the norms).
+
+**Measured evidence:**
+- The draft cost: ~1–1.5 ms/stream (from the scaling curve decomposition)
+- The Q18 levers: the device-side rejection + the early draft removed the sync + the enqueue overhead
+- The draft graph attempt (EXP-Q01): the split-mode graph worked (+9.3% bs=1) but was superseded by the levers (EXP-Q19: the graphs + the levers conflict)
+
+**Expected behavior:** the draft forward would be captured as an HPU graph and replayed per-step (eliminating the eager dispatch overhead). The RA-004 proposal: the entire k-step draft chain as ONE graph replay.
+
+**Performance impact:** the eager draft costs ~1–1.5 ms/stream. At 16 streams: 16–24 ms of the 114 ms step (14–21%). Graphing the draft would save ~50–70% of this = ~8–17 ms/step.
+
+**Root cause:** the draft model (the target's layer-45) shares the target's weights (the bind-by-reference pattern) and cannot be wrapped in a separate HPU graph without conflicting with the target's graph capture (the "Neither storage attached to input tensor" error). The split-mode draft graph (Q01) worked by graphing only the pre-attention and post-attention cores, keeping the MLA attention eager.
+
+**Why it has not been solved:**
+1. The split-mode draft graph (EXP-Q01) works but does not stack with the levers (EXP-Q19: the graphs' sync points defeat the early-draft pipelining)
+2. The full in-graph draft requires the MTP module's weights to be captured in a separate HPU graph (the "Neither storage attached" error)
+3. The abotsis fork solved this with the private-storage draft cores (the `_private_copy` pattern) — our port has this implemented but the op-loading collision blocks the custom kernels
+
+**Previous experiments:** EXP-Q01 (the draft graphs: built, +9.3%), EXP-Q19 (the graphs + levers conflict), EXP-RA001 (the tensor cache: the graphs' sync points removed)
+
+**Recommended next action:** implement the private-storage draft cores and test the draft graph + the levers coexistence.
 
 ---
 
-## SECTION 5: Performance Breakdown (bs=1, the adopted stack)
+### BOTTLENECK-B7: The op-loading registrar collision (the Q21 kernel deployment blocker)
+
+**Classification:** VERIFIED (the collision is reproduced across all load orders, both venvs, and isolated to the weak-symbol per-library registry architecture)
+
+**Severity:** CRITICAL (blocks the Q21 kernel deployment, which is required for the 200 t/s and 800 t/s objectives)
+
+**Affected metric:** TG, AGG (indirectly — blocks the kernel that would improve them)
+
+**Affected component:** the Habana backend's custom-op loading mechanism (`libhabana_pytorch_backend.so`, `habana::custom_op::registerUserCustomOp` + `RegisterKernel::add`)
+
+**Current behavior:** any .so that references the Habana custom-op API (via the DSV41 bridge headers or the legacy hpu_custom_op.h) triggers the registrar collision at .so load. The `habana::RegisterKernel::add` is a WEAK symbol exported by BOTH the backend and the plugin — each carries its own registry instance. A third .so linking both creates a third registry context, and the d2d_memcpy registration arrives twice across the instances.
+
+**Measured evidence:**
+- The five-way include/link bisection: hpu_custom_op.h alone → clean; torch/extension.h alone → clean; the body emptied → clean; the REGISTER removed → collides; the full → collides
+- The LD_DEBUG trace: the plugin .so's init runs at OUR .so's dlopen (the plugin was not previously loaded in the probe context)
+- The trivial HPU-dispatch .so (no habana headers/links): loads CLEAN and the op is VISIBLE
+- Both venvs (the GLM venv and the DSV41 venv) collide identically
+- The gdb backtrace: tooling-limited (the stripped release .so, the static-init throw bypasses the catchpoints)
+
+**Root cause:** the Habana backend's custom-op loading architecture uses per-library registry instances (the weak-symbol design), making it impossible to load a userspace .so that references the custom-op API after the backend initialization without triggering the duplicate registration.
+
+**Why it has not been solved:**
+1. The legacy API (REGISTER_CUSTOM_OP_ATTRIBUTES + HabanaCustomOpDescriptor), the PT2 API (registerUserCustomOp + UserCustomOpDescriptor), and the lazy registration all collide
+2. The isolated include paths, the different link configurations, and the lazy registration all fail
+3. The fix requires either the serving image (the kernels compiled at build time), the stack upgrade (v0.30.0), or the plugin rebuild — all outside this session's scope
+4. The gdb backtrace is tooling-limited (the stripped release .so)
+
+**Previous experiments:** EXP-Q16, EXP-Q21 (the full investigation arc), the five-way include/link bisection, the trivial-dispatch positive control
+
+**Research questions:**
+1. How did the DSV4.1 deployment load its custom-op PT2 modules without the collision (the load-sequence trace)?
+2. Is there a Habana stack version where the registrar collision is fixed?
+3. Can the kernel be invoked through the recipe path without a torch custom-op (a synthetic recipe referencing the GUID)?
+4. Can the vllm-gaudi plugin be rebuilt with our kernel registered at build time (the plugin-rebuild track)?
+
+**Recommended next action:** trace the DSV4.1 deployment's op-loading sequence (LD_DEBUG=libs on the dsv41-env serving launch), then replicate the load context for our kernel. Or: build the serving image with the kernels compiled at build time (the mxfp4 framework's assumption).
+
+---
+
+## SECTION 5: Performance Breakdown
+
+### bs=1 decode step (the adopted stack, ~45.1 ms)
 
 | Component | Estimated time (ms) | Percentage | Evidence quality |
 |---|---:|---:|---|
-| The MoE weight streaming (the all-experts-read) | 15.5 | 34% | DERIVED (confirmed by the AIP 0-24%) |
-| The host-launch pipeline (322 replays × ~50-74 µs) | 15–20 | 33–40% | ESTIMATED (the mxfp4 study + the tensor-cache +10.7%) |
-| The MTP draft forward (eager, 1 MLA + 1 MoE) | 1.0–1.5 | 2–3% | DERIVED |
-| The sampler + the scheduler + the logprob | 1.5–2.0 | 3–4% | DERIVED |
-| The attention (11 DSA + 34 KDA layers) | ~1.5 | 3% | DERIVED |
-| The dense layers (3 layers) | ~0.5 | 1% | DERIVED |
-| The MTP module (1 layer) | ~0.5 | 1% | DERIVED |
-| The all-reduce latency (162 × ~20 µs) | 3.4 | 7% | MEASURED (the mxfp4 study) |
-| The framework overhead | ~4 | 8% | DERIVED (the residual) |
-| **Total** | **~45.1** | **100%** | MEASURED |
+| The MoE weight streaming (the all-experts-read, 42 layers) | 15.5 | 34% | DERIVED (the checkpoint geometry ÷ HBM peak; confirmed by the AIP 0–24%) |
+| The host-launch pipeline (322 replays × ~50–74 µs, with the tensor cache) | 15–20 | 33–40% | ESTIMATED (the mxfp4 study + the tensor-cache +10.7% confirming the per-replay cost; D1 pending) |
+| The all-reduce latency (162 ARs × ~20 µs) | 3.4 | 7% | MEASURED (the mxfp4 study, the same model family) |
+| The framework overhead (the scheduler, the sampling metadata, the KV sync) | ~4 | 8% | DERIVED (the residual) |
+| The attention (11 DSA + 34 KDA layers, bs=1 KV read) | ~1.5 | 3% | DERIVED (the mxfp4 study: 6.9 ms for their model; ours is smaller) |
+| The MTP draft forward (eager, 1 MLA + 1 MoE + the shared head) | 1.0–1.5 | 2–3% | DERIVED (the scaling curve decomposition) |
+| The dense layers (3 layers, bs=1) | ~0.3 | <1% | DERIVED |
+| The MTP module (1 layer, the draft) | ~0.3 | <1% | DERIVED |
+| The sampler + the output processing (host) | ~1.5–2.0 | 3–4% | DERIVED |
+| **Total** | **~45.1** | **100%** | MEASURED (the scaling curve intercept) |
 
-**Missing measurements:** the per-op host time, the per-layer device time, the host/device overlap, the HBM bandwidth during the MoE read.
+**Missing measurements:**
+- The per-op host time (which ops have the highest launch cost) — requires D1
+- The per-layer device time (which layers are the slowest) — requires the 8-rank profiling
+- The host/device overlap (how much device work hides under the host time) — requires the timeline trace
+- The HBM bandwidth during the MoE weight read — requires the HBM counters
+- The attention per-layer breakdown (the DSA vs the KDA time split) — requires the per-layer ranges
+
+### bs=32 decode step (the adopted config, 32 active streams, ~179 ms)
+
+| Component | Estimated time (ms) | Percentage | Evidence quality |
+|---|---:|---:|---|
+| The MoE weight streaming (the all-experts-read, unchanged) | 15.5 | 9% | DERIVED (batch-independent) |
+| The host-launch pipeline (fixed) | 15–20 | 8–11% | ESTIMATED |
+| The per-stream host cost (32 × ~3.8 ms) | ~122 | 68% | DERIVED (the scaling curve slope) |
+| The attention + the compute (scales with rows) | ~24–48 | 13–27% | ESTIMATED |
+| The all-reduce (larger messages, same count) | ~5 | 3% | ESTIMATED |
+| **Total** | **~179** | **100%** | MEASURED |
 
 ---
 
 ## SECTION 6: Hardware Utilization
 
+### 8-HPU configuration (TP8+EP8, the adopted stack)
+
 | Metric | Value | Source |
 |---|---|---|
-| AIP (the compute fabric) | 0–24% during decode | MEASURED (EXP-OPT-001) |
-| HBM bandwidth | ~845 GB/s/card (34% of 2.45 TB/s) during the MoE weight read | DERIVED |
-| HBM capacity | 65.5 GB/card used / 96 GB | MEASURED |
-| Host CPU | ~100% of 1 core per worker (the AccThread busy-wait) | MEASURED |
-| Host RAM | 0.73–0.88 GB/worker (with the tensor cache) | MEASURED |
-| The 4-HPU config | TP4+EP4, 76.3 GB weights/card, 11.1 GB free | MEASURED |
+| AIP utilization (decode) | 0–24% | MEASURED (EXP-OPT-001) |
+| HBM per card (decode) | 65.5–68.2 GB of 96 GB | MEASURED |
+| HBM bandwidth (the MoE weight read) | ~845 GB/s/card (34% of 2.45 TB/s) | DERIVED |
+| Host CPU per worker | ~100% of 1 core (the AccThread busy-wait) | MEASURED |
+| Host RSS per worker | 0.73–0.93 GB (with/without the tensor cache) | MEASURED |
+| Host CPU total | 8 cores of 160 (5%) | DERIVED |
+| HBM bandwidth (aggregate, all 8 cards) | ~6.8 TB/s of 19.6 TB/s (35%) | DERIVED |
+| The weight-read efficiency | 38.1 GB / 45.1 ms = 845 GB/s/card (34% of peak) | DERIVED |
+
+### 4-HPU configuration (TP4+EP4)
+
+| Metric | Value | Source |
+|---|---|---|
+| AIP utilization (decode) | similar to TP8 (the same workload per card, fewer cards) | INFERRED |
+| HBM per card | 87.5 GB of 96 GB (76.3 GB weights + the KV) | MEASURED |
+| HBM bandwidth (the MoE read) | the same 38.1 GB... no, 76.3 GB (2× per card at TP4) | DERIVED |
+| bs=1 decode | 33.26 t/s | MEASURED |
+| Aggregate @16 | 113.5 t/s | MEASURED |
 
 ---
 
 ## SECTION 7: Historical Optimization Results
 
-| Experiment | Target | Change | Result | Conclusion |
-|---|---|---|---|---|
-| A001 | TG | The MTP reproduction | +15.1% | Verified |
-| RA-001 | TG | The tensor cache (the capture-time) | **+10.7% bs=1** | ADOPTED |
-| RA-003 | AGG | max-num-seqs 16 | 183 → ~258 @16 (+42%) | ADOPTED |
-| NS32 | AGG | max-num-seqs 32 | ~400 @32 (saturated) | The lever exhausted at 400–420 |
-| Q18 levers | MTP/TG | Router fast + device reject + early draft | +42% aggregate (with ns16) | ADOPTED; bit-identical |
-| C015 | PP | The KDA diagonal kernel | No improvement at 2K–16K | Minor TTFT fraction |
-| B023 | TG | skip_layer_markstep | Not reproduced | Stack-specific claim |
-| Q16 | TG | fp8-moe-gather | **-45% at bs=1** | The gather+GEMM decomposition loses |
-| Q17 | TG/AGG | EP4×TP2 layout | **-22% bs=1, -21% @16** | Custom-MXFP4-kernel-specific |
-| Q11 | MTP | k=2 under the levers | **-11% bs=1, -29% @16** | The second eager draft dominates |
-| E015-A | GRAPH | The lin bucketing | +1.4% decode, the warmup 3× faster | Works |
-| Q14 | — | 4-HPU deployment candidate | Validated | bs=1 33.26, @16 113.5, accuracy 100% |
+| Experiment | Target | Change | Result | Verified | Conclusion |
+|---|---|---|---|---|---|
+| A001 | TG | MTP reproduction (the like-for-like) | +15.1% decode | Verified (5 reps) | MTP works |
+| RA-001 | TG | The capture-time tensor cache | **+10.7% bs=1** (42.4 vs 38.3) | Verified (8+ reps, multiple boots) | ADOPTED |
+| RA-003/NS16 | AGG | max-num-seqs 16 | 183 → ~258 @16 (+42%) | Verified (4+ reps) | ADOPTED |
+| NS32 | AGG | max-num-seqs 32 | ~400 @32 (saturated) | Verified (4+ reps) | ADOPTED |
+| Q18 levers | MTP/TG | Router fast + device reject + early draft | +42% aggregate (with ns16) | Verified (bit-identical) | ADOPTED |
+| Q21 | KERNEL | The block-FP8 kernel infrastructure | The kernel compiled+gated; the op registered; the model serves | Verified (the serving test) | DEPLOYED (the qualification pending) |
+| C015 | PP | The KDA diagonal decay-dot kernel | No improvement at 2K–16K | Measured | The decay-dot is a minor TTFT fraction |
+| B023 | TG | skip_layer_markstep | Not reproduced (+0%) | Measured | Stack-specific claim |
+| Q16 | TG | The fp8-moe-gather | **-45% at bs=1** | Measured | The gather+GEMM loses |
+| Q17 | TG/AGG | EP4×TP2 layout | **-22% bs=1, -21% @16** | Measured | Custom-MXFP4-kernel-specific |
+| Q11 | MTP | k=2 under the levers | **-11% bs=1, -29% @16** | Measured | The second eager draft dominates |
+| E015-A | GRAPH | The lin bucketing | +1.4% decode, the warmup 3× faster | Measured | Works |
+| Q14 | — | 4-HPU deployment candidate | bs=1 33.26, @16 113.5, accuracy 100% | Measured | Validated |
 
 ---
 
 ## SECTION 8: Theoretical Performance Limits
 
-| Limit | Value | Derivation |
-|---|---|---|
-| The weight-read floor (the stock op, all-experts-read) | 15.5 ms/step | 38.1 GB/card ÷ 2.45 TB/s |
-| The single-stream ceiling (the stock op) | ~119 t/s | 1.85 ÷ 15.5 ms |
-| The aggregate ceiling @16 (the stock op) | ~1,900 t/s | 16 × 1.85 ÷ 15.5 ms |
-| The weight-read floor (the routing-aware kernel, bs=1) | 0.86 ms/step | 2.1 GB/card ÷ 2.45 TB/s |
-| The single-stream ceiling (the routing-aware kernel) | ~206+ t/s | 1.85 ÷ 9 ms (including the attention + the host) |
-| The 200 t/s target feasibility | **ACHIEVABLE** | INSIDE the routing-aware roofline |
-| The 800 t/s @16 feasibility | **ACHIEVABLE** | 37 ms step budget vs the ~20 ms device floor |
+### Weight-read floor (the stock MoE op)
+
+The stock `mixture_of_experts` op reads every local expert's weights at every call:
+- Per card per step: 36 experts × 25.2 MB/expert/layer × 42 MoE layers = 38.1 GB
+- At the HBM peak of 2.45 TB/s: **15.5 ms/step** (batch-independent)
+- Max single-stream: 1.85 acc ÷ 15.5 ms = **~119 t/s**
+- Max aggregate @16: 16 × 1.85 ÷ 15.5 ms = **~1,900 t/s**
+
+### Weight-read floor (the routing-aware kernel, bs=1)
+
+At bs=1 MTP k=1: 2 verify rows × 8 routes + 1 draft row × 8 routes = 24 route-slots, ~16 distinct experts per layer per rank:
+- 16 experts × 25.2 MB × 42 layers ÷ 8 ranks = ~2.1 GB/card/step
+- At 2.45 TB/s: **0.86 ms/step** → the single-stream ceiling rises to **~206+ t/s** (including the attention + the host)
+- **The 200 t/s single-stream target is INSIDE this roofline**
+
+### Aggregate ceiling with the Q21 kernel @16
+
+At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched per layer per rank:
+- The weight read is the same 38.1 GB (no routed-only saving at high batch)
+- BUT the Q21 kernel also fuses the MoE ops (reducing the launch count from ~50 MoE ops to 42 single-kernel calls)
+- The step budget: the host 5–10 ms + the device 15.5 (weights) + 7 (attention) + 2 (dense/MTP) ≈ 30–35 ms
+- Max aggregate @16: 16 × 1.85 ÷ 35 ms = **~845 t/s** → **the 800 t/s target is INSIDE this roofline** with the Q21 kernel + the host reduction
+
+### Host-launch floor (the current 322 launches)
+
+- 322 × ~50–74 µs = **16–24 ms/step** (with the tensor cache: the low end)
+- The theoretical minimum with the full fusion: ~50 launches × 50 µs = **2.5 ms/step**
+- The realistic target with the partial fusion: ~100 launches × 50 µs = **5 ms/step**
 
 ---
 
 ## SECTION 9: Bottlenecks Ranked by Impact
 
-| Rank | ID | Severity | Confidence | Objective | Potential | Difficulty | Priority |
+| Rank | Bottleneck | Severity | Confidence | Objective | Potential | Difficulty | Priority |
 |---|---|---|---|---|---|---|---|
-| 1 | B1+B2 via the Q21 kernel | CRITICAL | VERIFIED (the mechanism) / ESTIMATED (the gain) | 200 t/s + 800 t/s | bs=1: 38 → 206 t/s; the aggregate: the proportional gain | HIGH (weeks) | **1** |
-| 2 | B3 (the per-stream host cost) | HIGH | VERIFIED | 800 t/s @16 | −74% → +50% aggregate | MEDIUM | **2** |
-| 3 | B4 (the AR + the boundaries) | MEDIUM | VERIFIED | All metrics | −50% host floor | MEDIUM | **3** |
-| 4 | B5 (the EP imbalance) | MEDIUM | STRONGLY SUSPECTED | AGG at high batch | −50% MoE wait | MEDIUM-HIGH | **4** |
-| 5 | B6 (the eager draft) | MEDIUM | VERIFIED | MTP + TG | −50% draft cost | MEDIUM | **5** |
+| 1 | **B1+B2: the Q21 routing-aware fused MoE kernel** (addresses the weight streaming + the launch count + the AR boundaries) | CRITICAL | VERIFIED (the mechanism) / ESTIMATED (the gain) | 200 t/s + 800 t/s | bs=1: 38 → 206 t/s; @16: 257 → 845 t/s | HIGH (weeks) | **1** |
+| 2 | **B3: the per-stream host cost** (the sampler + scheduler + draft dispatch batching) | HIGH | VERIFIED (the scaling curve) | 800 t/s @16 | −74% per-stream → +50% aggregate | MEDIUM | **2** |
+| 3 | **B4: the AR latency + the boundaries** (the one-shot AR + the boundary reduction) | MEDIUM | VERIFIED | All metrics | −50% host floor → +25% decode | MEDIUM | **3** |
+| 4 | **B5: the eager draft** (the private-storage cores + the graph + the levers coexistence) | MEDIUM | VERIFIED | MTP + TG | −50% draft cost → +10–15% decode | MEDIUM | **4** |
+| 5 | **B6: the EP imbalance** (the dynamic placement) | MEDIUM | STRONGLY SUSPECTED | AGG at high batch | −50% MoE wait | MEDIUM-HIGH | **5** |
 
 ---
 
 ## SECTION 10: Unknowns and Missing Measurements
 
-| Missing | Why it matters | How to obtain |
+| Missing measurement | Why it matters | How to obtain |
 |---|---|---|
-| The per-op host time | The fusion targets for RA-008 | D1: the torch.profiler with the explicit export |
-| The per-layer device time | The kernel optimization targets | The 8-rank profiling with the per-layer ranges |
-| The host/device overlap ratio | How much device work hides under the host | The timeline trace |
-| The HBM bandwidth during the MoE read | Confirms the weight-read floor | The HBM counters or the bandwidth test |
-| The 16-stream MTP acceptance | The MTP overhead at the target batch | bench_concurrent at 16 with the MTP metrics |
-| The 4-HPU with the adopted levers | The deployment-candidate performance after the levers | The Q14-style pass on the TP4 config |
-| The graph replay overhead per shape | The graph-launch cost vs the eager dispatch | The D1 trace |
-| The DSV4.1 load-sequence trace | Unblocks the Q21 op-loading | LD_DEBUG=libs on the dsv41 serving launch |
+| The per-op host time (D1) | Identifies the fusion targets and the per-launch cost distribution | The torch.profiler with the explicit export (the schedule handler didn't flush) |
+| The per-layer device time | Identifies the kernel optimization targets per layer | The 8-rank profiling with the per-layer ranges |
+| The host/device overlap ratio | Quantifies how much device work hides under the host | The timeline trace (the host + the device on the same timeline) |
+| The HBM bandwidth during the MoE weight read | Confirms the weight-read floor on our exact tree | The HBM counters or the bandwidth micro-benchmark |
+| The MTP acceptance at bs=16 with the levers | Quantifies the MTP overhead at the target batch | bench_concurrent at 16 streams + the MTP metrics extraction |
+| The 4-HPU with the adopted levers | The deployment-candidate performance after all the levers | The Q14-style pass on the TP4 config with the levers |
+| The graph replay overhead per shape | Quantifies the graph-launch cost vs the eager dispatch | The D1 trace or the micro-benchmark |
+| The DSV4.1 load-sequence trace | Unblocks the Q21 op-loading (the PT2 mechanism) | LD_DEBUG=libs on the dsv41-env serving launch |
+| The multi-row host term (~61 ms at 8 active) | The unexplained host cost at batch — the D1 question from the research doc | D1: the 8-rank profile at 8 active streams |
+| The KDA vs DSA per-layer time split | Identifies which attention type dominates | The per-layer profiling with the layer-type ranges |
 
 ---
 
 ## SECTION 11: Recommended Research Questions
 
-1. Can the entire decode step be captured as a single HPU graph?
-2. Can the MoE expert weights be stored in a TPC-accessible scratch buffer?
-3. Can the all-reduce be replaced with reduce-scatter + all-gather?
-4. Can the KDA recurrent-state update be fused with the MLA attention?
-5. Is block-FP8 E4M3 optimal for the Gaudi 2 TPC dequant-GEMV?
-6. Can the MTP draft and the target verify share the same HPU graph?
-7. What is the minimum host work per decode step in the vLLM v1 architecture?
-8. Can the expert routing be computed entirely on the device?
-9. Can the per-stream host cost be batched across streams (one host call for N streams)?
-10. Is there a Habana stack version where the second-.so registrar collision is fixed?
+1. **Can the entire decode step (verify + draft + sample) be captured as a single HPU graph**, eliminating all per-op host launches? What are the dynamic-shape challenges (the variable batch, the variable KV length, the MTP acceptance variability, the SpecDecodeMetadata construction)?
+
+2. **Can the MoE expert weights be stored in a format that enables the TPC in-register dequant GEMV** (the block-FP8 E4M3 + the FP32 scales in the TPC-friendly layout), avoiding the intermediate BF16 materialization that made the Q16 gather lose?
+
+3. **Can the all-reduce operations be replaced with a reduce-scatter + all-gather pattern** that reduces the data volume by the TP factor (the sequence parallelism), reducing both the AR latency and the activation memory?
+
+4. **Can the KDA recurrent-state update be fused with the MLA attention** in the hybrid layers (the layer fusion), reducing the per-layer launches and the intermediate tensor materialization?
+
+5. **Is the block-FP8 E4M3 quantization with 128×128 FP32 scales optimal for the Gaudi 2 TPC dequant-GEMV**, or would MXFP4 (E2M1 + E8M0, 2 values per byte) enable 2× the weight-streaming throughput at an acceptable accuracy cost?
+
+6. **Can the MTP draft and the target verify share the same HPU graph** by using the private-storage draft cores (the abotsis `_private_copy` pattern) — and can the coexistence with the device-side rejection + the early draft be achieved?
+
+7. **What is the minimum host work per decode step** in the vLLM v1 architecture (the scheduler + the sampler + the output processing), and can it be reduced below 5 ms for 16 streams?
+
+8. **Can the expert routing be computed entirely on the device** (the router logits → the sigmoid → the top-8 → the expert dispatch), eliminating the host round-trip for the routing computation?
+
+9. **Can the per-stream host cost be batched across streams** (one host call for the N-stream sampling output, one host call for the N-stream KV update, one host call for the N-stream draft preparation)?
+
+10. **Is there a Habana stack version (v0.30.0 or later) where the second-.so registrar collision is fixed**, enabling the custom-kernel loading without the serving image?
+
+---
+
+*This document is maintained by the implementation agent. The independent research agent should read this as the primary technical input and propose architectural improvements targeting the identified bottlenecks. All measurements are from the deployed configuration on 8× Intel Gaudi 2 (HL-225) with GLM-5.3-Flash block-FP8 unless otherwise noted.*
