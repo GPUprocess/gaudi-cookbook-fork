@@ -481,7 +481,7 @@ Raw op dispatch (`OpOverload.__call__` + `OpOverloadPacket.__call__`) is ~21% of
 
 **Dependencies:** none — unblocked.
 
-**Recommended next action:** proceed to the routing-aware fused block-FP8 MoE GEMV (B1's fix) — the infrastructure (TPC compiler, op lib, registration, load order) is production-proven. Second: on-device qualification of the dequant kernel's numerical parity + a decode A/B with `GLM_FP8_MXK` toggled to measure the dequant kernel's live contribution.
+**Recommended next action:** proceed to the routing-aware fused block-FP8 MoE GEMV (B1's fix) — the infrastructure (TPC compiler, op lib, registration, load order, and now the wired dequant path) is production-qualified (AB-DEQ: parity perf, correct output, stable serving). The dequant swap alone is at parity (AB-DEQ); the win requires the fused GEMV that also cuts the launch count, or dequant+GEMM recipe fusion.
 
 ---
 
@@ -575,6 +575,7 @@ The 16-stream D1 profile (754 worker samples + 649 EngineCore samples) informs t
 | D1 | HOST | py-spy host profile, bs=1 (1458 samples) | replay 58% / draft 31.4% / sampler+meta ~11% of host; draft ≈7.5 ms/step (revised up 5×); replay internals localized to graphs.py:75 | Measured | Diagnosis established |
 | B7 | KERNEL | The load-context investigation (maps, LD_DEBUG, cross-tests) | The collision is a load-order artifact; the legacy-API op lib loads cleanly after HPU init — running in production (8/8 workers) | Measured | RESOLVED |
 | D1-16 | HOST | py-spy @16 streams: worker (754 samples) + EngineCore (649 samples) | Worker host: replay 68.6% / draft 17.4% (per-row: get_masked_input_and_mask) / sampler 9.9%; EngineCore 99.4% MQ-wait — the scheduler disproven as the per-stream bottleneck | Measured | B3 relocated to the worker |
+| AB-DEQ | KERNEL | The TPC dequant op wired into `apply_block_fp8_linear_hpu_dequant` (ops.py:954) behind GLM_FP8_MXK; same-boot-protocol A/B, fresh boots each arm, 8×512-token bs=1 reps + the arithmetic sanity | MXK=1: median 42.7 t/s (36.3–44.0); MXK=0: median 41.4 t/s (39.1–42.1); sanity 391 both arms; the server healthy, graphs capture with the custom op | Measured | **PARITY** — the op is production-qualified (correctness + stability) but the dequant swap alone does not move decode; the win must come from the fused MoE GEMV (B1) or from dequant+GEMM recipe fusion (the research question) |
 
 ---
 
@@ -635,8 +636,8 @@ At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched 
 | The HBM bandwidth during the MoE weight read | Confirms the weight-read floor on our exact tree | The HBM counters or the bandwidth micro-benchmark |
 | The MTP acceptance at bs=16 with the levers | Quantifies the MTP overhead at the target batch | bench_concurrent at 16 streams + the MTP metrics extraction |
 | The 4-HPU with the adopted levers | The deployment-candidate performance after all the levers | The Q14-style pass on the TP4 config with the levers |
-| The dequant kernel's live contribution | The mxk dequant kernel is registered+visible in all 8 workers; its decode A/B (GLM_FP8_MXK on/off) is unmeasured | The same-boot A/B decode bench with the env toggled |
-| The multi-row host term (~61 ms at 8 active) | The unexplained host cost at batch — the D1 question from the research doc | The 16-stream py-spy profile |
+| ~~The dequant kernel's live contribution~~ | ~~The mxk dequant kernel is registered+visible in all 8 workers; its decode A/B (GLM_FP8_MXK on/off) is unmeasured~~ **DONE (2026-11-08, AB-DEQ):** parity (42.7 vs 41.4 t/s median); the op is production-qualified; the running server stays on MXK=0 with the wired ops.py deployed (the env-guarded fallback keeps both paths identical when off); the next boot may enable MXK=1 for the fused-GEMV phase | — |
+| ~~The multi-row host term (~61 ms at 8 active)~~ | ~~The unexplained host cost at batch~~ **DONE (2026-11-08, D1-16):** the worker host @16 = replay ~42 ms + draft ~10.6 ms + sampler ~6 ms + meta ~2 ms; no unexplained residual | — |
 | The KDA vs DSA per-layer time split | Identifies which attention type dominates | The per-layer profiling with the layer-type ranges |
 
 ---
