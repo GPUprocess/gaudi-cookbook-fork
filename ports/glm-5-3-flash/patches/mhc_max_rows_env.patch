@@ -1,0 +1,13 @@
+diff --git a/ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu/mhc.py b/ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu/mhc.py
+index 6001f76..de31ac2 100644
+--- a/ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu/mhc.py
++++ b/ports/glm-5-3-flash/glm5_next_hpu/glm5_next_hpu/mhc.py
+@@ -28,7 +28,7 @@ import os
+ from pathlib import Path
+ 
+ SINKHORN = os.environ.get("GLM5_NEXT_MHC_SINKHORN", "torch")
+-MAX_ROWS = 1024
++MAX_ROWS = int(os.environ.get("GLM5_NEXT_MHC_MAX_ROWS", "1024"))
+ STOCK_LIB = "/usr/lib/habanalabs/libtpc_kernels.so"
+ _DEFAULT_LIB = Path(__file__).resolve().parents[2] / "kernels" / "dist"
+ LIB_DIR = Path(os.environ.get("GLM5_NEXT_MHC_LIB", str(_DEFAULT_LIB)))
