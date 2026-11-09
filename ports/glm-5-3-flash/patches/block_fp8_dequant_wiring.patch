@@ -1,0 +1,137 @@
+diff --git a/vllm_gaudi/extension/ops.py b/vllm_gaudi/extension/ops.py
+index 368b035e..97575b16 100644
+--- a/vllm_gaudi/extension/ops.py
++++ b/vllm_gaudi/extension/ops.py
+@@ -246,6 +246,12 @@ def flat_pa(query, key_cache, value_cache, block_list, block_mapping, block_bias
+         sinks = sinks.reshape(sinks.shape[0], 1)
+         sink = sinks.reshape(1, sinks.shape[0], 1, sinks.shape[1])
+         sink = sink.expand(query.shape[0], -1, query.shape[-2], -1)
++        # [gaudi-fix:sink-once] pipelined_pa adds exp(sink) to the partial sum of every block. Give each
++        # block sink - log(n), with n the number of blocks of its sequence, so that the merged
++        # sum holds exactly one exp(sink). Padding blocks map to no sequence and get n = 1.
++        mapping = block_mapping.float()
++        blocks_per_seq = torch.matmul(mapping, mapping.sum(0, keepdim=True).t()).clamp(min=1.0)
++        sink = (sink.float() - torch.log(blocks_per_seq).view(-1, 1, 1, 1)).to(sinks.dtype)
+         if kv_heads != q_heads:
+             sink = sink.unflatten(1, (kv_heads, -1))
+     if kv_heads != q_heads:
+@@ -392,6 +398,35 @@ def _naive_prompt_attention(query: torch.Tensor,
+ USING_INC = os.getenv("QUANT_CONFIG") is not None
+ 
+ 
++def _fsdpa_sink_extra_key(query, key, value, attn_bias, fsdpa_op, scale, softmax_mode, recompute_mode,
++                          padding_side, sinks):
++    """[gaudi-fix:sink-once] Apply the sink in FusedSDPA through one extra key.
++
++    An extra head dimension holds sink / scale in the query and 1 in the extra key, so that key's
++    logit is exactly the sink for every query; its value is zero. query [B, H, T, D],
++    key/value [B, Hkv, L, D] -> [B, H, T, D].
++    """
++    B, H, T, D = query.shape
++    Hkv, L = key.shape[1], key.shape[2]
++    Dp = (D + 1 + 63) // 64 * 64
++    dt = query.dtype
++    qx = (sinks.float() / scale).to(dt).view(1, H, 1, 1).expand(B, H, T, 1)
++    query = torch.cat([query, qx, query.new_zeros(B, H, T, Dp - D - 1)], dim=-1)
++    ek = key.new_zeros(B, Hkv, 1, Dp)
++    ek[..., D] = 1.0
++    key = torch.cat([torch.cat([key, key.new_zeros(B, Hkv, L, Dp - D)], dim=-1), ek], dim=2)
++    value = torch.cat([torch.cat([value, value.new_zeros(B, Hkv, L, Dp - D)], dim=-1),
++                       value.new_zeros(B, Hkv, 1, Dp)], dim=2)
++    if attn_bias is None:
++        # a fresh prompt runs causal; with the sink key appended that needs an explicit mask
++        keep = torch.ones(T, L, dtype=torch.bool, device=query.device).tril(L - T)
++        attn_bias = torch.zeros(T, L, dtype=dt, device=query.device).masked_fill_(~keep, -math.inf).view(1, 1, T, L)
++    attn_bias = torch.cat([attn_bias, attn_bias.new_zeros(*attn_bias.shape[:-1], 1)], dim=-1)
++    out = fsdpa_op(query, key, value, attn_bias, 0.0, False, scale, softmax_mode, recompute_mode, None,
++                   padding_side)
++    return out[..., :D]
++
++
+ def _fsdpa_prompt_attention(query: torch.Tensor,
+                             key: torch.Tensor,
+                             value: torch.Tensor,
+@@ -421,18 +456,22 @@ def _fsdpa_prompt_attention(query: torch.Tensor,
+         is_causal = False
+         valid_seq_lengths = None
+ 
+-    args = [
+-        query, key, value, attn_bias, 0.0, is_causal, scale, softmax_mode, recompute_mode, valid_seq_lengths,
+-        padding_side
+-    ]
+-    if sinks is not None:
+-        args += [window_size] if window_size else [None]
++    if sinks is not None and not window_size:  # [gaudi-fix:sink-once] FusedSDPA ignores `sink`
++        attn_weights = _fsdpa_sink_extra_key(query, key, value, attn_bias, fsdpa_op, scale, softmax_mode,
++                                             recompute_mode, padding_side, sinks)
+     else:
+-        args += [window_size] if window_size else []
+-    # use sinks in fsdpa
+-    if sinks is not None:
+-        args += [sinks]
+-    attn_weights = fsdpa_op(*args)
++        args = [
++            query, key, value, attn_bias, 0.0, is_causal, scale, softmax_mode, recompute_mode, valid_seq_lengths,
++            padding_side
++        ]
++        if sinks is not None:
++            args += [window_size] if window_size else [None]
++        else:
++            args += [window_size] if window_size else []
++        # use sinks in fsdpa
++        if sinks is not None:
++            args += [sinks]
++        attn_weights = fsdpa_op(*args)
+ 
+     attn_weights = attn_weights.transpose(1, 2)
+     if sinks is not None:
+@@ -912,9 +951,26 @@ def apply_block_fp8_linear_hpu_dequant(
+     input_2d = input.view(-1, input.shape[-1])
+     original_M = original_M.data.item()
+     original_N = original_N.data.item()
+-    weight = dequant_block_fp8_weight_naive(weight, weight_scale, block_size, input.dtype, original_M, original_N,
+-                                            do_unpad)
+-    output = torch.nn.functional.linear(input_2d, weight, bias=None)
++    # [glm-fp8-mxk] route the block-FP8 weight dequant through the TPC kernel
++    # (one op replaces the cast+mul chain). Falls back to the stock path when
++    # GLM_FP8_MXK is unset, the op is not registered, or the shapes do not
++    # match the kernel's contract (contiguous 2-D, N%128==0, K%256==0,
++    # scales [N/128, K/128]). The do_unpad handling stays in torch either way.
++    dequant_weight = None
++    if (os.environ.get("GLM_FP8_MXK", "0") == "1"
++            and weight.dim() == 2 and weight.is_contiguous()
++            and weight_scale.dim() == 2 and weight_scale.is_contiguous()
++            and weight.size(0) % 128 == 0 and weight.size(1) % 256 == 0
++            and weight_scale.shape[0] == weight.size(0) // 128
++            and weight_scale.shape[1] == weight.size(1) // 128
++            and hasattr(torch.ops.custom_op, "block_fp8_dequant_glm")):
++        dequant_weight = torch.ops.custom_op.block_fp8_dequant_glm(weight, weight_scale)
++        if do_unpad:
++            dequant_weight = unpad_weight(dequant_weight, original_M, original_N, keep_first_dim=False)
++    else:
++        dequant_weight = dequant_block_fp8_weight_naive(weight, weight_scale, block_size, input.dtype,
++                                                        original_M, original_N, do_unpad)
++    output = torch.nn.functional.linear(input_2d, dequant_weight, bias=None)
+     if bias is not None:
+         output = output + bias
+     return output.to(dtype=input.dtype).view(*input.shape[:-1], -1)
+@@ -1311,7 +1367,9 @@ class VllmMixtureOfExpertsOpFP8PerChannel(VllmMixtureOfExpertsOpBase):
+ 
+         if self.w13_input_scale is None:
+             x_fp8, x_scale = dynamic_quant(x)
+-            final_hidden_states = torch.ops.hpu.mixture_of_experts(hidden_states=x_fp8,
++            # [gaudi-fix:moe-explicit-overload] call the overload by name: the packet tries overloads with a float
++            # d_scale_hidden_states first, and the mismatch message formats x_scale (device sync).
++            final_hidden_states = torch.ops.hpu.mixture_of_experts.fp8_fused_weights_dynamic(hidden_states=x_fp8,
+                                                                    expert_routing_table=topk_ids.to(torch.int64),
+                                                                    router_weights=topk_weights.to(x.dtype),
+                                                                    w12=w13_list,
+@@ -1329,7 +1387,7 @@ class VllmMixtureOfExpertsOpFP8PerChannel(VllmMixtureOfExpertsOpBase):
+             # w2_input_scale should be List[Tensor] when static and fused
+             w2_input_scale = [self.w2_input_scale[i] for i in range(self.num_experts)]
+             x_fp8 = torch.ops.hpu.cast_to_fp8_v2(x, 1.0 / x_scale, False, False, torch.float8_e4m3fn)[0]
+-            final_hidden_states = torch.ops.hpu.mixture_of_experts(hidden_states=x_fp8,
++            final_hidden_states = torch.ops.hpu.mixture_of_experts.fp8_fused_weights(hidden_states=x_fp8,
+                                                                    expert_routing_table=topk_ids.to(torch.int64),
+                                                                    router_weights=topk_weights.to(x.dtype),
+                                                                    w12=w13_list,
