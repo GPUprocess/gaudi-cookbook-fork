@@ -1,6 +1,6 @@
 # Current Bottleneck Analysis — GLM-5.3-Flash on Intel Gaudi 2
 
-**Last updated:** 2026-11-08 (revision 3 — D1 host profiling bs=1 + @16, B7 resolution)
+**Last updated:** 2026-11-08 (revision 3 — D1 bs=1 + @16, B7 resolution, AB-DEQ, Q01v2 draft-graph A/B + accuracy rejection)
 **Git commit:** `80a7fc6` → `60daaf7`+ (branch `glm53-flash`)
 **Model:** GLM-5.3-Flash (block-FP8 E4M3, 128×128 scales), 45 layers + 1 MTP layer, 288 routed experts (top-8), 42 MoE layers, 34 KDA layers + 11 DSA layers (MLA), mHC hyper-connections (4 streams, Sinkhorn), 3 dense layers
 **Serving stack:** vllm-gaudi v0.26.0 (b059f9c), Gaudi SW 1.24.1, lazy mode, TP8+EP8
@@ -412,20 +412,20 @@ Raw op dispatch (`OpOverload.__call__` + `OpOverloadPacket.__call__`) is ~21% of
 **Root cause:** the draft model shares the target's weights and cannot be wrapped in a separate HPU graph without the storage conflict (the "Neither storage attached" error); the Q18 levers made the eager path pipelined but the per-op host costs (dispatch, mark_step, extension ops, a native SiluAndMul fallback) remain.
 
 **Why it has not been solved:**
-1. The split-mode draft graph (EXP-Q01) works (+9.3% bs=1) but does not stack with the levers (EXP-Q19: the graphs' sync points defeat the early-draft pipelining)
-2. The full in-graph draft requires the MTP module's weights captured in a separate HPU graph (the storage conflict)
-3. The abotsis fork's private-storage draft cores (the `_private_copy` pattern) would resolve the conflict — implemented in our port but blocked until B7 resolved (now unblocked)
+1. The split-mode draft graph (EXP-Q01) worked (+9.3% bs=1) but conflicted with the levers (EXP-Q19)
+2. The private-storage rewrite (Q01v2) RESOLVES the conflict — the graphs + the levers coexist and deliver +20% bs=1
+3. The remaining blocker is the graph-captured draft's NUMERICS: the fusion-order rounding drift flips near-tie tokens (golden 1/12, suite −2.5 pp) → policy-rejected until the numerics align with the eager path
+4. The full in-graph draft requires the MTP module's weights captured in a separate HPU graph (the storage conflict — solved by `_private_copy`)
 
-**Previous experiments:** EXP-Q01 (the draft graphs: built, +9.3%), EXP-Q19 (the graphs + levers conflict), EXP-RA001 (the tensor cache), EXP-Q18 (the levers: adopted)
-
-**Relevant source code:** `glm5_next_hpu/decode_lean.py:112 (early_draft)`, `vllm_gaudi/v1/spec_decode/hpu_eagle.py:120 (propose)`, `vllm_gaudi/extension/ops.py:992 (dynamic_quant)`, `vllm/model_executor/layers/activation.py:201 (SiluAndMulWithClamp.forward_native)`
+**Previous experiments:** EXP-Q01 (the draft graphs: built, +9.3%), EXP-Q19 (the graphs + levers conflict), EXP-RA001 (the tensor cache), EXP-Q18 (the levers: adopted), **EXP-Q01v2 (2026-11-08): the private-storage rewrite + the levers COEXIST (the Q19 conflict is resolved); bs=1 49.75 t/s median (+20%) BUT suite v1 97.5% (−2.5 pp) and the golden gate 1/12 — REJECTED per the accuracy policy. The blocker: the graph-captured draft's fusion-order rounding drift flips near-tie tokens (all golden divergences at top-2 gaps 0.125–1.875; the R003 suite item fails 5/5 on a bimodal answer).**
 
 **Research questions:**
 1. Can the draft's `dynamic_quant` + `SiluAndMul` be replaced with the TPC kernels (the mxk family) to cut the eager cost per op?
 2. Can the draft forward share the TARGET's HPU graph (the private-storage cores) and replay inside the verify graph?
 3. What is the minimum eager-op set for the draft (the metadata + embedding + 2 layers + head)?
+4. **(NEW, from Q01v2): can the captured draft's numerics be aligned with the eager path** (the same op order/reduction shapes inside the graph core, or the captured-core arithmetic in fp32 accumulators) so the near-tie flips vanish? The +20% is banked behind this.
 
-**Recommended next action:** implement the private-storage draft cores and re-test the draft graph + the levers coexistence; the D1 data now quantifies the prize (~7.5 ms/step).
+**Recommended next action:** numerics-align the draft graph cores with the eager draft (target: the golden gate back to 12/12 or the suite back to ≥99.5%), then re-run the Q01v2 protocol; the +20% makes this the highest-value TG fix after B1.
 
 ---
 
@@ -576,6 +576,7 @@ The 16-stream D1 profile (754 worker samples + 649 EngineCore samples) informs t
 | B7 | KERNEL | The load-context investigation (maps, LD_DEBUG, cross-tests) | The collision is a load-order artifact; the legacy-API op lib loads cleanly after HPU init — running in production (8/8 workers) | Measured | RESOLVED |
 | D1-16 | HOST | py-spy @16 streams: worker (754 samples) + EngineCore (649 samples) | Worker host: replay 68.6% / draft 17.4% (per-row: get_masked_input_and_mask) / sampler 9.9%; EngineCore 99.4% MQ-wait — the scheduler disproven as the per-stream bottleneck | Measured | B3 relocated to the worker |
 | AB-DEQ | KERNEL | The TPC dequant op wired into `apply_block_fp8_linear_hpu_dequant` (ops.py:954) behind GLM_FP8_MXK; same-boot-protocol A/B, fresh boots each arm, 8×512-token bs=1 reps + the arithmetic sanity | MXK=1: median 42.7 t/s (36.3–44.0); MXK=0: median 41.4 t/s (39.1–42.1); sanity 391 both arms; the server healthy, graphs capture with the custom op | Measured | **PARITY** — the op is production-qualified (correctness + stability) but the dequant swap alone does not move decode; the win must come from the fused MoE GEMV (B1) or from dequant+GEMM recipe fusion (the research question) |
+| Q01v2 | MTP/TG | The private-storage draft HPU graphs (split mode, `VLLM_GLM_MTP_DRAFT_GRAPH=1`) stacked with the adopted levers; fresh boot, 8×512-token bs=1 reps + the golden gate + suite v1 (5 reps × 40) | **bs=1 median 49.75 t/s (48.2–51.1) = +20%**; golden gate 1/12 identical (vs 12/12 stock; every divergence at a small top-2 gap 0.125–1.875); **suite v1 97.5% (195/200) vs the 100% baseline = −2.5 pp** | Measured | **REJECTED per the accuracy policy** (−2.5 pp > the 0.5-pp bar; correctness failures reject regardless of speed). The single failing item R003 (the bat-and-ball trap, expected 5 → 10) fails in ALL 5 reps — the graph-captured draft's numerics drift flips near-tie tokens and R003's answer is bimodal. The +20% is REAL and the levers coexist (the EXP-Q19 conflict is resolved by the rewrite); the blocker is purely the draft's fusion-order rounding drift |
 
 ---
 
@@ -639,6 +640,7 @@ At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched 
 | ~~The dequant kernel's live contribution~~ | ~~The mxk dequant kernel is registered+visible in all 8 workers; its decode A/B (GLM_FP8_MXK on/off) is unmeasured~~ **DONE (2026-11-08, AB-DEQ):** parity (42.7 vs 41.4 t/s median); the op is production-qualified; the running server stays on MXK=0 with the wired ops.py deployed (the env-guarded fallback keeps both paths identical when off); the next boot may enable MXK=1 for the fused-GEMV phase | — |
 | ~~The multi-row host term (~61 ms at 8 active)~~ | ~~The unexplained host cost at batch~~ **DONE (2026-11-08, D1-16):** the worker host @16 = replay ~42 ms + draft ~10.6 ms + sampler ~6 ms + meta ~2 ms; no unexplained residual | — |
 | The KDA vs DSA per-layer time split | Identifies which attention type dominates | The per-layer profiling with the layer-type ranges |
+| The draft graph's fusion-order rounding drift (Q01v2) | The +20% draft-graph win is banked behind aligning the captured draft's numerics with the eager path (golden 1/12 → 12/12, the suite −2.5 pp → ≤0.5 pp) | Diff the captured core's op sequence vs the eager path (mtp.py `_DraftPreAttentionGraphCore`/`_DraftPostAttentionGraphCore`), align the reduction shapes, re-run the Q01v2 protocol |
 
 ---
 
