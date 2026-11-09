@@ -23,8 +23,8 @@
 | Prefill (warm, 0.5–8K) | **3.3–5.7K t/s** | 3–6K t/s | **met** |
 | Prefill (warm, 3.5–4K) | 2,538–2,787 t/s | 3–6K t/s | slightly below |
 | Maximum context | **1,062,400 tokens** | 1M | **met** |
-| 4-HPU (TP4+EP4) bs=1 | 33.3 t/s | — | candidate |
-| 4-HPU @16 | 113.5 t/s | — | candidate |
+| 4-HPU (TP4+EP4) bs=1 | 41.7 t/s median with the levers (+25% vs no-lever) | — | candidate (Q14v2) |
+| 4-HPU @16 | 180.8 t/s warm (+59% vs no-lever) | — | candidate (Q14v2) |
 | Accuracy | 100% (the adopted config) | ≤0.5 pp regression | **met** |
 
 **The three most important bottlenecks:**
@@ -54,9 +54,9 @@
 | Prefill (warm, 6–8K) | 3,782–5,663 t/s | 3–6K t/s | met | | MEASURED |
 | TTFT (warm, 2K tokens, gen=1) | 0.31 s | — | — | | MEASURED |
 | Maximum context | 1,062,400 tokens | 1,000,000 | met | 1660 hybrid blocks, needle at 860,739 | MEASURED |
-| 4-HPU bs=1 (TP4+EP4) | 33.26 t/s | — | — | GMU 0.95, capture 128, KV 320 blocks | MEASURED |
-| 4-HPU @16 | 113.5 t/s | — | — | same | MEASURED |
-| 4-HPU accuracy | 100% | ≤0.5 pp regression | met | suite v1, 2 reps | MEASURED |
+| 4-HPU bs=1 (TP4+EP4) | 41.3–45.1 t/s (median ~41.7, with the adopted levers) | — | — | GMU 0.95, capture 128, KV 320 blocks, MTP k=1 + the levers | MEASURED (2026-11-08) |
+| 4-HPU @16 | 180.8 t/s (warm; the FIRST concurrent batch pays the shape capture, ~31 t/s once, when VLLM_SKIP_WARMUP=true) | — | — | same | MEASURED (2026-11-08) |
+| 4-HPU accuracy | 100% (80/80, suite v1, 2 reps, with the levers) | ≤0.5 pp regression | met | same | MEASURED (2026-11-08) |
 | 8-HPU accuracy | 100% (adopted) / 97.5% (R003 chaos) | ≤0.5 pp regression | met (same-boot A/B) | suite v1, 5 reps | MEASURED |
 | MTP acceptance (bs=1) | 1.80–1.85 of 2.0 | — | — | k=1, per-position 73–98% | MEASURED |
 | MTP acceptance (bs=16) | 1.71–1.80 of 2.0 | — | — | varies with batch | MEASURED |
@@ -577,6 +577,7 @@ The 16-stream D1 profile (754 worker samples + 649 EngineCore samples) informs t
 | D1-16 | HOST | py-spy @16 streams: worker (754 samples) + EngineCore (649 samples) | Worker host: replay 68.6% / draft 17.4% (per-row: get_masked_input_and_mask) / sampler 9.9%; EngineCore 99.4% MQ-wait — the scheduler disproven as the per-stream bottleneck | Measured | B3 relocated to the worker |
 | AB-DEQ | KERNEL | The TPC dequant op wired into `apply_block_fp8_linear_hpu_dequant` (ops.py:954) behind GLM_FP8_MXK; same-boot-protocol A/B, fresh boots each arm, 8×512-token bs=1 reps + the arithmetic sanity | MXK=1: median 42.7 t/s (36.3–44.0); MXK=0: median 41.4 t/s (39.1–42.1); sanity 391 both arms; the server healthy, graphs capture with the custom op | Measured | **PARITY** — the op is production-qualified (correctness + stability) but the dequant swap alone does not move decode; the win must come from the fused MoE GEMV (B1) or from dequant+GEMM recipe fusion (the research question) |
 | Q01v2 | MTP/TG | The private-storage draft HPU graphs (split mode, `VLLM_GLM_MTP_DRAFT_GRAPH=1`) stacked with the adopted levers; fresh boot, 8×512-token bs=1 reps + the golden gate + suite v1 (5 reps × 40) | **bs=1 median 49.75 t/s (48.2–51.1) = +20%**; golden gate 1/12 identical (vs 12/12 stock; every divergence at a small top-2 gap 0.125–1.875); **suite v1 97.5% (195/200) vs the 100% baseline = −2.5 pp** | Measured | **REJECTED per the accuracy policy** (−2.5 pp > the 0.5-pp bar; correctness failures reject regardless of speed). The single failing item R003 (the bat-and-ball trap, expected 5 → 10) fails in ALL 5 reps — the graph-captured draft's numerics drift flips near-tie tokens and R003's answer is bimodal. The +20% is REAL and the levers coexist (the EXP-Q19 conflict is resolved by the rewrite); the blocker is purely the draft's fusion-order rounding drift |
+| Q14v2 | 4-HPU | TP4+EP4 with the ADOPTED LEVERS + MTP k=1 (the Q14 candidate re-measured with the levers; GMU 0.95, CAP 128, KV 320 blocks) | bs=1 41.3–45.1 t/s (+25% vs the no-lever 33.26); @16 **180.8 t/s warm (+59% vs the no-lever 113.5)**; suite v1 100% (80/80, 2 reps); the FIRST concurrent batch pays the 16-stream shape capture (~31 t/s once) under VLLM_SKIP_WARMUP=true | Measured (2026-11-08) | **The levers PORT to TP4** — the deployment candidate improves to 41.7 / 180.8 with accuracy intact; the same B1 roofline (the all-experts-read) governs the 4-HPU gap to the 200/800 targets |
 
 ---
 
@@ -636,7 +637,7 @@ At bs=16: 32 verify rows × 8 routes = 256 routes, all 36 local experts touched 
 | The host/device overlap ratio | Quantifies how much of the ~21 ms device work hides under the 24 ms host time | The timeline trace (the host + the device on the same timeline) |
 | The HBM bandwidth during the MoE weight read | Confirms the weight-read floor on our exact tree | The HBM counters or the bandwidth micro-benchmark |
 | The MTP acceptance at bs=16 with the levers | Quantifies the MTP overhead at the target batch | bench_concurrent at 16 streams + the MTP metrics extraction |
-| The 4-HPU with the adopted levers | The deployment-candidate performance after all the levers | The Q14-style pass on the TP4 config with the levers |
+| ~~The 4-HPU with the adopted levers~~ | ~~The deployment-candidate performance after all the levers~~ **DONE (2026-11-08, Q14v2):** TP4+levers bs=1 41.3–45.1 t/s (+25%), @16 180.8 t/s warm (+59%), accuracy 100% (2 reps); the levers port to TP4 | — |
 | ~~The dequant kernel's live contribution~~ | ~~The mxk dequant kernel is registered+visible in all 8 workers; its decode A/B (GLM_FP8_MXK on/off) is unmeasured~~ **DONE (2026-11-08, AB-DEQ):** parity (42.7 vs 41.4 t/s median); the op is production-qualified; the running server stays on MXK=0 with the wired ops.py deployed (the env-guarded fallback keeps both paths identical when off); the next boot may enable MXK=1 for the fused-GEMV phase | — |
 | ~~The multi-row host term (~61 ms at 8 active)~~ | ~~The unexplained host cost at batch~~ **DONE (2026-11-08, D1-16):** the worker host @16 = replay ~42 ms + draft ~10.6 ms + sampler ~6 ms + meta ~2 ms; no unexplained residual | — |
 | The KDA vs DSA per-layer time split | Identifies which attention type dominates | The per-layer profiling with the layer-type ranges |
