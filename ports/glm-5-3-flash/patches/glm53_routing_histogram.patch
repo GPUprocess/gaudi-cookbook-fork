@@ -1,0 +1,52 @@
+67a68,111
+> # [BG-2] the routing histogram (GLM_ROUTER_HISTOGRAM=1): per-layer expert-route
+> # counts over PREFILL-SIZED router calls (>128 rows — the eager >2048-token
+> # prefill path, which is NOT graph-captured so the live routes are observable).
+> # The layers cycle 0..44 within one prefill forward; a rolling 45-slot window
+> # per request. Dumped to /tmp/glm53_histo.npz every 20 requests and at exit.
+> _GLM_ROUTER_HISTO = _os_rf.environ.get("GLM_ROUTER_HISTOGRAM", "0") == "1"
+> _HISTO_N_EXPERTS = 288
+> _HISTO_N_LAYERS = 45
+> _HISTO_MIN_ROWS = 128
+> _HISTO = {"rows": [], "cur": None, "idx": 0, "n_req": 0}
+> 
+> def _histo_dump():
+>     import numpy as np
+>     rows = _HISTO["rows"]
+>     if not rows:
+>         return
+>     mat = np.stack([r.numpy() for r in rows])
+>     np.savez("/tmp/glm53_histo.npz", per_layer_counts=mat,
+>              n_requests=len(rows), n_layers=_HISTO_N_LAYERS,
+>              n_experts=_HISTO_N_EXPERTS)
+>     print(f"[BG-2] routing histogram: {len(rows)} requests x {_HISTO_N_LAYERS} layers -> /tmp/glm53_histo.npz", flush=True)
+> 
+> def _histo_record(topk_ids):
+>     cur = _HISTO["cur"]
+>     if cur is None:
+>         cur = torch.zeros(_HISTO_N_LAYERS, _HISTO_N_EXPERTS, dtype=torch.int64)
+>         _HISTO["cur"] = cur
+>         _HISTO["idx"] = 0
+>     counts = torch.bincount(topk_ids.detach().to(torch.int64).cpu().reshape(-1),
+>                             minlength=_HISTO_N_EXPERTS)
+>     cur[_HISTO["idx"]] += counts[:_HISTO_N_EXPERTS]
+>     _HISTO["idx"] += 1
+>     if _HISTO["idx"] >= _HISTO_N_LAYERS:
+>         _HISTO["rows"].append(cur)
+>         _HISTO["cur"] = None
+>         _HISTO["n_req"] += 1
+>         if _HISTO["n_req"] % 20 == 0:
+>             _histo_dump()
+> 
+> if _GLM_ROUTER_HISTO:
+>     import atexit as _atexit
+>     _atexit.register(_histo_dump)
+> 
+> 
+129a174,176
+>     if _GLM_ROUTER_HISTO and topk_ids.shape[0] > _HISTO_MIN_ROWS:
+>         _histo_record(topk_ids)
+> 
+437a485,486
+>         if _GLM_ROUTER_HISTO and topk_ids.dim() == 2 and topk_ids.shape[-1] == 8:
+>             _histo_record(layer, topk_ids)
