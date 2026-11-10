@@ -77,6 +77,11 @@ def _env_flag(name: str) -> bool:
 
 _DRAFT_GRAPH = _env_flag("VLLM_GLM_MTP_DRAFT_GRAPH")
 _DRAFT_GRAPH_MODE = os.environ.get("VLLM_GLM_MTP_DRAFT_GRAPH_MODE", "split").strip().lower()
+
+# [Q01v2-fp32] the draft-core fp32 accumulator alignment: the captured cores
+# compute in fp32 (the norm/proj/mlp chains) to match the eager path's internal
+# fp32 accumulation. Default OFF.
+_DRAFT_CORE_FP32 = _env_flag("VLLM_GLM_MTP_DRAFT_CORE_FP32")
 # Q07c phase 1: also route PROMPT-shaped draft calls (the prompt KV fill) through
 # the split cores. The cores are shape-agnostic on flat [N, H]; each novel token
 # count pays a one-time graph capture, so production needs runner-side bucket
@@ -171,8 +176,22 @@ class _DraftPreAttentionGraphCore(nn.Module):
         # requires 2D (its forward unpacks `num_tokens, hidden_dim = x.shape`).
         embedding = self.embed_tokens(input_ids)
         embedding = torch.where(positions.unsqueeze(-1) == 0, 0, embedding)
+        if _DRAFT_CORE_FP32:
+            return self._forward_fp32(input_ids, positions, hidden_states)
         residual = self.eh_proj(torch.cat([self.enorm(embedding), self.hnorm(hidden_states)], dim=-1))
         return residual, self.input_layernorm(residual)
+
+    def _forward_fp32(self, input_ids, positions, hidden_states):
+        """fp32 accumulator variant: the chain in fp32, the outputs cast back
+        to bf16. The intermediate rounding at the op boundaries becomes
+        fp32-precision (the Q01v2 numerics alignment)."""
+        embedding = self.embed_tokens(input_ids)
+        embedding = torch.where(positions.unsqueeze(-1) == 0, 0, embedding)
+        e_n = self.enorm(embedding.to(torch.float32)).to(torch.bfloat16)
+        h_n = self.hnorm(hidden_states.to(torch.float32)).to(torch.bfloat16)
+        residual = self.eh_proj(torch.cat([e_n, h_n], dim=-1).to(torch.float32)).to(torch.bfloat16)
+        attn_in = self.input_layernorm(residual.to(torch.float32)).to(torch.bfloat16)
+        return residual, attn_in
 
 
 class _DraftPostAttentionGraphCore(nn.Module):
@@ -185,8 +204,17 @@ class _DraftPostAttentionGraphCore(nn.Module):
         self.mlp = mtp.mlp  # shared: fused-MoE registration is storage-identity-keyed
 
     def forward(self, residual: torch.Tensor, attention: torch.Tensor) -> torch.Tensor:
+        if _DRAFT_CORE_FP32:
+            return self._forward_fp32(residual, attention)
         states = residual + attention
         return self.shared_head_norm(states + self.mlp(self.post_attention_layernorm(states)))
+
+    def _forward_fp32(self, residual, attention):
+        """fp32 accumulator variant (the Q01v2 numerics alignment)."""
+        states = residual.to(torch.float32) + attention.to(torch.float32)
+        n_states = self.post_attention_layernorm(states.to(torch.bfloat16)).to(torch.float32)
+        mlp_out = self.mlp(n_states.to(torch.bfloat16)).to(torch.float32)
+        return self.shared_head_norm((states + mlp_out).to(torch.bfloat16))
 
 
 class _DraftAttnGraphCore(nn.Module):
