@@ -487,6 +487,23 @@ class Glm5NextMTPModel(nn.Module):
                         return self._forward_attn_graph(input_ids, positions, hidden_states, md)
                     return self._forward_split(input_ids, positions, hidden_states)
 
+        # [RECIPE-DIFF fix] the eager-path seam isolation: with the draft
+        # graphs ON, an eager draft call (the prefill-shaped call is always
+        # eager) previously leaked its ops into the CALLER's lazy session —
+        # the prefill-graph capture buffer — producing the mega-recipe
+        # (1.4M nodes vs the isolated 444K) whose different cast fusion is
+        # the R003 numerics drift. mark_step + sync here lands the caller's
+        # accumulated ops in their own recipe BEFORE the draft ops trace,
+        # and the exit seam below lands the draft ops in their own.
+        if _DRAFT_GRAPH:
+            try:
+                import habana_frameworks.torch.core as htcore
+
+                htcore.synchronize()
+                htcore.mark_step()
+            except Exception:
+                pass
+
         from vllm.forward_context import set_forward_context
 
         # Work flat like every layer in this port: the proposer hands
@@ -515,7 +532,16 @@ class Glm5NextMTPModel(nn.Module):
             x = self.mtp.post_attention_layernorm(x)
             x = self.mtp.mlp(x)
         x = residual + x
-        return self.mtp.shared_head_norm(x).reshape(*lead, -1)
+        out = self.mtp.shared_head_norm(x).reshape(*lead, -1)
+        if _DRAFT_GRAPH:
+            try:
+                import habana_frameworks.torch.core as htcore
+
+                htcore.synchronize()
+                htcore.mark_step()
+            except Exception:
+                pass
+        return out
 
     def compute_logits(self, hidden_states: torch.Tensor, spec_step_idx: int = 0) -> torch.Tensor:
         return self.logits_processor(self.lm_head, hidden_states, None)
