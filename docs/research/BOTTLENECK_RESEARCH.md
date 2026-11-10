@@ -1,6 +1,7 @@
 # BOTTLENECK_RESEARCH — GLM-5.3-Flash on 8× Gaudi 2 (independent research architect)
 
-**Date:** 2026-11-09 (revision 1.4 — see Section 9 for the revision log; RA-018 added 2026-11-09)
+**Date:** 2026-11-10 (revision 1.5 — see Section 9 for the revision log; RA-018 added 2026-11-09;
+RA-019/020/021 + round-2 audit added 2026-11-10)
 **Primary input:** `kb_staging/current_bottleneck.md` (local v1, 2026-11-08 13:01) and its superseding internal
 revision `kb_staging/current_bottleneck_final.md` (rev 3, 2026-11-08 19:08 — includes the D1/D1-16 py-spy
 profiles and the B7 resolution). The sanitized server copy at `publish_work/fork/current_bottleneck.md`
@@ -99,6 +100,43 @@ fidelity.)
    RA-004 + attention/sampler/AR trims — the diagnosis's conclusion that "all four bottlenecks must be
    addressed simultaneously" is confirmed, with the host-side half of the combination identified more
    precisely here.
+
+### 1.5 Round-2 state (2026-11-10 — the post-ABCONFIG-WIN bottleneck model)
+
+The implementation agent's round-2 arc (D1-3 → PFG+MHC OOM → ABOTSIS-REF → AB3-HYPA → MEMLOG →
+**ABCONFIG-WIN** → the gather_sum port) changed the state of the project:
+
+1. **The prefill objective is MET** (5,546-7,723 t/s across 0.5-8K, +209-277% vs eager) via the
+   prefill-optimized profile: tensor cache OFF (`GLM_TENSOR_CACHE_OFF=1`) + prefill graph threshold
+   8,192. The CAP-8192/PFG+MHC/AB3 OOMs are worked around, not fixed — the root cause is now
+   identified (MEMLOG): the mHC-prep FP32 chain materializes ~20 × [rows, 4, 4096] FP32 per layer
+   (the 184-MiB class, 165.7 GB of the 667.7 GB capture volume; the 101 GB watermark that OOMed).
+2. **The cost is visible in decode:** bs=1 37.3 (−12% vs the round-1 adopted 42.4 — the RA-001
+   tensor-cache win forfeited for the prefill fix), @16 259.5 (parity), suite 97.5% (R003 — the
+   **4th flip source: the tensor-cache state itself**; the taxonomy: Q01v2 fusion drift, RA-011
+   in-flight consumption, MHC-ROWS kernel reduction order, ABCONFIG-WIN cache state).
+3. **The gather_sum port (RA-018/T1.1) is applied to the venv** (env-gated off) but deviates from the
+   corpus patch in three ways (the missing 16 MiB size cap, the bf16 sum, the DSV4.1-documented
+   all_gather stale-value hazard at batch >1) — RA-021 fixes these BEFORE the pending A/B. The
+   gsum probe (0.0%, wall_s 0.0) is an instrumentation artifact (probed a non-serving server;
+   re-probe after the A/B). [REV 1.5.1 UPDATE: the A/B RAN overnight (GSUM-T1) — the row-order
+   mechanism is REFUTED on our tree (no R003 flip on the hccl baseline), gather_sum is NEUTRAL
+   (R003 still flips, decode parity 43.1/43.7) — the 5th flip source: the AR order itself. The
+   deployed per-phase patch (RA-020's mechanism, attempted 23:41) has three defects (D1-D3) —
+   do not re-run as-is; the corrected implementation is the runner-side env route with the
+   >2,048 row-count signal. Detail: `RA-019-round2-theories.md` §7.]
+4. **The ops layer failed once** (CRASH-INCIDENT): the OOM-crash spam bloated the journal daemon
+   (tens of GB RSS on the 125 GB host) → the card-reset path (host-resident MMU page pool) failed →
+   hard power recoveries. Lessons recorded: the journal rate-limit, the host-RAM headroom as a
+   first-class constraint, the reset-failure signature.
+
+**The new top-3:** RA-021 (the gather_sum hardening — prerequisite for the pending A/B; hours),
+RA-020 (the per-phase tensor cache — the vendor reads `PT_HPUGRAPH_DISABLE_TENSOR_CACHE` per call
+(tier B); the 3-line runner change recovers the −12% decode now; falsifiable prediction: the suite
+returns to 100% — the R003 unflip), RA-019 (the full mHC-prep TPC kernel — the structural fix that
+removes the OOM class and the profile split; the DSV4.1 `control_mme` family is the pattern, the
+source is in the corpus and on this host). Full detail: `RA-019-round2-theories.md`; ranking:
+Section 7.
 
 ---
 
@@ -286,11 +324,12 @@ last word in the file.
 
 ---
 
-## SECTION 3: New Research Hypotheses (RA-011 … RA-018)
+## SECTION 3: New Research Hypotheses (RA-011 … RA-021)
 
 Full detail files: `RA-011-async-replay.md`, `RA-012-fused-dequant-gemm-sinkhorn.md`,
 `RA-013-expert-placement.md`, `RA-014-prefill-buckets.md`, `RA-016-dspine-drafter.md`,
-`RA-017-ecf8-lossless-weights.md`, `RA-018-mtp4-theories.md`.
+`RA-017-ecf8-lossless-weights.md`, `RA-018-mtp4-theories.md`, `RA-019-round2-theories.md`
+(RA-019/020/021 + the round-2 audit, 2026-11-10).
 
 ---
 
@@ -1068,6 +1107,76 @@ in `kda_layer.py`). T4 is the reframing (RA-009/016 gain a concrete Gaudi2 mecha
 `propose_query_block` one-pass draft). T7 is new as policy (the implementation agent recorded the
 open question after the third R003 flip; RA-018 makes it enforceable with the measurement protocol).
 
+### Round 2 (2026-11-10): the post-ABCONFIG-WIN proposals — full detail in `RA-019-round2-theories.md`
+
+Context for all three: the implementation agent's round-2 work (D1-3, AIP-util, PFG+MHC OOM,
+ABOTSIS-REF, AB3-HYPA, MEMLOG, **ABCONFIG-WIN adopted**, CRASH-INCIDENT) moved the state to:
+**the prefill objective is MET (5,546-7,723 t/s across 0.5-8K)** at the cost of **decode bs=1 37.3
+(−12% — the RA-001 tensor-cache win forfeited)** and **the suite 97.5% (R003 — the 4TH flip source:
+the tensor-cache state itself)**. The gather_sum port (RA-018/T1.1) is applied to the venv, env-gated
+off; the gsum probe returned an instrumentation artifact (0.0%, wall_s 0.0 — probed a non-serving
+server); the real A/B is pending.
+
+### RA-019 — The full mHC-prep TPC kernel (the structural fix for the workspace OOM class)
+
+**ID:** RA-019 (new, 2026-11-10) · **Complexity:** MEDIUM (weeks — the kernel work; the pattern, build
+system, op registration, and load-order recipe all exist)
+**Target:** the 184-MiB mHC-prep FP32 class (165.7 GB of the 667.7 GB capture volume — the confirmed
+workspace hog behind the CAP-8192/PFG+MHC/AB3 OOMs) + the adopted profile's decode regression.
+**Hypothesis:** fuse the ENTIRE `mhc_pre` chain (FP32 prep + 20-iteration Sinkhorn + epilogue — the
+existing TPC kernel covers only the 8-MiB loop class; `mhc.py`'s docstring: the wrapper "repeats the
+stock ops in the stock order and swaps only the loop") into one TPC/MME program, the DSV4.1
+`control_mme` family pattern (G19). **Expected (ESTIMATED):** capture workspace 101 GB peak → ~20-30 GB
+(the agent's figure; my refinement: ~15-25 GB from the 184-MiB class alone, pending the memlog
+attribution of the 128-MiB padded class); the >2,048-row prefill graphs capturable with the tensor
+cache ON + full KV → **decode 42.4 AND the prefill fix in one profile** (the profile split disappears);
+the 2,944/4,096-bucket prefill extends beyond MHC-ROWS +19% (the prep ops leave the graph — D1-3's
+~1,800-op re-tracing is a fraction of the nodes); the 4-HPU HBM headroom; the OOM-crash class (the
+CRASH-INCIDENT trigger) shrinks. **Risks:** the prep's FP32 arithmetic must be preserved exactly
+(bit-identity or the ULP class expands — the DSV4.1 control ops carry explicit f32 variants for this);
+the >1024-row path re-validation (MHC-ROWS proved the loop kernel at 8192 rows). **Validation:** the
+memlog re-capture at 2,944 rows (the 184-MiB class gone, peak < 40 GB); the capture with cache ON +
+full KV (OOM gone); the prefill ladder (≥ ABCONFIG-WIN); the decode bench (42.4 recovered); the suite
+A/B; the 4-HPU boot.
+
+### RA-020 — The per-phase tensor cache (the quick decode recovery; days)
+
+**ID:** RA-020 (new, 2026-11-10) · **Complexity:** LOW (the 3-line change to the staged `GLM_TENSOR_CACHE_OFF`
+patch)
+**Target:** the −12% decode regression (37.3 → ~42.4) without losing the ABCONFIG-WIN prefill fix.
+**Mechanism (G20, tier B):** the vendor `wrapped_hpugraph_forward` reads `PT_HPUGRAPH_DISABLE_TENSOR_CACHE`
+**on every call** (not at wrap time); the runner knows the phase at every call (the l.3737
+`use_graphs`/`phase` site). Per-phase: decode calls env "0" (cache ON — the decode shapes retain their
+tensors, the RA-001 win); prefill calls env "1" (cache OFF — the prefill tensors free after replay, the
+ABCONFIG-WIN fix; the prefill graphs are still captured/replayed — the cache-OFF dry-run mode
+ABCONFIG-WIN already proved at +209-277%). **Expected (ESTIMATED):** bs=1 ~42.4 (+12%), prefill
+unchanged, @16 parity-to-better. **Falsifiable accuracy prediction:** the decode retention state is
+bit-identical to the pre-ABCONFIG-WIN adopted profile (100% suite) → **the suite should return to 100%
+(R003 unflips)**; if not, the 4th flip source is deeper than the retention state (a T7 data point
+either way). **Risk:** the chunked-prefill mixed step replays a decode entry with env "1" for that one
+call (transient re-cache the next step — measure in the A/B). **Sequencing:** BEFORE RA-019 (recovers
+the win now; RA-019 subsumes it structurally — the toggle stays as the 4-HPU HBM-budget knob).
+
+### RA-021 — The gather_sum port hardening + A/B protocol (fix BEFORE the pending A/B)
+
+**ID:** RA-021 (new, 2026-11-10) · **Complexity:** LOW (hours — a venv patch)
+**Target:** the three deviations of the applied gather_sum port from the corpus patch (G14):
+(1) **no size cap** — the corpus falls back to hccl for buffers >16 MiB because captured-graph sites
+retain working buffers; as written, the port would all_gather the prefill ARs (512 MB × 162 at 8,192
+rows, retained) → **guaranteed OOM at the >2,048-row captures** (the exact failure class just
+recorded); (2) **the sum is bf16** — the corpus sums in fp32 (free at decode size); (3) **the
+all_gather stale-value hazard** (G5/G6, DSV4.1 docs, tier D): "vllm-gaudi's `all_gather` calls
+`mark_step`; inside a captured HPU graph that gave stale values for batches above 1. An all-reduce
+replaced it" — our v0.26.0 is the DSV4.1-era all_gather, and the port makes every AR an all_gather
+inside captured decode graphs at every batch. **Protocol:** the cap + fp32 sum first (the venv patch);
+then, before enabling `GLM_ALLREDUCE_GATHER_SUM=1`: the rowdep probe (8 identical prompts — the
+stale-value detector) + a bs=8 parity check; then the A/B on the CURRENT adopted profile: the suite
+(prediction: on the cache-off profile gather_sum may NOT move R003 — the 4th flip source is the
+cache-state class, orthogonal to AR row order; the full 100% may need RA-020 + RA-021 together — the
+result either way is the empirical test of T1 on our tree), decode parity bs=1/@16 (corpus: 14.7 vs
+13.6 = noise), the prefill ladder (the >16 MiB ARs stay hccl — the prefill parity degrades to today's
+behavior, a wash).
+
 ---
 
 ## SECTION 4: Transformative Architectural Proposals
@@ -1146,6 +1255,35 @@ vendor-side items):
 Ranked by (expected impact × feasibility × evidence quality), with the sequencing constraint that each
 item is independently bootable:
 
+**Status delta (2026-11-10 round-2 audit — `RA-019-round2-theories.md` §1; supersedes the 2026-11-09
+delta below for the items it covers):**
+- **ABCONFIG-WIN — ADOPTED as the prefill-optimized profile:** tensor cache OFF + prefill threshold
+  8,192 → **the prefill objective MET (5,546-7,723 t/s across 0.5-8K, +209-277% vs eager)**; cost:
+  decode bs=1 37.3 (−12% — the RA-001 win forfeited), @16 259.5 (parity), suite 97.5% (R003 — the
+  4TH flip source: the tensor-cache state itself). The OOM root cause is identified (MEMLOG: the
+  184-MiB mHC-prep FP32 class, 165.7 GB of the 667.7 GB capture volume; 101 GB peak watermark) —
+  the fix paths are now RA-019 (structural) and RA-020 (per-phase retention), not further config.
+- **RA-018/T1.1 — the gather_sum port is APPLIED to the venv** (env-gated off), with THREE deviations
+  from the corpus patch found in audit (the missing 16 MiB size cap → prefill-OOM risk; the bf16 sum
+  vs the corpus fp32; the DSV4.1-documented all_gather stale-value hazard at batch >1) — **RA-021
+  (the hardening) must land before the A/B enables it.** The gsum probe (0.0%, wall_s 0.0) is an
+  instrumentation artifact (probed a non-serving server); the real A/B is pending.
+- **New proposals:** RA-019 (the full mHC-prep TPC kernel — the structural fix; the DSV4.1
+  `control_mme` pattern, G19), RA-020 (the per-phase tensor cache — the vendor reads the env per
+  call, G20 tier B; the 3-line change; the falsifiable 100%-suite prediction), RA-021 (the
+  gather_sum hardening + A/B protocol).
+- **New findings:** N4 (the eager prefill dip is partly RANK DESYNC, not just host dispatch — the
+  AIP-util comparison: the eager 2,944-class runs 4-19% AIP wildly uneven across ranks, the graphed
+  2,048-class 25-33% uniform; capture re-locks the ranks — a secondary rationale for T2's chain
+  graph and a caution for every future eager hot path, including the 4-HPU TP4 config); N5 (the
+  k=4 bs=1 expert-union weight floor is 3-5× the k=1 floor: 40-60 distinct global experts per layer
+  for 9 correlated rows → 5-8/rank → 5.3-8.5 GB → 2.2-3.5 ms — the Q21 k=4 design target; the exact
+  number is a no-HPU per-row route hook); G21 (the stock `VLLM_GRAPH_RESERVED_MEM`/`VLLM_GRAPH_PROMPT_
+  RATIO` size the KV pool only — they do not cap graph capture; do not look for a config fix there).
+- **Ops (CRASH-INCIDENT):** the OOM-crash spam → journal daemon bloat (tens of GB RSS on the 125 GB
+  host) → the card-reset path failed (host-resident MMU page pool) → hard power recoveries. The
+  journal rate-limit + the host-RAM headroom pre-flight are now standing items (item 7, do-first).
+
 **Status delta (2026-11-09 audit — RA-018 §0.4; this re-orders the table below):**
 - **RA-011 — EXECUTED + REJECTED (EXP-RA011):** +29% bs=1 (54.2 median — the mechanism and my bs=1
   estimate CONFIRMED), @16 PARITY (my +70-85% @16 was wrong — the @16 step is device+per-row bound),
@@ -1209,11 +1347,49 @@ effect), and the 1M-context KV fit is BG-7's question. The companion document's 
 4-HPU 800 target requires the deep-spec + full host stack) stands; this document does not change that
 conclusion.
 
-**What the implementation agent should do first (concrete order — 2026-11-09 audit, supersedes the
-pre-audit list below the status delta):**
+**What the implementation agent should do first (concrete order — 2026-11-10 round-2 audit,
+supersedes the 2026-11-09 list below):**
+1. **RA-021 (the gather_sum hardening):** add the 16 MiB size cap (env-tunable; the >cap ARs fall
+   back to hccl — the prefill parity stays at today's behavior, a wash) + the fp32 sum to the
+   applied venv port. Hours. Then the pre-enabling gates: the rowdep probe (8 identical prompts)
+   + a bs=8 parity check (the DSV4.1 stale-value detector) — THEN run the pending A/B on the
+   current adopted profile (suite + decode parity bs=1/@16 + the prefill ladder). The suite
+   prediction is documented in RA-021 (on the cache-off profile gather_sum may not move R003 —
+   the 4th flip source is orthogonal; the result is the empirical test of T1 either way).
+2. **RA-020 (the per-phase tensor cache):** the 3-line change to the staged `GLM_TENSOR_CACHE_OFF`
+   patch (decode calls env "0" / prefill calls env "1", set at the l.3737 phase site before the
+   wrapped forward). Recovers the −12% decode (37.3 → ~42.4) with the prefill fix kept; the
+   falsifiable prediction: the suite returns to 100% (the R003 unflip — the decode retention state
+   is bit-identical to the pre-ABCONFIG-WIN profile). Days.
+3. **Q21 continues** (the fused MoE GEMV; add the shared-expert absorption — RA-012C; the k=4
+   expert-union sizing now has the N5 target — 2.2-3.5 ms weight floor — and the no-HPU
+   measurement: a per-row top-8 route hook in the CPU router, 100-request decode run, 9-row union
+   per layer).
+4. **RA-019 (the full mHC-prep TPC kernel):** the structural fix (the OOM class, the profile split,
+   the 4-HPU headroom). Pattern: the DSV4.1 `control_mme` family (G19 — the source is in the corpus
+   and on this host at /opt/dsv41/1Cat-vLLM-Gaudi); infrastructure: the existing GLM kernel
+   registration (`GC_KERNEL_PATH`, the op lib, the B7 load-order recipe). Weeks; start after step 2
+   (step 2 banks the decode win; step 4 subsumes it structurally).
+5. **RA-018/T1.2 + T2** (pin the decode buckets; then the chain graph — CPU contract test first,
+   the Q11 protocol k=2 → k=4) — after the step-1 A/B result (the accuracy regime first); the N4
+   desync re-lock is the secondary win to measure (AIP uniformity under the chain graph).
+6. **RA-018/T7 (the gate policy):** now with the 4th flip source — add the BASELINE definition:
+   the current adopted profile's suite profile = the reference ("regression" = new flips vs it),
+   since the adopted profile itself is at 97.5%.
+7. **Ops (CRASH-INCIDENT lessons, cheap, now):** the systemd journal rate-limit
+   (RateLimitIntervalSec/RateLimitBurst or the vacuum policy) + the host-RAM headroom check in the
+   pre-flight (the driver reset path needs the host-resident MMU page pool).
+8. The remaining items continue: **BG-1** (the per-layer device trace), **RA-012 Part A** (after
+   BG-1), **RA-011/T6** (the async-D2H redesign), **RA-009/RA-016/T4** (the drafter scoping),
+   **RA-017 Phase 0** (1 day CPU), **RA-014** (now subsumed by RA-019/020 — the prefill is MET;
+   keep only as the >8,192-token band question).
+
+**What the implementation agent should do first (concrete order — 2026-11-09 audit, superseded by
+the 2026-11-10 list above; retained for history):**
 1. **RA-018/T1.1 + T1.2** (port the corpus `gather_sum` patch, env-gated default-off; pin the decode
    buckets; run the rowdep probe — 8 identical prompts → distinct-text count, expect ~7 distinct
-   pre-fix, 1 post-fix). One boot family; days.
+   pre-fix, 1 post-fix). [T1.1 the port is DONE (applied 2026-11-10, env-gated off) — see RA-021 for
+   the three deviations to fix first.] One boot family; days.
 2. **RA-018/T1.3** (captured-core numerics alignment — recipe diff of a captured draft core vs eager;
    fp32 accumulators in the draft cores as the cheap first attempt — then re-run the Q01v2 protocol:
    golden + suite + the +20% re-confirm). The draft graph is adopted or the residual is characterized.
@@ -1278,6 +1454,10 @@ quoted data; tiers as labeled.)
 | G17 | **The MTP-head acceptance ceiling, measured:** the abotsis depth sweep — MTP-4 is the OPTIMAL depth on the same model class (acceptance 3.33 of 5; depth 5: +0.1 accepted at higher cost; depth 3: nothing); the MTP-4 production recipe (NSPEC=4, MAXSEQ=8/16, GMU 0.35, `VLLM_COMPACT_GDN=0`, pinned decode buckets, draft-attn-in-graph, warmup 4-5 min ~17 GiB graphs/card; concurrency 15.5/56.0/106.7/185.9 @1/4/8/16); the long-context wall: 262K trial → ~6 t/s (each speculative lane carries the whole block table, 10,240 blocks/step × 5 lanes) | D / abotsis fork `docs/features/glm53_flash.md` (§26 depth sweep, the recipe, the 262K trial) | **RA-018/W7+W8+T5 — the reference numbers.** The 3.33/5 is the acceptance our k=4 must reach (expect 3.1-3.4 on our stack); the 185.9 @16 is the @16 consistency check (our base is ~2.5-3× faster → 300-450 ESTIMATED); the ~6 t/s at 219K is the long-context k=4 wall (the block-table-sharing lever, W8); the class-level warning (G11: the Qwen hybrid's MTP k=2/k=3 "Collapse or garbage") is why the per-verification (T7) and the state-safety (the candidate slots, A022) matter |
 | G18 | **The vendor GDN spec path is unimplemented:** the stock `hpu_fused_recurrent_gated_delta_rule` raises `NotImplementedError` for the speculative-decoding path (v0.26.0; the issue is open on v0.30.0); the community request is the multi-token variant (`hpu_fused_recurrent_gated_delta_rule` spec decode / a "multi-token GDN decode"); the vendor's fused single-token GDN decode op does exist (v0.24.1+) and our port's custom KDA path is the only route for the spec verify | D / vllm-gaudi issue (corpus web) + vllm-gaudi v0.26.0 tree | **RA-018/T3 context.** No vendor fix to wait for on our stack version; the TPC custom kernel (the Q21/B7 infrastructure — the op-lib load order is now proven in production) is the deployment path; track the multi-token GDN variant for the v0.30.0 upgrade decision (it would supersede both the conv-chain and the recurrence custom work) |
 
+| G19 | **The DSV4.1 mHC control-op family** (the full-mHC-branch-as-custom-ops pattern): `deepseek_v41_overlap.py` (`independent_mhc_nodes`/`split_mhc_consumers` — extracts the closed, pure mHC branches so they can run in an overlapping partition) + `control_mme.cpp` (includes `hpu_dsv41_control_mme_pt2.cpp` — the PT2 registration the AB-DEQ dequant op already runs in production); the op list: `control_mme_f32`, `control_rrms_unpack/parallel/swizzled/bf16_weight` (residual RMS norm), `control_gemv`, `control_batch4_f32`, `control_prefetch_f32`, `mhc_gates_f32/positive`, `deepseek_v4_sinkhorn4` | D / 1Cat-vLLM-Gaudi `vllm_gaudi/compilation/deepseek_v41_overlap.py` + `csrc/deepseek_v41_unique/pytorch/control_mme.cpp` | **RA-019's pattern.** The mHC-prep chain (the 184-MiB MEMLOG class) is exactly the branch family this infrastructure fuses into a few custom ops; the f32-suffixed variants exist to preserve the FP32 arithmetic exactly (the bit-identity risk management); the PT2 path is production-proven in our tree (AB-DEQ) |
+| G20 | **The tensor-cache policy is read per call** (not at wrap time): `wrapped_hpugraph_forward(cache, ..., disable_tensor_cache, ...)` does `env_tensor_cache = os.environ.get("PT_HPUGRAPH_DISABLE_TENSOR_CACHE")` inside the per-forward path, `disable_tensor_cache = disable_tensor_cache if env_tensor_cache is None else env_tensor_cache == "1"`; the cache-OFF capture is the `dry_run=True` mode (no allocation at capture); with cache OFF "tensors … are replaced with empty tensors after replaying" | B / gaudi-pytorch-bridge `python_packages/habana_frameworks/torch/hpu/graphs.py` `wrapped_hpugraph_forward` | **RA-020's mechanism.** A runner-side env toggle per call (the phase is known at the l.3737 site) gives per-phase retention: decode ON (the RA-001 win) / prefill OFF (the ABCONFIG-WIN fix) with the prefill graphs still captured and replayed. The staged `GLM_TENSOR_CACHE_OFF` patch (global OFF) becomes a 3-line conditional |
+| G21 | **The stock graph-memory envs size the KV pool; they do NOT cap graph capture:** `VLLM_GRAPH_RESERVED_MEM` (default 0.1 — 10% of usable memory reserved for graphs, the rest for KV) + `VLLM_GRAPH_PROMPT_RATIO` (default 0.5 — the prefill/decode graph-memory split); verified PRESENT in our v0.26.0 (`hpu_worker.py:410`) — the reservation is a KV-sizing budget computed after the profile run; graph captures allocate past it unbounded (the 101 GB watermark OOMs prove the captures ran past any reservation) | B / vllm-fork `README_GAUDI.md` + habana-docs (tier B docs) + verified in `/opt/glm53/vllm-gaudi/vllm_gaudi/v1/worker/hpu_worker.py` | Do NOT look for a config-level fix for the prefill-workspace OOM in these envs — they bound the KV, not the captures. The levers are structural: RA-019 (remove the hog) / RA-020 (bound the retention). Also: with `--num-gpu-blocks-override 1280` the KV pool is fixed regardless — the reservation interacts with the auto-sizing path only |
+
 **Cross-checks performed outside the corpus (this round):** deployed venv source reads on g2 —
 `habana_frameworks/torch/hpu/graphs.py` (the wrapper: l.41-160 the `HPUGraph` API; l.635-770
 `wrapped_hpugraph_forward` — the `copy_to` + `replay(asynchronous)` path, the `input_hash` cache key,
@@ -1303,3 +1483,5 @@ README), the upstream vLLM #53906 evidence via the corpus port docs.
 | 2026-11-09 | 1.2 | independent research architect | **RA-016 added (user-requested investigation of github.com/Tencent/DSpine):** DSpine (arXiv 2609.36173, Apache 2.0) — the strongest published block drafter: gated adjacent causal injection through draft depth, b16 blocks, +3.7-6.9% acceptance over DFlash2 at equal budget, +8-27% vs the official DFlash2-b8 checkpoint (Qwen3.8-27B), 1-2B 5-layer Apache-2.0 draft checkpoints on the `tencent/dspine` HF collection (active; 27B draft released 2026-11-08; **no GLM-5.3-Flash draft yet**). Confirms the user's hypothesis (better than DFlash2 — by a few percent, not a multiplier). The Gaudi 2 port path is corpus-grounded: the 1Cat DFlash2 HPU `propose_query_block` pattern (tier D) with k=15 + the abotsis KDA candidate-slot machinery (generic in `spec_len`; origin of our MTP port); DSpine's draft is a plain dense transformer (simpler to port than DFlash2's conv/non-causal draft). Status: CONDITIONAL — track the collection, do RA-009 first (shared port machinery), activate on checkpoint release or a SpecForge training decision. Full spec: `RA-016-dspine-drafter.md`; ranking table row 7b added. |
 | 2026-11-09 | 1.3 | independent research architect | **RA-017 added (user-requested deep dive into "ECFP8" = ECF8, arXiv 2510.02676, ICLR 2026, github.com/zeyuyang8/ecf8):** lossless exponent-concentrated FP8 weight compression (Huffman-coded E4M3 exponent fields, ~2-3 bits/exponent, + packed 4-bit sign/mantissa stream; bit-exact by construction). Deep dive read the full paper (Theorem 2.1 entropy bounds, Section 3 format + Algorithm 1 decode pseudocode, Tables 1-3, appendices) and the repo. Key findings: (1) the paper's throughput gains (11.3-177.1%) are MEMORY-CAPACITY effects (larger batches under a fixed memory budget), NOT per-token decode gains — its JIT layer-wise decompression mode would multiply our HBM-resident weight traffic 2.855× (bs=1 floor 15.5 → ~44 ms) → **RJ-20 (new rejection)**; (2) the value for us: weights stored COMPRESSED in HBM (328.3 → ~282 GB at the ~13-15% FP8-mass estimate, pending Phase 0) + a FUSED decompress-in-register GEMM (the RA-012A/Q21 TPC skeleton + the Huffman decode in the load path, ≤4 KB LUT in TPC local memory, span-flush byte alignment) → **closes BG-7** (the 4-HPU 1M-context KV fit: margin ~8-18 GB → ~64 GB) AND cuts the per-card weight floor 14.5% (8-HPU @16 routed 9.1 → 7.8 ms) — the only 4-HPU option (vs FP8-KV/RJ-10, the RA-015 cap, a window cut) that also improves bandwidth, with zero accuracy risk (lossless); (3) the make-or-break is a microbenchmark: the decode is a sequential per-element ALU chain (~8-15 ops/element) competing with the issue-bound TPC GEMV (Strata: 237 GB/s at M=1) → Phase 2a go/no-go per M (TPC vs MME); (4) Gaudi2's native E4M3 read caps at 240 (exponent fields 0-7, corpus minimax-m3 codec) → our checkpoint's exponent space may be smaller than the paper's 16-value assumption → compression may be slightly better (Phase 0 measures); (5) the repo has no visible LICENSE (R3) — re-implement the encoder from the paper's spec, reference the repo for validation only. Phases: 0 (1 day CPU — compression rate + exponent histogram + losslessness on our checkpoint; the 8% gate) → 1 (bit-exact verification) → 2 (the kernel, after the Q21/RA-012A skeleton; 2a microbenchmark first) → 3 (the 4-HPU loader before the 4-HPU freeze). Full spec: `RA-017-ecf8-lossless-weights.md`; ranking table row 4b added; BG-7 options ranked; RJ-20 added. |
 | 2026-11-09 | 1.4 | independent research architect | **RA-018 added (user-requested: audit the implementation agent's completed work, analyze results + reasons for failure, and build multiple theories for making MTP=4 work, with GaudiGrimoire support).** Full audit of the post-rev-1.3 work (TASKS/EXPERIMENTS/ports source + the G2 server fork state): ADOPTED — A001 MTP k=1 (+15.1% bit-identical), RA-001 (+10.7% bs=1), NS16/NS32 (257/400-452 aggregate), the Q18 levers (+42-46% aggregate, the 16-stream MTP crossover GONE), AB-DEQ (the TPC dequant op production-qualified at parity — the Q21 skeleton deployed), **B7 RESOLVED** (the registrar collision was a load-context artifact; the Q21 kernel track unblocked), Q14v2 (TP4+EP4 reproduced: +25% bs=1, +59% @16, 100% suite), BG-2 (routing near-uniform — **RA-013 DISPROVEN as proposed**, the Q21 uniform byte model VALIDATED). REJECTED — Q01v2 draft graphs (+20% banked; captured-region fusion drift flips R003 5/5, mode-independent whole=split=1/12), **RA-011 async replay (+29% banked; R003 flips 5/5 — the in-flight consumption of the graph's cached outputs, exactly my R3 risk; the @16 +70-85% estimate was WRONG — parity; the follow-up is the async-D2H redesign)**, MHC-ROWS (+19% at the 2944 bucket; R003 3/3 — the THIRD structurally different optimization to flip exactly R003), Q11 k=2 under levers (−11%/−29% — refuted, "revisit only under the in-graph draft"), Q16 (−45% bs=1), Q17 (−22%), B023 (+0% — stack-specific), C015 (no improvement — stack-specific), CAP-8192 (OOM — the prefill-workspace HBM budget; RA-014 re-scoped). **The failure pattern: three unrelated optimizations flip one knife-edge suite item (R003, bat-and-ball, a trap question) deterministically — a 1-ULP distribution-mode flip, not a regression.** GaudiGrimoire (G14-G18, new findings): the AR row-invariance proof at boundary level (abotsis `LAYER0_DELTA_FINDINGS` §10-12: HCCL chunk-order rank summation → per-row ULP → KDA state carries it → MoE routing flips at near-ties; `VLLM_HPU_ALLREDUCE_MODE=gather_sum` + pinned decode buckets → 12/12 parity, no decode cost; the 70-line portable patch is in the corpus, our tree lacks it), the one-call spec recurrence + closed-form candidate states (the T3 fusion reference; our conv chain is the per-token Python loop — verified in `kda_layer.py`), the DFlash2-on-Gaudi one-pass block-drafter machinery (the T4 Gaudi2 proof; the mHC-residual mechanism is architecturally aligned with GLM), the MTP-head acceptance ceiling (3.33/5 measured, the depth sweep, the 262K ~6 t/s block-table wall), the vendor GDN spec-path gap (the custom path is the only route; track the multi-token variant). **Theories T1-T7 (detail: `RA-018-mtp4-theories.md`):** T1 the numerics-invariance package (gather_sum port + pinned buckets + captured-core alignment — the unlock for the three banked optimizations AND MTP=4; rank 1 post-audit), T2 the chain graph (one graph per decode bucket for the whole 4-step draft — kills the seam-sync wall that broke Q19; the Q11 "in-graph draft" revisit condition), T3 the KDA conv-chain fusion (the spec_len=5 small-op storm), T4 the acceptance ceiling (3.33 < the 4.2 the DECISIONS roofline requires for 200 bs=1 — "MTP=4" redefined as ≥4 tokens/step; the block-drafter route), T5 the k=4 HBM budget (fits at ns16-32: ~1.1-2.2 GB/rank candidate slots — DERIVED; the wall is long-context block-table carry), T6 the async-D2H output staging (the RA-011 rejection fix; the end-state physics: 165-220 t/s bs=1 at MTP-4 acceptance, 200-280 with the T4 drafter), T7 the tie-aware MTP-aware gate policy (the 0.5 pp bar auto-rejects on one knife-edge item — the gate, not the numerics, is the binding wall; per-flip top-2-gap attribution makes it enforceable). Ranking table re-ordered (rows 1, 3b, 3c added; the status delta block added); the do-first list re-ordered (post-audit); the proposal scorecard (RA-011 directionally confirmed / RA-013 disproven / RA-014 re-scoped) recorded in RA-018 §0.4. |
+| 2026-11-10 | 1.5 | independent research architect | **Round-2 audit + RA-019/020/021 (detail: `RA-019-round2-theories.md`).** Audited the post-rev-1.4 arc on g2 (commits through b101646 + the venv + the live server state): **ABCONFIG-WIN ADOPTED** — the tensor-cache-OFF + prefill-8192 profile METS THE PREFILL OBJECTIVE (5,546-7,723 t/s across 0.5-8K, +209-277% vs eager) at the cost of decode bs=1 37.3 (−12% — the RA-001 win forfeited), @16 parity, suite 97.5% (R003 — the 4TH flip source: the tensor-cache STATE itself; the taxonomy is now Q01v2 fusion drift / RA-011 in-flight consumption / MHC-ROWS kernel reduction order / ABCONFIG-WIN cache state — every structural change to the decode residual stream flips it). Root cause of the CAP-8192/PFG+MHC/AB3 OOMs identified by MEMLOG: the mHC-prep FP32 chain (~20 × [rows,4,4096] FP32/layer; the 184-MiB class = 165.7 GB of the 667.7 GB capture volume; 101 GB peak watermark). **New proposals:** RA-019 (the full mHC-prep TPC kernel — fuse the ENTIRE mhc_pre chain, the DSV4.1 `control_mme` family pattern, G19; removes the OOM class + the profile split + gives the 4-HPU headroom; MEDIUM, weeks), RA-020 (the per-phase tensor cache — the vendor reads `PT_HPUGRAPH_DISABLE_TENSOR_CACHE` PER CALL (G20, tier B), so the 3-line runner toggle (decode "0"/prefill "1" at the l.3737 phase site) recovers the −12% decode now with the prefill fix kept; LOW, days; FALSIFIABLE PREDICTION: the suite returns to 100% — the R003 unflip, since the decode retention state becomes bit-identical to the pre-ABCONFIG-WIN 100% profile), RA-021 (the gather_sum port hardening — the applied venv port deviates from the corpus patch in THREE ways: the missing 16 MiB size cap (prefill-OOM risk: 512 MB × 162 ARs at 8,192 rows, retained), the bf16 sum vs the corpus fp32, and the DSV4.1-documented all_gather stale-value hazard in captured graphs at batch >1 (G5/G6) — fix BEFORE the pending A/B enables `GLM_ALLREDUCE_GATHER_SUM=1`; the A/B protocol adds the rowdep probe + a bs=8 parity check as pre-enabling gates; the suite prediction is documented: on the cache-off profile gather_sum may NOT move R003 — the flip sources are now orthogonal). **New findings:** N4 (the eager prefill dip is partly RANK DESYNC — the AIP-util comparison: the eager 2,944-class runs 4-19% AIP wildly uneven across ranks, the graphed 2,048-class 25-33% uniform; graph capture re-locks the ranks; implications: capture-first for every hot path, the MTP eager draft has the same signature at the AR boundaries (a secondary win to measure for T2's chain graph), the 4-HPU TP4 has the smaller desync surface), N5 (the k=4 bs=1 expert-union weight floor is 3-5× the k=1 floor — 9 correlated rows → 40-60 distinct global experts/layer → 5-8/rank → 5.3-8.5 GB → 2.2-3.5 ms at 2.45 TB/s; the Q21 k=4 design target; the exact number is a no-HPU per-row top-8 route hook, 100-request decode run), G21 (the stock `VLLM_GRAPH_RESERVED_MEM`/`VLLM_GRAPH_PROMPT_RATIO` (verified present in our v0.26.0, `hpu_worker.py:410`) size the KV pool only — they do NOT cap graph capture; do not look for a config-level OOM fix there). **Ops (CRASH-INCIDENT lessons):** the journal rate-limit + the host-RAM headroom pre-flight are standing items (the driver reset path allocates a host-resident MMU page pool; the 125 GB host with the crash spam has no margin). The gsum probe (0.0%, wall_s 0.0) is an instrumentation artifact (probed a non-serving server — the boot was mid-load) — re-probe after the A/B. Do-first list re-ordered (round-2 list supersedes the 2026-11-09 list): 1. RA-021 → 2. RA-020 → 3. Q21 (+ the N5 hook) → 4. RA-019 → 5. T1.2/T2 → 6. T7 (+ the baseline definition: the current adopted profile's suite profile = the reference) → 7. ops → 8. the rest. RA-014 is subsumed (the prefill is MET) — kept only as the >8,192-token band question. |
+| 2026-11-10 | 1.5.1 | independent research architect | **Post-audit update (the overnight results landed while rev 1.5 was being written; detail: `RA-019-round2-theories.md` §7).** (1) **GSUM-T1 (T1.1 A/B, ran 03:13): REFUTED as the unlock, NEUTRAL otherwise** — the rowdep probe shows NO R003 flip on the HCCL baseline (the row-order ULP mechanism, the corpus G14 theory, is REFUTED as the flip cause on our tree); the gather_sum arm: R003 still flips (suite 97.5%) with decode parity (43.1/43.7 — the corpus no-cost claim confirmed); the flip re-characterized as config-numerics sensitivity — the 5th flip source: the AR order itself (the gather_sum change flips R003 even with the fixed-rank-order sum). The DSV4.1 all_gather stale-value hazard was tested at batch >1 and did not manifest on our v0.26.0. T1.2 DEFERRED as the predictable null. T1.3 downgraded (whack-a-mole); **T7 (the gate policy) is now the primary unlock** for the three banked optimizations (Q01v2 +20%, RA-011 +29%, MHC-ROWS +19%), with the baseline definition (the current adopted profile's suite profile = the reference — the adopted profile itself is at 97.5%). (2) **The per-phase tensor cache (RA-020) was ATTEMPTED (boot_perphase.sh, 23:41) and the boot failed on infra** (`synStatus=26 Device acquire failed` — wedged cards, the CRASH-INCIDENT class) before the deployed patches were ever executed — and audit of the deployed patches found three defects: D1 (the phase signal `total_num_scheduled_tokens > 0` is True on every serving step — decode requests contribute ≥1, `scheduler.py:1065` verified — so no per-phase distinction), D2 (the flag is set on the HpuModelRunner but read from `orig_fwd.__self__` = the HpuModelAdapter, which has no `__getattr__` proxy → the flag is always False → the patch is inert → the boot would OOM at the 2,944-row capture, the PFG+MHC failure mode), D3 (the patch only toggles `mark_user_inputs`, not the dry_run/disable_tensor_cache capture mode that controls the intermediate-tensor workspace — the MEMLOG OOM class; the vendor's cache-OFF path does dry_run=True + mark_user_inputs). Predicted outcome of the boot as deployed: OOM or decode 37.3 — NOT the both-wins its comment claims; do not re-run as-is. **RA-020 corrected:** the vendor reads `PT_HPUGRAPH_DISABLE_TENSOR_CACHE` per call (graphs.py:697, tier B — G20) and the per-call value drives the full cache-OFF path incl. the derived dry_run (l.699-700) → the fix is a RUNNER one-liner (the env set at the l.4266 site, signal = `total_num_scheduled_tokens > 2048` — the demonstrated OOM boundary; the decode class is ≤ ~64 rows at ns32) + the graphs.py:706 patch REVERT; the 100%-suite (R003 unflip) prediction stands as the gate. (3) k4b (the MTP k=4 experiment) in progress at update time. Do-first order: see the rev-8 handoff note. |
