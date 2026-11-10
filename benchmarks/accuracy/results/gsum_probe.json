@@ -1,0 +1,507 @@
+{
+ "label": "gsum_probe",
+ "base": "http://127.0.0.1:8000",
+ "suite": "suite_v1.jsonl",
+ "reps": 2,
+ "runs": [
+  {
+   "rep": 0,
+   "per_item": {
+    "M001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    }
+   },
+   "per_category": {
+    "math": {
+     "correct": 0,
+     "n": 8
+    },
+    "reasoning": {
+     "correct": 0,
+     "n": 8
+    },
+    "instruction": {
+     "correct": 0,
+     "n": 8
+    },
+    "coding": {
+     "correct": 0,
+     "n": 8
+    },
+    "general": {
+     "correct": 0,
+     "n": 8
+    }
+   },
+   "aggregate": {
+    "overall": 0,
+    "n": 40
+   },
+   "wall_s": 0.0
+  },
+  {
+   "rep": 1,
+   "per_item": {
+    "M001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "M008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "R008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "F008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "C008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G001": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G002": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G003": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G004": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G005": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G006": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G007": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    },
+    "G008": {
+     "ok": false,
+     "content": "",
+     "error": "<urlopen error [Errno 111] Connection refused>"
+    }
+   },
+   "per_category": {
+    "math": {
+     "correct": 0,
+     "n": 8
+    },
+    "reasoning": {
+     "correct": 0,
+     "n": 8
+    },
+    "instruction": {
+     "correct": 0,
+     "n": 8
+    },
+    "coding": {
+     "correct": 0,
+     "n": 8
+    },
+    "general": {
+     "correct": 0,
+     "n": 8
+    }
+   },
+   "aggregate": {
+    "overall": 0,
+    "n": 40
+   },
+   "wall_s": 0.0
+  }
+ ],
+ "summary": {
+  "per_rep_overall_acc": [
+   0.0,
+   0.0
+  ],
+  "mean_acc": 0.0,
+  "median_acc": 0.0,
+  "pooled_acc": 0.0,
+  "wilson95": [
+   0.0,
+   4.58
+  ],
+  "per_category_pooled": {
+   "coding": {
+    "acc": 0.0,
+    "n": 16
+   },
+   "general": {
+    "acc": 0.0,
+    "n": 16
+   },
+   "instruction": {
+    "acc": 0.0,
+    "n": 16
+   },
+   "math": {
+    "acc": 0.0,
+    "n": 16
+   },
+   "reasoning": {
+    "acc": 0.0,
+    "n": 16
+   }
+  }
+ }
+}
