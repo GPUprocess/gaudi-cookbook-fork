@@ -1,0 +1,27 @@
+13a14,16
+> _GLM_ALLREDUCE_GATHER_SUM = __import__("os").environ.get("GLM_ALLREDUCE_GATHER_SUM", "0") == "1"
+> 
+> 
+42a46,67
+>         # [RA-018/T1] the order-invariant gather_sum mode (GLM_ALLREDUCE_GATHER_SUM=1):
+>         # the all_gather into [world, ...] then the fixed-rank-order sum — the
+>         # deterministic result independent of the HCCL chunk-dependent rank
+>         # ordering (the R003 knife-edge fix; the corpus: the abotsis
+>         # 51-hpu-allreduce-order-invariant.patch). The cost: the world× data on
+>         # the AG + the local sum — the latency class of the AR at the decode
+>         # sizes (the corpus: no measurable decode cost). The default hccl = inert.
+>         if _GLM_ALLREDUCE_GATHER_SUM:
+>             # [RA-021] the hardened gather_sum: (1) the size cap — the ARs
+>             # >16 MiB fall back to hccl (the captured prefill graphs retain
+>             # their working buffers; the uncapped gather OOMs at the prefill
+>             # shapes — the corpus 51-hpu-allreduce-order-invariant default);
+>             # (2) the fp32 sum (the corpus-validated behavior; free at the
+>             # decode sizes). The rank-order invariance is preserved either way.
+>             _cap = 16 * 1024 * 1024
+>             if input_.numel() * input_.element_size() > _cap:
+>                 dist.all_reduce(input_, group=self.device_group)
+>                 return input_
+>             gathered = self.all_gather(input_, dim=0)
+>             ws = dist.get_world_size(group=self.device_group)
+>             _summed = gathered.reshape(ws, -1, *input_.shape[1:]).sum(dim=0, dtype=torch.float32)
+>             return _summed.to(input_.dtype)
