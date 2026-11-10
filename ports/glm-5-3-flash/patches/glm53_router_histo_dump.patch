@@ -1,0 +1,56 @@
+67a68,116
+> # [BG-2] the routing histogram (GLM_ROUTER_HISTOGRAM=1) + the per-layer router-score
+> # dump (GLM_ROUTER_DUMP_DIR=<dir>): the prefill-sized calls (>128 rows) only.
+> _GLM_ROUTER_HISTO = _os_rf.environ.get("GLM_ROUTER_HISTOGRAM", "0") == "1"
+> _HISTO_N_EXPERTS = 288
+> _HISTO_N_LAYERS = 42
+> _HISTO_MIN_ROWS = 128
+> _HISTO = {"rows": [], "cur": None, "idx": 0, "n_req": 0}
+> _GLM_ROUTER_DUMP_DIR = _os_rf.environ.get("GLM_ROUTER_DUMP_DIR", "")
+> _DUMP_STATE = {"req": 0, "layer": 0}
+> 
+> def _histo_dump():
+>     import numpy as np
+>     if not _HISTO["rows"]:
+>         return
+>     mat = np.stack([r.numpy() for r in _HISTO["rows"]])
+>     np.savez("/tmp/glm53_histo.npz", per_layer_counts=mat,
+>              n_requests=len(_HISTO["rows"]), n_layers=_HISTO_N_LAYERS,
+>              n_experts=_HISTO_N_EXPERTS)
+> 
+> def _histo_record(topk_ids):
+>     if _HISTO["cur"] is None:
+>         _HISTO["cur"] = torch.zeros(_HISTO_N_LAYERS, _HISTO_N_EXPERTS, dtype=torch.int64)
+>         _HISTO["idx"] = 0
+>     counts = torch.bincount(topk_ids.detach().to(torch.int64).cpu().reshape(-1),
+>                             minlength=_HISTO_N_EXPERTS)
+>     _HISTO["cur"][_HISTO["idx"]] += counts[:_HISTO_N_EXPERTS]
+>     _HISTO["idx"] += 1
+>     if _HISTO["idx"] >= _HISTO_N_LAYERS:
+>         _HISTO["rows"].append(_HISTO["cur"])
+>         _HISTO["cur"] = None
+>         _HISTO["n_req"] += 1
+>         if _HISTO["n_req"] % 20 == 0:
+>             _histo_dump()
+> 
+> def _router_dump(scores):
+>     import numpy as np
+>     import os as _o2
+>     _o2.makedirs(_GLM_ROUTER_DUMP_DIR, exist_ok=True)
+>     arr = scores.detach().to(torch.float32).cpu().numpy()
+>     np.save(f"{_GLM_ROUTER_DUMP_DIR}/req{_DUMP_STATE[req]}_layer{_DUMP_STATE[layer]}.npy", arr)
+>     _DUMP_STATE["layer"] += 1
+>     if _DUMP_STATE["layer"] >= _DUMP_N_LAYERS:
+>         _DUMP_STATE["layer"] = 0
+>         _DUMP_STATE["req"] += 1
+> 
+> if _GLM_ROUTER_HISTO:
+>     import atexit as _atexit
+>     _atexit.register(_histo_dump)
+> 
+128a178,182
+> 
+>     if _GLM_ROUTER_HISTO and topk_ids.shape[0] > _HISTO_MIN_ROWS:
+>         _histo_record(topk_ids)
+>     if _GLM_ROUTER_DUMP_DIR and topk_ids.shape[0] > _HISTO_MIN_ROWS:
+>         _router_dump(scores)
