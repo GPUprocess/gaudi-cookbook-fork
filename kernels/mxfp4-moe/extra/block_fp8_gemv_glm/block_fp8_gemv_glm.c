@@ -60,6 +60,7 @@ void main(tensor w, tensor scales, tensor x, tensor y) {
                 const minifloat256 p1 = v_f8_ld_tnsr_b(coord, w, SW_UNPACK | SW_UNPCK_8_TO_16);
                 const bfloat128 v1 = v_convert_f8_to_bf16_b(p1) * mult;
                 acc = v_bf16_mac_acc32_b(v1, v8_gx[bk * 2], acc);
+                coord[0] += 128;  // [fix] advance to the second 128-value half before the paired load
                 const minifloat256 p2 = v_f8_ld_tnsr_b(coord, w, SW_UNPACK | SW_UNPCK_8_TO_16, 0, second);
                 const bfloat128 v2 = v_convert_f8_to_bf16_b(p2) * mult2;
                 acc = v_bf16_mac_acc32_b(v2, v8_gx[bk * 2 + 1], acc);

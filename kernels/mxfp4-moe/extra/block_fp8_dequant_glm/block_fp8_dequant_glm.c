@@ -17,14 +17,20 @@
 void main(tensor weight, tensor scale, tensor output, int npts)
 {
     const int pid = get_index_space_offset()[0];
-    const int sn = get_dim_size(scale, 0);  // block rows: N / 128
-    const int sk = get_dim_size(scale, 1);  // block col pairs: K / 256
-    const int pairs = sn * sk;
+    // TPC dims are innermost-first: scale dim0 = K/128 (k blocks), dim1 = N/128
+    // (n blocks). Derive the pair decomposition from the WEIGHT geometry so the
+    // block_n/block_k mapping cannot drift when N != K (the square-w13 case
+    // masked the earlier reversal).
+    const int pid_local = pid;
+    // the TPC dim semantics: the scale dim0 = K/128, the dim1 = N/128 (see the glue)
+    const int kblocks = get_dim_size(weight, 0) / 256;  // K / 256 (the pair unit)
+    const int nblocks = get_dim_size(weight, 1) / 128;  // N / 128
+    const int pairs = kblocks * nblocks;
     const int width = get_dim_size(weight, 0);
     const int per = (pairs + npts - 1) / npts;
-    for (int blk = pid * per; blk < (pid + 1) * per && blk < pairs; ++blk) {
-        const int block_n = blk / sk;
-        const int block_k = blk % sk;
+    for (int blk = pid_local * per; blk < (pid_local + 1) * per && blk < pairs; ++blk) {
+        const int block_k = blk % kblocks;
+        const int block_n = blk / kblocks;
         int5 scale_coord = {block_k * 2, block_n, 0, 0, 0};
         const bfloat128 multiplier = (bf16)s_f32_ld_g(gen_addr(scale_coord, scale));
         scale_coord[0] += 1;
