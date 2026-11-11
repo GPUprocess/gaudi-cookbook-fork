@@ -20,10 +20,10 @@ static GlueCodeReturn inst_block_fp8_dequant_glm(HabanaKernelParams* in, HabanaK
     const uint64_t* os = in->outputTensors[0].geometry.maxSizes;
     if (in->inputTensors[0].geometry.dims != 2 || in->inputTensors[1].geometry.dims != 2)
         return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    const uint64_t N = ws[0], K = ws[1];
+    const uint64_t K = ws[0], N = ws[1];  // the geometry is innermost-first (the square-w13 case masked this)
     if (!N || !K || K % 256 || N % 128) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    if (ss[0] != N / 128 || ss[1] != K / 128) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    if (os[0] != N || os[1] != K) return GLUE_INCOMPATIBLE_INPUT_SIZE;
+    if (ss[0] != K / 128 || ss[1] != N / 128) return GLUE_INCOMPATIBLE_INPUT_SIZE;  // the TPC order
+    if (os[0] != K || os[1] != N) return GLUE_INCOMPATIBLE_INPUT_SIZE;  // the output geometry is TPC order too
     const uint64_t pairs = (N / 128) * (K / 256);
     // One index point per TPC; the kernel slices the pairs by point id. The
     // point's access patterns are all-required (each point writes its own
