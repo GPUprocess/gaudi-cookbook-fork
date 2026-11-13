@@ -297,6 +297,29 @@ as future hardening; the probe supplies its measurement recipe
   target additionally needs the MTP k=4 (the acceptance 3.33, the RA-018/T2 chain graph)
   or the DFlash2-class drafter (the RA-009/L6).
 
+**The CLEAN launch decomposition (2026-11-13, the second measurement boot — the stamps
+only, NO histogram; corrects the T1B split above):**
+- **The T1B "launch 65 ms" was INFLATED by the histogram's 42 per-layer D2H syncs
+  running inside the forward** (`grouped_topk` is in-model). The clean split
+  (n=560 steady samples): **launch 28.3 + sync_wait 27.3 + post 15.6 = 71.1 ms**.
+- The LAUNCH internal stamps (the `[LAUNCH bs=N]` rows): **prep 0.00 ms, fwd
+  (the graph replay) 27.9 ms at bs=40, logits (the lm_head) 0.47 ms** — the launch term
+  IS the model forward; the metadata prep and the lm_head are free. The bs=1 forward
+  44.0 ms = the straggler tail steps (the long-ctx solo decode; consistent with the
+  bs=1 sample_tokens 47.5). The bs=16 rows (309 ms, n=120) = the capture phase.
+- **The NEW identified term: the unstamped engine+API output path ≈ 57 ms/step @16.**
+  The arithmetic: the engine step 115.6 ms (the throughput 251.7 ÷ (16 × AL 1.82)) −
+  the engine's stamped phases ~58.5 ms (the schedule/broadcast/rpc + the sample_tokens
+  wait 56-60 ≈ the worker's launch 28 + the drain 27) ≈ **57 ms in update_from_output
+  + the output serialization + the detokenization + the streaming for the 16 streams** —
+  co-equal with the worker's entire critical path. The EngineCore py-spy cannot see it
+  (the detok lives in the APIServer process). **The next instrumentation target: the
+  py-spy on the APIServer pid under the @16 load** — it re-ranks the L3 program a
+  second time (the output path may be co-master with the launch path).
+- The revised @16 attack list: 1) the worker launch 28 ms (the replay — the Q21 device
+  part inside), 2) the device drain 27 ms (Q21 → ~12), 3) the worker post 15.6 ms (the
+  sampler), 4) **the engine+API output path ~57 ms (NEW — unmeasured internals)**.
+
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
 Extend the F4-TS stamps to the API-server side (the serving process): stamp (i) the
