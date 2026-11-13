@@ -237,6 +237,14 @@ path (the doc RA-037 §6, re-scoped after the 11-13 corrections):
    the AB-DEQ parity).
 3. **The launch/sampler trims** (the replay 28.3 + the parse 15.6): the graph
    population and the sampler vectorization — **the primary @16 levers**.
+   **The parse_output characterization (the py-spy, the final): all 95 parse_output
+   samples are the leaf frame itself — the `.cpu()` D2H sync at its first line
+   (rejection_sampler.py:273), where the host waits for the rejection sampler's
+   device work. The 15.6 ms post term = the sampler's device time + the sync + the
+   host parse (already vectorized). The trim paths are bounded: the F1-async class
+   was refuted (−5%); the remaining is the `_accept_grid` tiny-kernel chain fusion
+   (weeks-class for ~10% @16). The launch/replay term (28.3 ms) is the larger and
+   more tractable lever (the graph population).**
 4. **The acceptance-side** (the AL 1.68 on the natural text vs 1.95 on the
    predictable): the draft quality/the sampler — the MTP k=2 probe.
 5. **The MTP k=4 chain graph or a DFlash2-class drafter** for the 800-tok/s
