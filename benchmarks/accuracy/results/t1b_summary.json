@@ -16,9 +16,10 @@
   },
   "bytes_step_rank": {
     "stock_dense_pass_GB": 43.6,
-    "basis": "the deployed MoE op is a DENSE pass (every token x every local expert, masked; hpu_fused_moe.py:87) -> the 36-expert all-read is batch-independent: 38.1 GB experts + ~5.5 GB non-expert",
-    "verdict": "43.6 >= 25 GB -> P-DEV-@16 by the doc's bytes rule (see the corrections block — the split refines this: the device completes the bytes in a 26 ms burst and idles behind the host)",
-    "effective_BW": "43.6 GB / 57 ms step = 0.76 TB/s = 31% of the 2.45 TB/s peak — the dense pass wastes BOTH the bytes (the un-routed experts) AND the compute (the masked row-expert ops: 40x36 vs the routed ~16x36 per layer)"
+    "basis": "RETRACTED: the 'dense pass' attribution was WRONG — the cited function (hpu_fused_moe.py:87) is MiniMax-M3's SwiGLU-OAI path; GLM takes the standard fused MoE op; the 43.6 GB was the B1 all-read ASSUMPTION, never directly measured",
+    "contradicting_data": "the T1a's bs=1 device work ~1.26 ms implies ~3 GB at the HBM BW — the deployed op likely already reads the routed experts only (the grouped GEMM skips the zero-token experts)",
+    "verdict": "the P-DEV-@16 verdict RETRACTED; the MoE device time and bytes must be measured directly (the env-gated timers around the moe_op, one boot) before the Q21 investment decision",
+    "effective_BW": "n/a — the byte model unverified"
   },
   "corrections_2026_11_13_later": {
     "stamp_delta_AL_invalid": "the F4TS engine counter has duplicated increment blocks -> the stamp-count arithmetic produced impossible ALs (0.5-1.07); use the engine's spec-decoding metrics",

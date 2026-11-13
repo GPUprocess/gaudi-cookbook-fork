@@ -199,12 +199,27 @@ that split directly.
 
 **T1b RUN (2026-11-13, this boot family; artifacts `benchmarks/accuracy/results/t1b_*`,
 summary `t1b_summary.json`):**
-- **Verdict: P-DEV-@16.** The deployed MoE op is a dense pass (every token × every local
-  expert, masked — `hpu_fused_moe.py:87`): the 36-expert all-read is batch-independent →
-  **43.6 GB/rank/step (38.1 expert + ~5.5 non-expert) ≥ 25** — and it wastes BOTH bytes
-  (the un-routed experts) and compute (40×36 masked row-expert GEMVs/layer vs the routed
-  ~16×36). The effective BW is 0.76 TB/s = 31% of the peak: not bandwidth-saturated —
-  the dense-pass structure is the waste, which is exactly Q21's target.
+- **CORRECTION (the op-path attribution):** the "masked dense pass" I cited is
+  **MiniMax-M3's** SwiGLU-OAI unfused path (`hpu_fused_moe.py:70-87` — the
+  `_unfused_swigluoai_moe` function, MiniMax-specific). **GLM-5.3-Flash takes the
+  standard fused MoE op** (the SwiGLU activation → `VllmMixtureOfExpertsOp` → the
+  Habana MoE kernel). **The 43.6 GB/rank/step byte model is the B1 all-read
+  ASSUMPTION, not a measurement** — and the T1a's own data contradicts it at bs=1:
+  the device work ~1.26 ms/step implies ~3 GB at the HBM BW, not 38 GB — i.e. the
+  deployed op likely **already reads the routed experts only** (the grouped GEMM
+  skipping the zero-token experts), as the L1 note hypothesized. **The verdict
+  "P-DEV-@16 by the bytes rule" is RETRACTED — the bytes were never directly
+  measured** (the hl-smi mem-util counter is a static artifact on this driver).
+  What STANDS from T1b: the routed-union histogram (16.1 distinct experts/
+  rank/layer — the routing statistics), the completion of the stamp suite, the
+  cadence/AL reconciliations. **The re-scoped Q21 question: if the stock op is
+  already routed-only, the Q21 byte saving ≈ zero; its remaining value is the
+  fused dequant+GEMV (the AB-DEQ parity showed the dequant op cost-neutral, so the
+  win would be the elimination of any separate dequant-pass intermediate traffic —
+  unverified) and the zero-token-skip verification.** **The next session's FIRST
+  experiment: measure the MoE device time and the bytes directly** (the env-gated
+  event timers around the moe_op call at bs=1 vs @16 — one boot), which decides
+  the Q21's fate and the P-DEV/P-HOST-@16 verdict honestly.
 - **The routed-union histogram (the Q21 GB ground truth):** the distinct local experts per
   rank-layer-step **mean 16.1 (p50 16, p90 21, max 27)**, balanced across ranks
   (15.5–17.0 — the expert placement is NOT needed). The 40-row decode bucket carries 8

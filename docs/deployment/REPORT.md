@@ -200,33 +200,45 @@ the engine loop 61.5 ms (the launch/graph-replay 28.3 — prep 0.00, logits 0.47
 The acceptance AL ~1.95 confirmed by three independent instruments (the streaming
 chunk counts, the drafted metric, the per-position rates). The routed-expert
 histogram: **16.1 distinct local experts per rank per layer** (p50 16, max 27,
-rank-balanced) — the ground truth for the Q21 kernel's byte model (the stock op is
-a masked dense pass reading all 36 local experts every step, batch-independent:
-43.6 GB/rank/step; the routed-only kernel reads the union: 2.24× the expert-byte
-cut). The measurement recipes (the nonblocking py-spy for the lazy-mode workers;
-the streaming chunk count = the per-request step count; the spec-metric windows
-unreliable for the cadence) are recorded in `docs/research/RA-037-decode-commercial.md`.
+rank-balanced) — the routing statistics. **The corrections (11-13 late): the AL is
+prompt-dependent — 1.95 on the predictable text (the count prompts), 1.68 on the
+natural text (the bench's paragraph prompts); the bench arithmetic closes with the
+AL ~1.65 and the EOS-drain average running ~10.6.** **The "dense-pass" op
+attribution was wrong** (the cited function is MiniMax-M3's SwiGLU-OAI path; GLM
+takes the standard fused MoE op), and the 43.6 GB/rank/step figure was the B1
+all-read *assumption*, never directly measured — the T1a's own bs=1 device-work
+reading (~1.26 ms) implies only ~3 GB, i.e. **the deployed op likely already reads
+the routed experts only**. The Q21's remaining value is the fused dequant+GEMV,
+not the routed-only read; **the MoE device time and bytes must be measured
+directly (one boot) before the Q21 investment decision.** The measurement recipes
+(the nonblocking py-spy for the lazy-mode workers; the streaming chunk count = the
+per-request step count; the spec-metric windows unreliable for the cadence) are
+recorded in `docs/research/RA-037-decode-commercial.md`.
 
 ### 6.3 What limits decode, and the path forward
 
 The bs=1 decode is **host-dispatch-bound** (the device 78–100% idle, the AIP-Util
 0–22%): the optimization target is the host dispatch rate, not the device. At @16
-the step is ~65% worker (the launch replay + the drain + the sampler) and the
-device drain is the Q21 target. The ranked path (the doc RA-037 §6):
+the step is ~65% worker (the launch replay + the drain + the sampler). The ranked
+path (the doc RA-037 §6, re-scoped after the 11-13 corrections):
 
-1. **Q21 routing-aware fused MoE kernel** (the drain 27→~12 ms): the kernel
-   step-1 (the single-expert block-FP8 GEMV, bit-exact) is committed
+1. **The MoE device-time/bytes measurement first** (one boot: the env-gated event
+   timers around the moe_op call at bs=1 vs @16) — it decides whether the Q21
+   kernel has any byte-saving value at all (the stock op may already be
+   routed-only; the 43.6 GB figure was an unverified assumption).
+2. **Q21 routing-aware fused MoE kernel** (conditional on 1): the kernel step-1
+   (the single-expert block-FP8 GEMV, bit-exact) is committed
    (`kernels/mxfp4-moe/extra/block_fp8_gemv_glm/`); the step-2 integration
-   (the routed-only multi-expert fused op) is the next engineering work (the doc's
-   estimate: weeks).
-2. **The launch/sampler trims** (the replay 28.3 + the parse 15.6): the graph
+   (the routed-only multi-expert fused op) is weeks-class.
+3. **The launch/sampler trims** (the replay 28.3 + the parse 15.6): the graph
    population and the sampler vectorization.
-3. **The MTP k=4 chain graph or a DFlash2-class drafter** for the 800-tok/s
+4. **The MTP k=4 chain graph or a DFlash2-class drafter** for the 800-tok/s
    target (the k=4: the RA-018 chain graph; the drafter: gated on the
    licensing/training-infra decision — the DFlash2 checkpoint is CC BY-NC-ND).
 
-Combined: **the iteration ~45–50 ms → ~657 tok/s @16 for the fixed-length
-workloads** (proportionally less for the EOS-mixed).
+Combined (if the Q21 case confirms): **the iteration ~45–50 ms → ~657 tok/s @16
+for the fixed-length workloads** (proportionally less for the EOS-mixed; the AL
+1.68 on the natural text vs 1.95 on the predictable).
 
 ### 6.4 Infrastructure hardened
 
