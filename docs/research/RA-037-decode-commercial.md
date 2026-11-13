@@ -448,6 +448,17 @@ only, NO histogram; corrects the T1B split above):**
   cadence 72.7 ms by the streaming + the LOOP stamps, and the Q21/trims math stands
   on those two alone. The drafted metric remains useful as the RELATIVE cross-check
   (the same bias across the arms).
+- **THE 0.64× QUESTION CLOSED (the census-span decode):** the census span's own
+  metrics lines show **the window-average Running ≈ 7.9** (the snapshots 8-16 across
+  the ramp/partial phases — the SPECCHK span included the capture-laden rep1 and the
+  ramp), NOT the steady 15.5. The drafted throughput (140.89 tok/s) ÷ the window-
+  average running (7.9-10) = the cadence 107-140 ms over THAT (instrumented, ramp-
+  mixed) span — consistent with the census (2720/26 s = 153 ms instrumented). **The
+  clean-production cadence (the streaming, the steady loaded phase) remains 72.5 ms
+  ✓; the drafted metric is honest within its own windows — the discrepancies were
+  the cross-span comparisons (my errors), not the metric.** The final measurement
+  doctrine: compare the instruments ONLY within the same span, and prefer the direct
+  per-request counts (the streaming chunks) over the derived rates.
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
