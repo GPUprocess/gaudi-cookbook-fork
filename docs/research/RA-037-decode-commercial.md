@@ -268,6 +268,26 @@ other side of a tie — the parity-vs-correctness gate semantics need the explic
 statement the T7 spec demands. Probe: `kb_staging/r003_probe.py`,
 `r003_load_probe.py`.
 
+**The EngineCore py-spy @16 (2026-11-13, the L2.2 refutation + the engine anatomy):**
+- **The L2.2 in-process arm is REFUTED BY THE CODE**: `core_client.make_client` raises
+  `NotImplementedError` for asyncio+in-process ("Running EngineCore in asyncio without
+  multiprocessing is not currently supported") — the `vllm serve` path structurally
+  requires the multiprocess EngineCore in vLLM 0.26.1. The arm is closed without a boot.
+- The py-spy on the EngineCore under the 2-rep @16 load (51 samples — GIL-biased,
+  directional): **~73% `FutureWrapper._wait_for_response`** (the engine blocks on the
+  workers' sampling completion — the engine and the workers SERIALIZE per step),
+  ~12% the scheduler/KV-allocate frames (the magnitude uncertain vs the F4TS's 0.2 ms
+  stamp — the mamba/KDA allocation spikes suspected at the batch transitions; flag for
+  the next instrumentation), the rest the queue plumbing; the output-forwarding thread
+  idle (the L2.1 conclusion holds at @16).
+- **The complete measured @16 anatomy (116 ms):** the engine schedule ~0.2 ms → the
+  broadcast ~0.15 ms → **the worker critical path ~115 ms (the T1B split: the launch
+  host 65 + the device drain 26 + the sampler host 24)** → the update/API ~2-5 ms.
+  The optimization math: the launch 65→X, the device 26→~12 (Q21), the post 24→Y
+  (the vectorized sampler) → the step ~55-70 ms → **the @16 ~430-540 tok/s**; the 800
+  target additionally needs the MTP k=4 (the acceptance 3.33, the RA-018/T2 chain graph)
+  or the DFlash2-class drafter (the RA-009/L6).
+
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
 Extend the F4-TS stamps to the API-server side (the serving process): stamp (i) the
