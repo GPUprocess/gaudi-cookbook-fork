@@ -247,6 +247,16 @@ path (the doc RA-037 §6, re-scoped after the 11-13 corrections):
    more tractable lever (the graph population).**
 4. **The acceptance-side** (the AL 1.68 on the natural text vs 1.95 on the
    predictable): the draft quality/the sampler — the MTP k=2 probe.
+   **THE MTP K=2 PROBE RAN (11-13, the serve_mtp_k2ns32.sh, the ns32 + the k=2):
+   the verify rows 48, the boot ~35 min (the +48-row buckets). THE RESULTS: the
+   bs=1 decode 46.9 t/s (+10-17% vs the k=1's 40-43 — the latency WIN); the @16
+   aggregate 200-204 tok/s (−20% vs the 250-258 — the throughput LOSS); the AL
+   2.38 (the per-position 0.825/0.559 — the position-1 acceptance decays as
+   expected). The mechanism: the tokens +30% (the AL 2.38/1.83) vs the step cost
+   +50% (the 48-row verify) = the net −13-20% at the batch. **THE VERDICT: the
+   workload-dependent config — the k=1 stays production (the throughput priority);
+   the k=2 is the latency-mode option for the low-concurrency/single-user
+   serving** (the boot script staged: `serve_mtp_k2ns32.sh` + `boot_k2ns32.sh`).
 5. **The MTP k=4 chain graph or a DFlash2-class drafter** for the 800-tok/s
    target (the k=4: the RA-018 chain graph; the drafter: gated on the
    licensing/training-infra decision — the DFlash2 checkpoint is CC BY-NC-ND).
