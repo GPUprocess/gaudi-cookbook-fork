@@ -260,6 +260,15 @@ summary `t1b_summary.json`):**
   deprioritized).** The honest aggregate ceiling after the trims: **the iteration
   ~50-55 ms → ~450-500 tok/s @16** (the 657 estimate assumed the Q21 byte savings
   — retracted).
+- **BG-1 CONFIRMED BY THE CAPTURED RECIPE (the direct evidence, zero-boot):** the
+  GC capture trace (`/data/glm53/captured_core_seq.txt`, the 26,407-node recipe)
+  shows the MoE region (23,094 nodes): **the batch_gemm ×1,496 + the dequant-class
+  nodes (the mult_bf16 ×1,010, the cast_f32_to_bf16 ×760, the div_f32/mult_f32
+  ~766, the moe_multiplexer ×1,002)** — **the dequant nodes ARE present in the
+  recipe but the Synapse compiles them into the batch_gemm load path** (the fused
+  multiply-on-load; no extra HBM round-trip), consistent with the timing inference
+  (the 27.3 ms drain fits the FP8-only read). **BG-1 = fused, confirmed by both
+  the timing and the capture structure. The Q21 verdict stands: not justified.**
 - **The routed-union histogram (the Q21 GB ground truth):** the distinct local experts per
   rank-layer-step **mean 16.1 (p50 16, p90 21, max 27)**, balanced across ranks
   (15.5–17.0 — the expert placement is NOT needed). The 40-row decode bucket carries 8
