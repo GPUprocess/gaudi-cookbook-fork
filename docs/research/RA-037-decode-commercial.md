@@ -255,18 +255,21 @@ the answer token's top-2 gap is **0.75 logits** (`10` at −0.392 vs `5` at −1
 `</think>` gate 2.88) — R003 is a genuine near-tie item. The greedy answer is
 deterministically **"10" (the trap) ×5 in BOTH the serial and the 16-stream concurrent
 shapes** on the current stack — the current baseline is self-consistent, no
-batch-shape sensitivity. **The results archaeology:** ALL the recorded suite arms since
-the Q18 era score 39/40 with R003="10" — INCLUDING the arms the docs describe as
-"rejected by R003" (q01s3, mhc_rows8192, f1async all record "10", 39/40); the
-early-MTP1 and TP4 arms record "5" (40/40). The rejection bookkeeping (which arm
-flipped R003 in WHICH direction, and against which reference) does not reconcile with
-the recorded JSONs and needs the git-history archaeology before the T7 gate policy is
-finalized. What stands: (1) R003 is tie-class (0.75 logits) — any 1-ULP numerics change
-can flip it in either direction; (2) the current stack's 97.5% baseline IS the
-R003-wrong state; (3) the answer-level suite cannot see a "flip" that lands on the
-other side of a tie — the parity-vs-correctness gate semantics need the explicit
-statement the T7 spec demands. Probe: `kb_staging/r003_probe.py`,
-`r003_load_probe.py`.
+batch-shape sensitivity. **The archaeology RESOLVED (it already existed — commit
+`975cf64` R003-HIST, 11-11 15:31, which this probe now completes with the logit gap):**
+the last 100% suite was the TP4 4-card config (11-09 03:49); EVERY TP8 8-card suite
+since the lever era is 97.5% with R003="10" — the state SURVIVES the vectorized-parse
+revert, the HARD HOST REBOOT, and the levers-off boot: **R003 is the reasoning
+knife-edge (the intuitive "10" vs the retrieved "5" at the low reasoning effort at the
+TP8 shape), NOT a deployment corruption** — the probe's 0.75-logit gap quantifies it.
+**The operational adoption gate is already "does not push accuracy below 97.5"**, and
+the three banked optimizations were RE-ADJUDICATED under it and dropped ON THE MERITS:
+the Q01v2 draft graph (the compose/combined boots: the +20% win is cache-dependent; at
+the adopted config −7% @16 — `87762a5`, `5243e1b`), the F1/RA-011 async (−5% decode —
+`e5beed8`), the MHC-ROWS cap (the 8192 raise does not fix the prefill cost —
+`bfabdc1`). The RA-018/T7 tie-aware refinement (the per-flip gap attribution) remains
+as future hardening; the probe supplies its measurement recipe
+(`kb_staging/r003_probe.py`, `r003_load_probe.py`).
 
 **The EngineCore py-spy @16 (2026-11-13, the L2.2 refutation + the engine anatomy):**
 - **The L2.2 in-process arm is REFUTED BY THE CODE**: `core_client.make_client` raises
