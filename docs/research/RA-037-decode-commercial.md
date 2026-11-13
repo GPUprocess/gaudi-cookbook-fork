@@ -425,6 +425,17 @@ only, NO histogram; corrects the T1B split above):**
   iteration 72.5 = the engine 61.5 + the tail 11 → Q21 (the drain 27→12) + the
   launch/sampler trims → the iteration ~45-50 ms → for the fixed-length workloads
   16 × 1.95/0.0475 ≈ 657 tok/s; for the EOS-mixed workloads proportionally less.**
+- **THE PROPCHK CROSS-CHECK (the clean production, the 2-rep bench):** the rep2
+  (the warm): 2472 tokens / 9.88 s = 250 tok/s aggregate, the requests EOS-finished
+  at ~155 tokens; the streaming request (the 256-cap count prompt, the earlier run):
+  the 131 chunks × 72.7 ms = 9.5 s = 26.9 tok/s — **the per-request rates AGREE
+  (the 22-27 tok/s band) across the prompt types and the measurement methods**; the
+  iteration 72.7 ms ✓ the LOOP 61.5 + the tail ✓. The drafted metric's AL 1.81-1.86 ✓
+  the chunk-count 1.95 (the slop). **The one open item: the drafted throughput
+  (140.89 tok/s) implies ~10.2 proposals/iteration vs the ~15.5 running — either the
+  EOS-approaching requests skip the drafting, the metric's proposal accounting has a
+  normalization quirk, or the padded rows interact — the minor open question, zero
+  production impact (the AL and the rates are consistent everywhere else).**
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
