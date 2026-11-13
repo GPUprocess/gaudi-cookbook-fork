@@ -525,6 +525,18 @@ only, NO histogram; corrects the T1B split above):**
   cadence 72.7 ms by the streaming + the LOOP stamps, and the Q21/trims math stands
   on those two alone. The drafted metric remains useful as the RELATIVE cross-check
   (the same bias across the arms).
+- **THE STANDALONE HPU COMPILE BLOCKER (the operational finding, 11-13):** the
+  standalone HPU processes **cannot compile ANY recipe on this host** (the
+  synStatus 26 even for the trivial 4×4 matmul; persisting through the AIP reset,
+  the driver reload, **the full host reboot**, the full production env, and the
+  vllm import); **ONLY the vLLM serve full initialization compiles successfully.**
+  **ALL standalone HPU benchmarks are blocked on this host** — the future
+  measurements must use the vllm-process instruments (the stamps, the py-spy,
+  the capture traces — all deployed). The BG-1b dequant-cache experiment
+  (the first-vs-warm dequant timing) is deferred to the vllm-process instrument
+  or the compile fix. The recovery note: after `kill_glm.sh`, the bare HPU tests
+  fail identically — the compile failure is NOT the kill's artifact (it predates
+  and postdates the reboot; the production vllm serve compiles fine throughout).
 - **THE 0.64× QUESTION CLOSED (the census-span decode):** the census span's own
   metrics lines show **the window-average Running ≈ 7.9** (the snapshots 8-16 across
   the ramp/partial phases — the SPECCHK span included the capture-laden rep1 and the
