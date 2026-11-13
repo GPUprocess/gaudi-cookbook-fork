@@ -436,6 +436,18 @@ only, NO histogram; corrects the T1B split above):**
   EOS-approaching requests skip the drafting, the metric's proposal accounting has a
   normalization quirk, or the padded rows interact — the minor open question, zero
   production impact (the AL and the rates are consistent everywhere else).**
+- **THE SAME-SPAN RECONCILIATION (the census span, the final):** the drafted metric
+  over the EXACT census window: **2626 proposals ≈ the census 2720 scheduled-with
+  (the 3.5% = the window edges) ✓ the drafted metric ≈ the scheduling census.** BUT
+  the streaming-derived proposals/s (the 16 requests × 13.7 iters/s = 220/s) exceeds
+  the drafted metric (124-140/s) by ~1.6× — **the drafted metric under-counts the
+  proposals vs the streaming-derived rate** (the observe_draft call-site condition —
+  the generated_token_ids emptiness or the spec-row indexing; the resolution needs
+  the observe_draft call-site instrument, one boot). **ZERO impact on the
+  optimization path**: the AL 1.95 is confirmed directly by the chunk counts, the
+  cadence 72.7 ms by the streaming + the LOOP stamps, and the Q21/trims math stands
+  on those two alone. The drafted metric remains useful as the RELATIVE cross-check
+  (the same bias across the arms).
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
