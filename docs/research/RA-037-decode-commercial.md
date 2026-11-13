@@ -372,21 +372,35 @@ only, NO histogram; corrects the T1B split above):**
 - **THE ARBITER RUN (the zero-boot, chunk_cadence.py):** one streaming request among
   the 15 fillers, the client-side chunk timestamps: **the bs=1 gap 47.5 ms (the p50
   46.7 — the solo step ✓ the F4TS agrees); under load: the gap p50 72.7 / the mean
-  79.9 (the p10 57.7, the p90 73.4 — TIGHT), the tokens/chunk 1.00.** The three
-  cadence measurements now agree on **the @16 iteration ≈ 62-80 ms** (the LOOP 61.5 +
-  the API/send latency ≈ the streaming 73-80; the drafted-implied 113 is the
-  outlier). **The drafted metric over-counts the proposals per wall-time ~1.5×:
-  ~2/3 of the request-steps draft, ~1/3 SKIP drafting** — consistent with
-  `make_spec_decoding_stats` returning None for the zero-draft request-steps (the
-  invisible in the metric). **THE NEXT SESSION'S THREAD: why do ~1/3 of the
-  request-steps skip the draft?** — the scheduler's spec_token_ids lifecycle
-  (scheduler.py update_draft_token_ids / the request.spec_token_ids state), the
-  decode_lean early-draft path (glm5_next_hpu/decode_lean.py), the SPEC_DEVICE_REJECT
-  interaction. If the skipping is a fixable limitation (not a deliberate lever),
-  restoring the full drafting at @16 is worth ~+20-40% aggregate. The final attack
-  list: 1) the draft-skipping root cause (zero-boot code read first), 2) the worker
-  replay 28 ms + the drain 27 ms (Q21 → 12), 3) the sampler/parse 15.6, 4) the
-  API/send tail (the streaming gap 73-80 vs the engine 61.5).
+  79.9 (the p10 57.7, the p90 73.4 — TIGHT)**. **THE CHUNK COUNTS RESOLVE THE AL:
+  the solo 66 chunks for the 128 tokens = the AL 1.94; the loaded 131 chunks for
+  ~256 tokens = the AL ~1.95 at @16 — THE DRAFTS ARE ACCEPTED AT @16; there is NO
+  draft-skipping** (the earlier "⅓ skip" inference was the artifacts compounding:
+  the drafted-metric windows mixed with the phases + my cadence misattributions).
+  The drafted metric (1.82) ≈ the chunk-count AL (1.95) within the slop ✓ honest.
+- **THE CORRECTED STEADY PICTURE @16: the iteration 72.7-79.9 ms, the tokens/step
+  ≈ 16 × 1.95 ≈ 31 → the STEADY aggregate ≈ 415-430 tok/s.** The bench's 254
+  substantially UNDERSTATES the steady throughput (the ramp + the staggered-completion
+  tail + the prefill steps dilute the wall-average by ~40%). The bench-aggregate
+  comparisons remain valid RELATIVELY (the same dilution across the arms), but the
+  absolute steady ceiling is much higher than the bench suggests. **The optimization
+  target: the iteration 73-80 → the worker 71 (the launch 28 + the drain 27 + the
+  post 15.6) + the send/API ~2-9 → Q21 (the drain → ~12) + the launch/sampler trims
+  → the iteration ~45-50 ms → the STEADY @16 ≈ 600-690 tok/s.** The 800 bench-number
+  needs the k=4/drafter AND the ramp/tail dilution accounted.
+- **REOPENED (the final wrinkle): the drafted metric counts ~10.3 proposals/iteration
+  (140.9 tok/s ÷ 13.7 iters/s) vs the ~15.5 running — ~⅓ of the request-steps schedule
+  WITHOUT their draft** (the vLLM streaming emits one delta per step per request, so
+  the chunk count = the steps ✓ and the streaming request's own AL 1.95 shows drafting
+  works WHEN scheduled). **The prime suspect: the scheduler's spec-scheduling
+  arithmetic** — `num_scheduled_spec_tokens = num_new_tokens + num_computed_tokens −
+  num_tokens − num_output_placeholders` (scheduler.py:624-628) can compute ≤0 for a
+  freshly-rejected request (the num_computed_tokens rewind at update_from_output:1690),
+  stripping that request's draft for the step — an alternating draft/no-draft pattern
+  per request would cost the acceptance on those steps. **The next session: trace
+  num_scheduled_spec_tokens per request under the @16 load (a debug print or the
+  scheduler dump), and if confirmed, the fix is a scheduler arithmetic patch (the
+  small, testable class).**
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
