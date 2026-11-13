@@ -3,7 +3,7 @@
 Independent performance research for GLM-5.3-Flash on 8× / 4× Intel Gaudi 2.
 
 - **Author:** independent research architect (research-only; no HPU access, no implementation)
-- **Date:** 2026-11-12 (revision 12.1 — RA-036 rev 12.1: the implementation feedback incorporated (one retraction — the license is CC BY-NC-ND, my apache-2.0 claim was wrong — + four corrections — the T3 B1 gate, the never-built native, the selector-host-cost physics, the T5 confirmation) at the end; the rev-12 RA-036 notes + the round-5 notes retained; revisions 6-10 notes retained)
+- **Date:** 2026-11-13 (revision 13 — STRATEGIC PIVOT (owner ruling: DFlash2 excluded, non-commercial license) + RA-037: the measurement-first, commercial-only decode program (the T1 measurement set that re-ranks everything, the L1-L7 lever stack, the self-trained drafter L6, the 4-HPU roofline L7) at the end; the rev-12/12.1 RA-036 notes + the round-5 notes retained; revisions 6-10 notes retained)
 - **Sister document (2026-11-09):** `BOTTLENECK_RESEARCH.md` (this directory) — the
   bottleneck-elimination pass: new proposals **RA-011..RA-015** (continuing this document's global
   numbering), rejections **RJ-13..RJ-19**, gaps **BG-1..BG-7**, and corrections **C1..C7** to
@@ -3660,3 +3660,117 @@ the upstream repositories / HF cards):**
 5. If any of these documents is published externally rather than used inside the project,
    re-review the two "NO LICENSE FILE" rows and the remaining short attributed phrases.
 
+
+### 13. Rev 13 (2026-11-13) — STRATEGIC PIVOT (owner ruling): DFlash2 excluded (non-commercial license); the decode-only, commercial-only program (RA-037)
+
+**Owner directive (2026-11-12): "Forget dflash2 as it has a non commercial license,
+focus on figuring out how to get higher decode."** The incoai GLM-5.3-Flash-DFlash2
+checkpoint (CC BY-NC-ND 4.0) is EXCLUDED from production. **New deliverable:
+`RA-037-decode-commercial.md`** — the measurement-first decode program to 200 bs=1 and
+800@16, commercial-only (every lever names its license class; license statement
+appended). The DFlash2 port work (e432f01, the ~40% substrate) is NOT wasted: it is
+architecture-defined and becomes the execution vehicle for the SELF-TRAINED drafter
+(RA-037 L6 — the z-lab/dflash METHOD is MIT; only the incoai weights were NC).
+
+**The central finding of the round — the physics tension that re-ranks everything.**
+The agent's own measurements are mutually inconsistent under one bs=1 physics:
+BS1-HOSTBOUND (the 23.8 ms step is 95% host main-thread; the device launch is 1.26 ms
+visible) vs the rank-1 table's Q21 estimate (the weight streaming 38.1 GB/step → "bs=1:
+43 → 206 t/s", which requires the 38.1 GB to be ~23 ms of PER-RANK device work).
+py-spy sees the MAIN THREAD, not the hidden async device work — the device's actual
+busy time per step and the per-rank HBM bytes/step are UNMEASURED (both are on the
+agent's own unknowns list). **Two candidate physics survive: P-DEV (the step is
+device-paced — Q21 alone moves bs=1 42→200+ and @16 258→800+) vs P-HOST (the step is
+host-paced — the 17 ms gap + the 61 ms worker host @16 are the masters; Q21's bs=1
+value is ~0).** Both can hold in different regimes (bs=1 vs @16). **The first
+deliverable is therefore the measurement set (RA-037 T1), not a lever:**
+
+- **T1a + T1c (one boot, ~1 day):** the bs=1 step physics — three device stamps (the
+  graph launch return; the completion proxy = D2H-start − launch-return, since the D2H
+  cannot start before the device is done; the per-rank HBM bytes/step over 100 steps)
+  + the API-server-side stamps that localize the 17 ms (the V1 topology: APIServer
+  ↔ZMQ↔ EngineCore ↔SHM-MessageQueue↔ Workers — two process hops + the SHM broadcast
+  per step; the prime suspect is the API-server output cadence inside the step wall).
+  **Pre-registered decision rule:** HBM ≥ 30 GB/rank AND device-busy ≥ 18 ms → P-DEV
+  (Q21 is master bs=1); ≤ 10 GB OR ≤ 12 ms → P-HOST (the 17 ms program + the drafter
+  are master bs=1).
+- **T1b (one boot, ~1 day):** the @16 physics — the per-rank HBM @16 (the 38.1 GB
+  regime), the 42 ms "replay" term split (launch-CPU vs sync-wait — the completion
+  stamp does it), and the routing-union histogram (the per-step distinct-local-expert
+  count — the Q21 GB model's ground truth: the saving is pairs÷distinct, not pairs).
+- **L4.0 (one boot, ~half day):** the MTP-ON 16-stream worker-host decomposition + the
+  AL@16 + the capture-branch count at MTP-on 16 — the −38% MTP@16 regression
+  DECOMPOSITION (the D1-16 terms alone predict −18%, not −38% — the ~35 ms gap has
+  named candidates: the 32-row verify bucket capture, the MTP-shape F3 tax, the
+  SpecDecodeMetadata at 16 rows — the measurement names it).
+
+**The lever stack (RA-037 §4, commercial-only), in one line each:**
+- **L1 (K, P1 under both):** the Q21 integration (in progress) — sharpened: report the
+  per-rank GB/step (the invariant, not the t/s); the expert-placement skew check (the
+  hot-expert balancing is a free static permutation); **the 38.1 GB may be dominated by
+  the DENSE weights re-read every step (the attention/MLA/KDA/lm_head) — if so, the
+  dense-dequant fusion (the RA-035 question) is P1-adjacent, worth as much as the MoE
+  cut**; the MTP-on A/B arm (the 2-row verify's pairs); the TP4 variant.
+- **L2 (H, master bs=1 under P-HOST):** the 17 ms program — the API-server output
+  cadence (the prime suspect; the async-socket overlap pattern exists in the V0
+  engine — verify it is enabled in the V1 serve path), the in-process-engine-core A/B
+  (`VLLM_ENABLE_V1_MULTIPROCESSING=off` removes the ZMQ hop; the GIL trade is
+  measurable), the SHM-queue wakeup micro-benchmark, the D1 leaf fusions. DO NOT
+  re-attempt the F1-ASYNC class (dropped with evidence; the D2H is not the 17 ms).
+- **L3 (H, master @16 under P-HOST-@16):** the 61 ms worker host — the 42 ms replay
+  (the single-graph capture is the big one: **the pad bucketing makes the MTP shape
+  STATIC — the 16-32 active range maps to ONE 32-row pad bucket, the acceptance
+  variability lives inside the padded rows — the dynamic-shape blockers in the agent's
+  research question 1 dissolve; the `VLLM_BUCKETING_STRATEGY=pad` 222-decode-bucket
+  machinery exists in the tree, UNSET**), the 10.6 ms draft (the graphed draft — the
+  MTP draft is dense, captures cleanly), the 6 ms sampler (the vectorized N-row
+  sampling — verify the per-row loop in the spec-decode verify source).
+- **L4 (S, P1 for 800@16 under BOTH physics):** the MTP@16 recovery — the −38% is
+  arithmetic on the measured terms (the +17 ms host outweighs the +0.88 tok/step) and
+  every term has an L3 attack surface; the end state after L1+L3+L4: @16 ≈ 258 ×
+  (1.1-1.4) × (1.3-1.7) × 1.8 ≈ **600-1000 t/s — the 800 target is inside the
+  envelope**; the batch-conditional depth (k=2 at bs=1-2, k=1 at ≥4, off at 32 if
+  needed) is the config that keeps the bs=1 +21% without paying it at @16.
+- **L5 (C, the insurance policy):** the concurrency 16→32 — the per-stream drop
+  15.6→13.6 (8→16) proves the device is NOT saturated at 16; the KV/state HBM at 32 is
+  small (~200 MB/card — the pool is not the wall, the graph population + the per-row
+  host are); GATED on L3 (the per-row cost doubles at 32 unfixed); ×1.2-1.5 on the
+  aggregate.
+- **L6 (S, THE 200-bs=1 path under P-HOST, the commercial DFlash2 replacement):** the
+  SELF-TRAINED block-diffusion drafter — the method is MIT (z-lab/dflash + arXiv
+  2602.06036; "6× on Qwen3-8B, 2.5× faster than EAGLE-3"), the training scaffolding is
+  Apache-2.0 (vLLM Speculators' DFlash path), the target weights are the project's own
+  → **commercially clean**. The architecture mirrors the incoai config (the 5-layer
+  qwen3-5L + the 2048 ring + the top-16 rank-256 selector + the aux-hidden at
+  [5,14,24,33,42]) so the RA-036 40% port DROPS IN UNCHANGED (the B1 KDA-rollback remap
+  is the shared hard gate, license-neutral). Training: the target-hidden generation
+  over the domain corpus is the long pole (a few days on a few GPUs); the quality gate
+  reuses the RA-036 T15 method — **G1: AL ≥ 4.0 at bs=1** (honest band 3.5-5.5; the
+  incoai checkpoint as the research-only anchor for "how good is possible"). The bs=1
+  arithmetic: step = max(host_L2, device 19-33 ms) → **140-250 t/s at 8 HPU** (the 200
+  clears in the median case); the drafter is NOT the @16 lever (the 128 verify rows at
+  16 requests — the MTP k=1 2-row verify is the @16-optimal depth).
+- **L7 (the 4-HPU objective check, the honest arithmetic):** 800@16 at 4 HPUs =
+  180.8 × (L1 1.2-1.4) × (L3 1.5-1.8) × (L4 AL 1.8) × (L5 1.2-1.5) ≈ **800-2300 t/s —
+  INSIDE the envelope with margin; the drafter is not needed for it**. 200 bs=1 at 4
+  HPUs: MTP-class caps at ~90-125 t/s; the drafter reaches **155-185 (the optimistic
+  corner touches 200)** — **flagged for the owner: 200-bs=1-at-4-HPU is a stretch
+  target (the 8-HPU box is where 200 clears in the median); the 800@16 at 4 HPUs is
+  the tractable 4-HPU target.**
+
+**The do-first (RA-037 §6, in order):** (1) T1a+T1c (~1 day) → the bs=1 physics
+verdict; (2) T1b (~1 day) → the @16 verdict + the Q21 GB ground truth; (3) L4.0
+(~half day) → the −38% decomposition + the AL@16; (4) continue the L1 integration
+(with the per-rank GB readout + the MTP-on arm + the L1.3 dense question); (5) L2 if
+P-HOST at bs=1; (6) L3+L4 (the @16 master track); (7) L5 (gated on L3); (8) L6 after
+the T1a verdict + the owner's training-infra confirmation. Steps 1-3 are 2.5 days of
+measurement that re-rank 4-8; nothing in 4-8 depends on the excluded checkpoint.
+
+**Also recorded this round:** the agent's port reached engine init (the e432f01 10-
+failure ledger — the registry, the `qwen3_dflash2` model + the CandidateSelector, the
+factory fixes, the config corrections; the B1 KDA-rollback remap remains the hard gate
+and is now the SELF-TRAINED drafter's gate — the investment is not stranded); the
+agent's ten research questions (current_bottleneck.md §11) are answered in RA-037 §5
+(resolves into FOUR programs: the Q21+dense-dequant device track, the single-graph +
+host track, the MTP@16 recovery, the self-trained drafter; three HOLDs: the AR
+reduction, the KDA+MLA fusion, the v0.30.0 stack).
