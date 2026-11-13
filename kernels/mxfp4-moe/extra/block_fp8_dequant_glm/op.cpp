@@ -17,7 +17,7 @@ constexpr const char* schema = "custom_op::block_fp8_dequant_glm";
 constexpr const char* guid = "block_fp8_dequant_glm";
 
 void validate(const at::Tensor& weight, const at::Tensor& scale) {
-    TORCH_CHECK(weight.scalar_type() == at::kFloat8_e4m3fnuz &&
+    TORCH_CHECK((weight.scalar_type() == at::kFloat8_e4m3fnuz || weight.scalar_type() == at::kFloat8_e4m3fn) &&
                 scale.scalar_type() == at::kFloat && weight.dim() == 2 &&
                 scale.dim() == 2 && weight.size(0) % 128 == 0 &&
                 weight.size(1) % 256 == 0 && weight.is_contiguous() &&

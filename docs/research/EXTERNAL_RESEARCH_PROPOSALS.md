@@ -3,7 +3,7 @@
 Independent performance research for GLM-5.3-Flash on 8× / 4× Intel Gaudi 2.
 
 - **Author:** independent research architect (research-only; no HPU access, no implementation)
-- **Date:** 2026-11-10 (revision 8 — the round-2 audit note at the end; revisions 6-7 notes retained)
+- **Date:** 2026-11-12 (revision 12.1 — RA-036 rev 12.1: the implementation feedback incorporated (one retraction — the license is CC BY-NC-ND, my apache-2.0 claim was wrong — + four corrections — the T3 B1 gate, the never-built native, the selector-host-cost physics, the T5 confirmation) at the end; the rev-12 RA-036 notes + the round-5 notes retained; revisions 6-10 notes retained)
 - **Sister document (2026-11-09):** `BOTTLENECK_RESEARCH.md` (this directory) — the
   bottleneck-elimination pass: new proposals **RA-011..RA-015** (continuing this document's global
   numbering), rejections **RJ-13..RJ-19**, gaps **BG-1..BG-7**, and corrections **C1..C7** to
@@ -534,7 +534,19 @@ the DSV4.1-proven loading mechanism, the adaptation staged; **rev 5: STEP 0 IS M
 20.4 vs 37.44 baseline (-45%) — the gathered-weight copy + fp32 down GEMM dominate at our 2-row
 shapes, and the Synapse compiler does NOT fuse the gather into the GEMM's DMA on this stack (the
 rev-4 "best case" is empirically excluded); the custom TPC kernel is now the PRIMARY
-byte-reduction path, not the fallback**) · **Priority:** 1 · **Complexity:**
+byte-reduction path, not the fallback;
+**rev 10 (2026-11-11): the implementation agent STARTED the kernel (commit 39cfd76):
+`block_fp8_gemv_glm` — the single-expert block-FP8 GEMV core (E4M3 [128,128], VLM-staged x,
+fp32 acc, lane-inserted vector store) COMPILES + REGISTERS + EXECUTES end-to-end via the B7
+recipe; [4096,2048] latency 11-16 µs UN-PIPELINED (0.5-0.75 TB/s — the software pipelining is
+the ~4× target); the E4M3 three-way semantics gap MEASURED (stock cast 19,519 NaNs fnuz-interp
+vs kernel convert 9,291 vs CPU-fn reference 0 — the calibration step is next; the deployment
+mechanism is proven). The rev-10 refinement is RA-025 (the cookbook GLM-5.3 MXFP4 mxk design as
+the reference — in-register unpack, in-kernel routing, software pipelining, 2 launches/layer —
+transposed to block-FP8) + the EP4×TP2 COUPLING (the Q17 −22% layout result is now EXPLAINED as
+kernel-dependent: the stock all-experts op reads the same 36 local experts per card regardless
+of routing — the layout gain appears only with a routing-aware kernel; re-test the placement fit
+after the kernel). bs=1 MoE estimate: 15.5 → 2.3-5.4 ms (slowest rank, ~6.7×)**) · **Priority:** 1 · **Complexity:**
 High (weeks) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
@@ -956,7 +968,15 @@ reference (919ec98f) measured the full chain-graph MTP-4 mode — acceptance 3.3
 26.0 vs 20.2 (+29%), single-stream 20.9 vs 17.3 (+21%), greedy identical, parity 12/12; TASKS
 A014/A018 are READY and designate this port; (iii) EXP-Q19's non-stacking (in-graph draft +
 early-draft) stands as a configuration constraint (T1/T2 run `GLM_EARLY_DRAFT=0`). T0 (config-only
-acceptance probe) gates T1/T2. · **Priority:** 1 (rev 5) · **Complexity:** Low (T0) / Medium–High
+acceptance probe) gates T1/T2. **rev 10 (2026-11-11): T0 IS MEASURED (MTP4-T0, the /metrics
+spec-decode counters): k=4 — 417 drafts, 1,668 draft tokens, 1,119 accepted = 2.68 tok/step
+(67.1% of 4) vs k=1 1.88 (94%); the 67.1% rate matches the A014 reference's 66.6% at k=5
+(3.33/5.0) — the ceiling is a model/workload property; bs=1 40.8-41.5 = PARITY (the eager
+4-chain cost ≈ the acceptance gain — the T1 graphed chain captures the gain at ~0 draft cost →
+the 2.68 tok/0.045 s ≈ 59.5 t/s bs=1 projection stands, calibrated); @16 161-162 = −38% (the
+W5 wall — the 80-row verify scales the device; the deeper-k value is bs ≤ 4). T1 proceeds per
+the rev-10 do-first item 3 (after the Q21 micro-benchmark; GLM_EARLY_DRAFT=0 per Q19; the Q11
+unblock = the T7 owner decision).** · **Priority:** 1 (rev 5) · **Complexity:** Low (T0) / Medium–High
 (T1) / Medium (T2) · **Owner (suggested):** primary agent
 
 #### 1. Executive summary
@@ -1430,8 +1450,9 @@ research verified the underlying mechanisms in the corpus and in our deployed tr
   explicit: "HPU Graphs can only be used to capture and replay static graphs. Dynamic shapes are not
   supported" [GG: habana-docs Inference_Using_HPU_Graphs, tier B].** Dynamic shapes therefore apply
   only to non-graphed recipe execution (prefill warmup, or a future non-graphed decode) — a probe
-  (D10), not a plan. The g2-opt-manual's "there are no dynamic shapes — requests are turned into
-  static compilation" [tier D] is consistent with this reading for the graph path.
+  (D10), not a plan. The g2-opt-manual audit (tier D) reaches the same conclusion for the
+  graph path: on Gaudi there is no such thing as a dynamic shape — requests are turned into
+  static compilations of fixed shapes, and padding/bucketing is the standard technique.
 
 Proposed components: **(A)** one pad-and-mask max-width verify graph for the ≤2-seq regime;
 **(B)** `VLLM_BUCKETING_STRATEGY=pad` for prefill buckets; **(C)** disk recipe cache; **(D)**
@@ -2444,6 +2465,8 @@ weeks). T7: policy (owner decision).
 
 | Date | Rev | Author | Findings / changes |
 |---|---|---|---|
+| 2026-11-11 | 11 | independent research architect (round 5; owner directive: the implementation agent is profiling workload gaps + the pytorch-bridge graph compile/dispatch — supply the theories) | **The bridge compile/dispatch track + the gap catalog (detail: `RA-034-round5-bridge-gaps-theories.md` + `BOTTLENECK_RESEARCH.md` rev 1.8). (1) RA-032 RECLASSIFIED — NO-OP as an A/B arm: `PT_HPU_ENABLE_LAZY_COLLECTIVES=true` is ALREADY ON in production (our v0.26.0 plugin auto-sets it at import in lazy mode — `platform.py` l.432-433 server-verified; the live worker env boot 02:52 shows `=true`; the agent's RESEARCH-001 addendum 8 verified the same) — the 322-launch B2 structure was measured WITH lazy collectives ON, so the per-layer boundaries are NOT (only) collectives ending recipes; `GLM5_NEXT_DECODE_LAYER_GROUP=45` is also already on (the cookbook mechanism, bit-identical, every serve script — the Muse +15% / reference +10% already banked in the 42.4 baseline). The env-flag surface for dispatch is essentially exhausted — the B2 fix lives in the launch count (per-class), the per-launch cost (Q21), and the overlap (RA-011/T6). (2) NEW RA-034 — the decode launch-boundary CENSUS: the B2 "162 AR segments / 322 recipes" is a model, not a census — tag every recipe boundary in the ARCHIVED RECIPE-DIFF GC-trace logs with its op class (collective/mark/sync/cast/dynamic-shape), per layer; the per-class fix table maps AR → one-shot/gather_sum (T7) + EP coupling, dequant → RA-035, KDA → RA-024/T3, MTP seams/eager draft → RA-026 (T7), marks → done. (3) NEW RA-035 — the dense-linear dequant-fusion question (the agent's own UNVERIFIED finding B2 l.182: `apply_block_fp8_linear_hpu` dequants every block-FP8 linear weight to BF16 then runs a BF16 GEMM — ~180 pairs/step; the census answers whether the compiler fuses the cast+mul into the GEMM weight path; if not: ~1-1.6 ms/step doubled non-MoE weight traffic + the boundary surface; the fix = the Q21 design on the ~90 non-MoE linears, bit-identical target, the 39cfd76 GEMV core as the start). (4) THE GAP CATALOG (for the flame-graph match): G1 the replay-internals launch storm (~14 ms host, 93.3% in graphs.py:75 — census + Q21 + async), G2 the eager draft traversal (7.5 ms bs=1 — the RA-026 T1 chain graph, T7-gated, the 59.5 t/s calibrated), G3 the step-boundary device-idle host work (T6 async-D2H), G4 the AR waits (3.2 ms — the census class), G5 the MoE weight streaming (15.5 ms FLOOR — Q21 in progress), G6 KDA/DSA attention (3.5 ms — the RA-024 diff), G7 the per-row worker (the agent's I015), G8 the @16 device gap (53 vs 24.5 ms — the 28 ms unknown, the BG-1 8-rank trace is the 800 decider). A gap matching NO class = a new finding. (5) The async-replay implementation sensitivity: the reference's naive VLLM_HPU_GRAPH_ASYNC_REPLAY measured a REGRESSION (double-digit 1-stream loss, sample_tokens contention) vs our RA-011 +29% (rejected R003, the in-flight consumption) — the separating constraint: the host must not consume the graph's cached outputs in flight + the output copy must be the async-D2H (the T6 shape — the only re-measurement worth running). (6) LIVE-ENV FLAG: the 02:52 profiling boot runs PT_HPU_LAZY_ACC_PAR_MODE=0 vs the pinned =1 (the bridge accumulation thread pool — the agent's own "busy-wait core" finding) — confirm the launcher before trusting the dispatch numbers; the =1/=0 A/B is the dispatch surface the owner named. (7) THE GRAPH-COMPILE THEORY: two-stage per-graph compile (GC ~8 s first-iteration + the capture); the T12-TEST lesson (per-graph compile cost, ctx-size-dependent); levers: the RA-031 PRODUCTION-MODE recipe cache (NOT blocked — only the dump-debug path is; 25 → 8-12 min) + NEW the decode-only boot (the decode program needs only the 157 decode buckets — VLLM_SKIP_WARMUP or the prompt-bucket cap → 5-8 min with the cache); the regional compilation is NOT available at our release (the recipe cache IS the compile-time lever). (8) Do-first (supersedes rev 10 where conflicting): (1) the agent's profiling — match gaps to the catalog + the BG-1 trace + the ACC_PAR flag; (2) the RA-034 census (no new HPU time); (3) RA-031 + the decode-only boot family; (4) the ACC_PAR A/B; (5) Q21 (the NaN calibration gate → the micro-benchmark → the pipelining); (6) RA-026 (after the micro-benchmark); (7) RA-027 (parallel, to the owner); (8) RA-035 (after the census + the Q21 core); (9) RA-028 (the 4-HPU report, unchanged); (10) the rest continues; (11) the prefill deferrals stand. |
+| 2026-11-11 | 10 | independent research architect (round-4 audit; owner directive 2026-11-11: DECODE IS THE PRIORITY — prefill deferred) | **Round-4 audit (detail: `RA-025-round4-theories.md` + `BOTTLENECK_RESEARCH.md` rev 1.7) + RA-025..RA-032.** Audited the post-rev-9 arc (commits d216ee7..524d35e) + the new 39cfd76 (the Q21 GEMV core started). (1) MTP4-T0 (SUCCESS): k=4 acceptance MEASURED 2.68 tok/step (67.1%) vs k=1 1.88 (94%) — the ceiling is a model property (matches the A014 reference 66.6% at k=5); bs=1 parity (eager chain cost ≈ gain → the T1 graphed-chain 59.5 t/s projection calibrated); @16 −38% (the deeper-k value is bs ≤ 4). (2) TP4-FIX: the 4-HPU decode profile established (35.6-36.4 cache-off / 41.3-45.1 cache-ON per Q14v2); the 4-HPU prefill >2,048-row OOM quantified (76.3 GB weights/card leave ~1 GB free — deferred per owner). (3) FP32-DRAFT: the draft-graph win partially recovered under cache-off (43.0 vs 37.3 = +15%) but the suite 97.5% (R003 persists). (4) RECIPE-DIFF: the captured 2,944-row session compiled 1.4M nodes (26,407 draft-core nodes LEAKED in — FIXED by the seam isolation; the draft cores now compile in their own 26,339-node session); the suite still 97.5% → the drift is in the per-recipe deep compilation. (5) RECIPE-CACHE: the dump blocked on the multi-rank hash-content write race — unblock identified from the vendor source (G31: the per-rank dir appending in inference mode). (6) NONRECIP: the 3rd failed alignment — the R003 verdict FINAL (the drift is inherent to the captured recipe; the T7 tie-aware policy is the practical unlock — RA-027 provides the quantified evidence). (7) T12: the naive pinned-bucket pin is a REGRESSION (215 graphs — the MTP spec-decode seed buckets add +46; the pin file must include them). (8) Q21 (39cfd76): the single-expert GEMV core compiles + executes (11-16 µs un-pipelined [4096,2048], 0.5-0.75 TB/s); the E4M3 three-way NaN gap measured (19,519/9,291/0). **Corpus discovery: the gaudi-cookbook GLM-5.3 decode playbook (G27-G32) — the measured production anatomy (the 19.5 ms slowest-rank expert, the 9.9 ms EP imbalance, the EP4×TP2 layout, the 322-launch structure), the MXFP4 TPC kernel design (the Q21 reference), the MXFP4 port accuracy gates (the 2-pp-class regression), the production envs (VLLM_MOE_CHUNK/BOUNDARY + PT_HPU_ENABLE_LAZY_COLLECTIVES + PT_HPU_RECIPE_CACHE_CONFIG — all verified present in our venvs).** **New proposals:** RA-025 (the Q21 routing-aware fused MoE GEMV + the EP4×TP2 coupling — the flagship; bs=1 MoE 15.5 → 2.3-5.4 ms), RA-026 (the batch-conditional MTP depth k=4@bs≤4 / k=1@bs≥8 + the T1 chain graph — 49-60 t/s bs=1), RA-027 (the R003 T7 evidence package — the 10× canary + the GC-trace op diff; the owner-decision input), RA-028 (the target feasibility: the 200 bs=1 = the FULL decode stack, est. 120-170, best case 200; the 800 @16 = 8 HPUs only, est. 650-750, INFEASIBLE at 4 HPUs (450-550 ceiling, MXFP4 ~600-700 at the 2-pp cost) — the owner's 4-vs-8-HPU decision), RA-029 (the MXFP4 MoE — owner-gated on the accuracy budget), RA-030 (the stock-op chunk hints — 2 env vars, no code, the first decode A/B; corpus: 1.6-2.2× per call at 2-8 tokens — **REV 10.1 CORRECTION (same day): REFUTED FOR DECODE** — the tier B vendor chunking code (`mixture_of_experts_gen.cpp`, our venv commit 5176b1b2) makes the decode geometry chunk_size-invariant for num_tokens ≤ 256; the knob only affects prefill chunks (→ RA-033); kept as a 0%-delta confirmation arm), RA-031 (the boot-productivity stack — the recipe cache + the corrected pin; 25 → 5-12 min boot), RA-032 (PT_HPU_ENABLE_LAZY_COLLECTIVES — the 322 → ~162 launches, the B2 host attack). **Do-first (decode):** the RA-032/031 first decode boot family (1-2 days, zero code; RA-030 confirmation arm only) → RA-025/Q21 (the critical path, weeks) → RA-026 (after the micro-benchmark) → RA-027 (parallel, to the owner) → RA-028 (the 4-HPU program + the feasibility report) → the BG-1 8-rank @16 trace (the 28 ms device-gap unknown — the 800 decider) → RA-029 (owner-gated). **Deferred (prefill):** RA-022, RA-033 (the chunk-size knob), RA-019, RA-024 (re-scoped — the cookbook is now the primary decode-path reference). |
 | 2026-11-09 | 7 | independent research architect (owner-requested audit: "look at what tasks the implementation agent finished, analyze results + reasons of failure, make multiple theories on how to get MTP=4 to work, use GaudiGrimoire") | **RA-018 added** (detail file: `kb_staging/research/RA-018-mtp4-theories.md`; sister doc `BOTTLENECK_RESEARCH.md` rev 1.4). Full audit of the post-rev-5 implementation work: ADOPTED — A001 MTP k=1 (+15.1% bit-identical), RA-001 (+10.7% bs=1), NS16/NS32 (257/400-452), the Q18 levers (+42-46% aggregate, the 16-stream MTP crossover GONE — Q02 closed), AB-DEQ (the TPC dequant op production-qualified at parity — RA-002's skeleton deployed), **B7 RESOLVED** (the registrar collision was a load-context artifact — the "architectural, not fixable in userspace" conclusion was a misdiagnosis of fresh-process probes; the Q21 kernel track is unblocked), Q14v2 (TP4+EP4 reproduced on an independent boot: bs=1 41.7 +25%, @16 180.8 +59%, 100% suite), BG-2 (routing NEAR-UNIFORM: top-10 6.5%, 80%-coverage 168-182/288, max/min 8× — **RA-013 (expert placement) DISPROVEN as proposed; the Q21 uniform byte model VALIDATED**). REJECTED — **Q01v2 draft graphs: +20% banked, rejected on the captured-region fusion drift (R003 5/5, mode-independent whole=split=golden 1/12, all divergences at top-2 gaps 0.125-1.875)**; **RA-011 async replay: +29% bs=1 banked (the BOTTLENECK_RESEARCH estimate CONFIRMED at bs=1; the @16 +70-85% estimate was WRONG — parity), rejected on R003 5/5 — the host's in-flight consumption of the graph's cached output tensors (the R3 risk as predicted; the vendor scopes the flag to "along with async D2H to copy outputs")**; **MHC-ROWS: +19% at the 2944 bucket banked, rejected on R003 3/3 — the THIRD structurally different optimization to flip exactly R003** (the implementation agent recorded the open policy question: "three real optimizations now sit behind this one item"); Q11 k=2 (−11%/−29% — refuted under the eager draft, "revisit only under the in-graph draft"); Q16 (−45%); Q17 (−22%); B023 (+0% — stack-specific); C015 (no improvement — stack-specific); CAP-8192 (OOM — the prefill-workspace HBM budget; RA-014 re-scoped from config-only to an HBM-budget fix: the >2048 prefill buckets run EAGER by the `_use_graphs` threshold). **The failure pattern (the audit's key finding):** three unrelated optimizations flip one knife-edge suite item (R003, bat-and-ball — a TRAP question where "10" is the wrong-but-plausible answer) deterministically: a 1-ULP distribution-mode flip at a ~0.75-nat gap, not a regression. **GaudiGrimoire (G14-G18, new findings in the sister doc):** the AR row-invariance proof at boundary level (abotsis `LAYER0_DELTA_FINDINGS` §10-12: HCCL chunk-order rank summation → per-row ULP at decode → the KDA state carries it through 45 layers → MoE routing flips at near-ties; `VLLM_HPU_ALLREDUCE_MODE=gather_sum` (the 70-line portable patch, corpus-cited) + pinned decode buckets → 8 identical prompts 7 texts→1, serial-vs-concurrent 7/12→12/12, no decode cost (14.7 vs 13.6)); the one-call spec recurrence + closed-form candidate states (the T3 fusion reference — our port's conv chain is the per-token Python loop, verified in `kda_layer.py`; "L=5 is the MTP-4 target"); the DFlash2-on-Gaudi one-pass block-drafter machinery (1Cat: 7 drafts in one pass, HPU top-16 selector, 8-token block verify; the mHC-residual mechanism is architecturally aligned with GLM's 4-stream hyper-connections); the MTP-head acceptance ceiling (3.33/5 measured, d4 optimal in the reference sweep, the 262K ~6 t/s block-table wall); the vendor GDN spec-path gap (the custom path is the only route). **Theories T1-T7:** T1 the numerics-invariance package (the unlock — rank 1 post-audit, 1-2 boots), T2 the chain graph (= RA-004 T1, re-ordered after T1 — the Q11 revisit condition), T3 the KDA conv-chain fusion (the spec_len=5 small-op storm, ~1,190 ops/step), T4 the acceptance ceiling (the DECISIONS roofline: 200 bs=1 needs acceptance ≥ 4.2 at 100% spec BW — the MTP head's 3.33 CANNOT reach it; "MTP=4" redefined as ≥4 tokens/step — the RA-009/016 drafter is the 200-bs=1 path), T5 the k=4 HBM budget (fits at ns16-32: ~1.1-2.2 GB/rank candidate slots, DERIVED — the wall is W8 long-context block-table carry, not decode HBM), T6 the async-D2H output staging (the RA-011 rejection fix — the end-state physics: 165-220 t/s bs=1 at MTP-4 acceptance, 200-280 with the T4 drafter), T7 the tie-aware MTP-aware gate policy (the 0.5 pp bar (2 items of 40) auto-rejects on ONE knife-edge item — the GATE, not the numerics, is the binding wall; per-flip top-2-gap attribution makes it enforceable). Ranking table: the RA-018/T1 row added (rank 1 post-audit); the RA-004 row re-ordered after it; the do-first order is in the RA-018 §9 implementation instructions (T1.1+T1.2 → T1.3 → T5 → T2 → T3 → T6 after Q21; T4/T7 in parallel). |
 | 2026-11-08 | 5 | independent research architect (owner question round: MTP-4 theories + GLM draft models) | Owner asked for multiple theories on making MTP k=4 work and an investigation of draft models built for GLM-5.3-Flash (incoai/GLM-5.3-Flash-DFlash2 named; "find more, then investigate how to implement them"); owner fixed the aggregate target at 16 streams (no >16-stream recommendations). Changes: (i) **RA-004 reworked as a multi-theory proposal** — T0 (config-only eager k=4 acceptance probe, the gate), T1 (full k-step draft chain as one HPU graph per bucket shape, attention-in-graph — the abotsis 919ec98f reference mode, measured at MTP-4: 3.33/5.0 acceptance, +29% aggregate, +21% bs=1, parity 12/12; TASKS A014/A018 READY), T2 (four replays of the 1-step draft graph via `HPUGraph.replay_with_inputs`/`replayV3` — API verified tier B in gaudi-pytorch-bridge; a new application of the vendor API, lower capture risk), T7 (asymmetric k=2 fallback); project evidence synthesized: Q11 refutes eager k=2 with the mechanism (2nd pass = full eager traversal, un-pipelineable), Q01b/Q15 establish the draft graphs as accuracy-neutral (the 97.5% gate failure was a cross-boot artifact), Q19 keeps early-draft OFF in the graphed config. (ii) **RA-002 step 0 marked MEASURED-NEGATIVE** (EXP-Q16, boots q16/q16b: the cookbook v0.26.0 gather backport at RATIO=0.5 = −45% bs=1; gather materialized + fp32 down GEMM; the compiler-fusion best case empirically excluded) — the custom TPC kernel is now the primary path, not the fallback. (iii) **New RA-009 — DFlash2 draft model**: incoai/GLM-5.3-Flash-DFlash2 verified (5-layer sliding-window block-diffusion drafter, block 8, top-16 rank-256 selector, 2-tap conv, target taps [5,14,24,33,42], 19K downloads, **CC BY-NC-ND 4.0 flagged**); inco's Qwen3.8-27B data: acceptance 4.80 vs 4.28 native MTP, 2.7–3.4× bs=1 vs autoregressive, lossless; HPU precedent: 1Cat v1 HPU implementation (Qwen-qualified, GDN rollback checkpoints, ≤16 seqs, TP1) + Strata single-card port (measured 2.9/round at block 8, SynapseAI 1.24.1); upstream vLLM v1 `method=dflash` first-class; the port is High (v1 HPU wiring + KDA rollback + TP8), gated by D13 (checkpoint HBM) + an acceptance spike; license gate for production. (iv) **New RA-010 — ngram probe** (config-only, zero draft cost; vllm-gaudi v1 ngram supported per PR #81; up to ~+90% bs=1 if A_ng ≥ 2.5). (v) **RA-003 owner scoping**: 16 streams is the target; ns32/64 = saturation evidence only; open config call on serve_mtp.sh ns32. (vi) **RA-001 ADOPTED** reflected in all baselines (bs=1 41.4, @16 258). (vii) **New rejections**: RJ-11 (eager k=2, Q11, mechanism identified), RJ-12 (EP4×TP2, Q17, re-eligible after Q21). (viii) **Consequence 4 host-corrected**: the measured 4-HPU multi-row host (~90 ms, Q14-derived) invalidates the H=26 ms assumption — 800@16 on 4 HPUs needs a ~75% host cut (base case 370–430 t/s), not "800–885 at current host"; the k=4 requirement stands. (ix) Gaps: D13 added, D1 sharpened (draft-host term). GaudiGrimoire: HPUGraph replay_with_inputs/replayV3 (tier B, gaudi-pytorch-bridge source incl. the "Neither storage attached to input tensor" assert), abotsis `glm5_next_mtp.py` chain-graph source + speculative notes (tier D), 1Cat `hpu_dflash2.py` / `platform.py` / `hpu_model_runner.py` DFlash2 (tier D), 1Cat `flashinfer_gaudi.md` DFlash2 qualification scope (tier D), Strata `dflash.hpp` (tier D), vLLM v1 SpeculativeConfig dflash/parallel_drafting + worker spec_decode modules (tier D). Web: inco.ai DFlash2 blog (acceptance tables, 2.7–3.4×, losslessness), HF model card + checkpoint `config.json` (verified), HF search for other GLM-5.3-Flash draft models (none found beyond the incoai DFlash2 + the model's own MTP head). |
 | 2026-11-08 | 4 | independent research architect (GaudiGrimoire deep-validation round) | Re-validated every load-bearing claim of RA-001…RA-006 against the corpus + the deployed tree (server-verified line numbers). Changes: (i) **RA-002 novelty corrected** — upstream vllm-gaudi ships two routed-only MoE gather implementations (PR #1731 `VLLM_HPU_MOE_GATHER`, v0.30.0, with a **cookbook backport fix for our v0.26.0**; MiniMax `_gather_swigluoai_moe`, default-on) — added **step 0: apply the backport and measure HBM bytes/step** (materially different from Q16's dequant materialization: FP8 stays packed, the Synapse compiler may fuse the gather into the GEMM's DMA); the custom TPC kernel demotes to fallback if the probe hits the byte target; novelty section rewritten; (ii) RA-002 **tile-size risk** from the g2-opt-manual Strata audit (5-tile TPC GEMV = 237 GB/s = 10% of HBM peak, issue-bound; "TPC beats MME at one row" unsupported) — D4 now requires a tile sweep (24/8/3/1 TPCs per expert); (iii) RA-001 — 1.24.1 `wrap_in_hpu_graph` signature server-verified (no `cache_tensors_list`; `dry_run` auto), **drafter wrap (l.5060) added to scope**, HBM-retention assumption made explicit → D3 extended to per-rank HBM; (iv) RA-004 — Strata cross-evidence (fused 4-row verification windows + fused four-step verification run on Gaudi2 1.24.x); (v) **host-lever triage → three rejections:** RJ-08 `VLLM_DELAYED_SAMPLING` (v0-only; removed by vllm-gaudi PR #433; absent from our tree, server-verified), RJ-09 `--num_scheduler_steps` multi-step (v0-era; no v1 implementation, server-verified), RJ-10 FP8 KV cache (reference fork, same model: needle-test failures; our 1M needle gate + 0.5 pp budget dominate); `PT_HPU_ENABLE_LAZY_COLLECTIVES` found **already auto-enabled** (`platform.py:432`) — not a lever; (vi) **new structural fact:** every collective forces a `mark_step()` in `hpu_communicator.py` (3 sites, verified) → ≥162 recipe boundaries/step → new **RA-008 (WORK IN PROGRESS)**; (vii) prefill re-scoped (objective met at 0.5–8K warm; the 16K–64K warm ladder is unverified; graph-capturing 8K-row prefills is HBM-infeasible at ~29 GB, DERIVED) → new **RA-007 (WORK IN PROGRESS)**; (viii) HBM bandwidth figures standardized (1,696 measured / 1,945 cost model / 2,147 TPC envelope / 2,450 spec). RA-003/RA-005/RA-006 and all target-physics conclusions unchanged. |
@@ -2473,7 +2496,7 @@ weeks). T7: policy (owner decision).
 | `bucketing continuous batching padding transparent Gaudi` | "Gaudi graph compilation is sensitive to input shapes, so the plugin pads forward passes into pre-warmed buckets across three dimensions — batch size, query length, context length in blocks... sequence-length padding is never returned to users and batch padding does not create requests"; over-bucket requests execute unpadded → forced compile + latency spikes | D / gaudi2-practical-inference `context/EVIDENCE.md` (bucketing-and-continuous-batching) | RA-006-A (padding is the documented serving mechanism) |
 | `PT_HPU_RECIPE_CACHE_CONFIG` | Disk recipe cache: "only one process compiles the recipe, and other processes read it from disk"; path/delete/size/NFS config; scale-up scenario | B / habana-docs Runtime_Flags | RA-006-C (8-worker warmup ÷4–8); verified unset in our scripts |
 | `1M context TTFT prefill stall bucketing pad` | Qwen4Exp port (27B-FP8, TP4, 1M, chunked prefill 8192): default `exp` bucketing pays "a silent end-of-prefill stall worth roughly four-fifths of the ~1M-token TTFT" (deferred host-side materialization on the sampling path); `pad` dissolves it to ~3–4% of TTFT, −28% warm TTFT @1M, +14–20% @262K (4/4 runs) | D / vllm-gaudi issue "Compiled-plane (HPU-graph) numerics + plan findings on the Qwen4Exp port" | RA-006-B motivation (same problem class as our Q07c fixed per-prompt cost); D10 second half |
-| `there are no dynamic shapes shape set padding bucketing normal` | "Every tensor shape is baked into the compiled graph. Asking for dynamic shapes does not produce a shape-polymorphic graph — the request is turned into static compilation... padding and bucketing are normal engineering techniques here rather than hacks" (marked ASSUMED vendor in a community manual) | D / g2-opt-manual §1.4.1 | RA-006 framing; consistent with the tier-B "HPU graphs static-only" doc |
+| `there are no dynamic shapes shape set padding bucketing normal` | community-manual claim (tier D, marked ASSUMED vendor): every tensor shape is fixed at graph-compile time; asking for dynamic shapes yields a static compilation of that shape, not a shape-polymorphic graph; padding and bucketing are normal engineering on this stack | D / g2-opt-manual §1.4.1 | RA-006 framing; consistent with the tier-B "HPU graphs static-only" doc |
 | `Gaudi 2 HBM bandwidth GB/s` | spec 2.45 TB/s (whitepaper, tier B); **compiler cost model 1,945 GB/s** — `libSynapse` 1.24.1 `getHbmBwGBps()` returns 0x799 (tier C decompile); **measured 1,696 GB/s = 69% of spec** on an 8-card node (access ≥256 B, tier D); cookbook GEMV envelope ~2.2 TB/s | B/C/D | standardized the BW columns (1,696 / 1,945 / 2,147 / 2,450) across RA-002/004/005 tables |
 | `disable_tensor_cache experimental dry_run cache_tensors_list` | vllm-fork #738 (tier D): disable=True is "experimental", frees in-place tensors it cannot identify (the `cache_tensors_list` mitigation), forces dry_run → `local_scalar_dense` accuracy caveats; **1.24.1 `wrap_in_hpu_graph` has NO `cache_tensors_list` parameter (server-verified signature)** — the in-place caveat is handled by `free_inplace` (default True); decode moving to the vendor-default cache-on mode is the numerically safer direction | D + B (server-verified) | RA-001 §4/§7; D3 |
 | `VLLM_HPU_MOE_GATHER 1731 gathered expert decode MiniMax` | upstream routed-only MoE decode exists in two forms: PR #1731 (v0.30.0, `hpu_fp8.py`, block-FP8 + dynamic-activation-scale + silu checkpoints, Habana FP8 GEMM op, **cookbook backport fix for v0.26.0 at `fixes/fp8-moe-gather/`**) and MiniMax `_gather_swigluoai_moe` (index_select of G=min(E_local, T×K) + bmm, bit-exact vs dense by accumulation-order construction, default-on for MiniMax-M3) | D + B source | RA-002 step 0 + novelty rewrite; distinguishes Q16 (dequant materialization, −45%) from the FP8 gather |
@@ -2759,3 +2782,881 @@ row count.)
 | `abotsis vllm-gaudi graph memory patches prompt graph 17 GiB` | the stock graph-memory envs (`VLLM_GRAPH_RESERVED_MEM` 0.1, `VLLM_GRAPH_PROMPT_RATIO` 0.5) + the DSV4.1 port lessons (the 3,400-node Sinkhorn removal; **the all_gather stale-value hazard in captured graphs at batches >1** — "An all-reduce replaced it"; the view-state re-capture signature) | D / vllm-fork README_GAUDI + gaudi-cookbook DSV4.1 port | G21 (the envs size the KV, not the captures); the RA-021 hazard (tested, did not manifest on our v0.26.0 at batch >1) |
 | `PT_HPUGRAPH_DISABLE_TENSOR_CACHE per-call tensor cache policy wrapped_hpugraph_forward` | **the env is read on EVERY call** (graphs.py:697, inside `wrapped_hpugraph_forward`): `disable_tensor_cache = disable_tensor_cache if env_tensor_cache is None else env_tensor_cache == "1"`; `dry_run = disable_tensor_cache if dry_run is None else dry_run` (l.699-700) — the per-call value drives the FULL vendor cache-OFF path (the no-allocation capture + the freed-after-replay semantics) | B / gaudi-pytorch-bridge `graphs.py` | **RA-020's corrected mechanism** (the runner sets the env per call; no vendor patch needed) |
 | (deployed-tree verification, server venv) | the `[PER-PHASE-CACHE]` patch as deployed (runner l.4266 + graphs.py l.706) + the `total_num_scheduled_tokens` semantics (`scheduler.py:1065`) + the `orig_fwd = module.forward` binding (graphs.py:889) + no `__getattr__` on `HpuModelAdapter` | B (our tree) | §2 (the D1/D2/D3 defects) |
+
+---
+
+## Rev 9 note (2026-11-10 — round-3 audit: both per-phase attempts failed (now fully explained), the three-profile matrix is complete, RA-022 is the do-first item)
+
+Detail: `kb_staging/research/RA-022-round3-theories.md` + `BOTTLENECK_RESEARCH.md` rev 1.6 (same
+directory on the server). This note is the actionable summary; the detail files carry the evidence.
+
+### 1. Status of the post-rev-8 work (audited on g2 2026-11-10, commits 91d6192..87762a5, boots perphase2 06:50 / ra020 08:18 / combined2 09:56 / compose 11:12 / restored 11:38)
+
+| Item | Result (MEASURED) | Verdict |
+|---|---|---|
+| **PERPHASE** (re-run of the first per-phase patch: the 3-site graphs.py attribute patch + the runner flag) | decode **44.1/44.0** (the RA-001 win retained); prefill 1,024 ✓ / 1,698 ✓ / **2,560 → server died** (the 2,944-row capture OOM, PT_DEVMEM) | The recorded verdict ("the workspace is the Synapse-level recipe memory; the tensor-cache lever REFUTED") **does not follow from this experiment** — see §2.1. The flag was INERT at capture time (the D2 defect from the rev-8 audit: attribute read from the HpuModelAdapter, no `__getattr__` proxy → always False) → the prefill captures ran cache-ON → the known OOM. The control exists: **ABCONFIG-WIN captured the same 2,944-row shape cache-free and it SUCCEEDED.** |
+| **RA-020** (the env-var route — the rev-8 corrected mechanism: runner sets `PT_HPUGRAPH_DISABLE_TENSOR_CACHE` per call at l.4273-4274) | decode **36.5-38.5** — the cache-OFF level, NOT the expected 42.4 | **Honest negative, correctly recorded — root cause now established** (§2.2): the deployed signal is `_is_prompt_step = total_num_scheduled_tokens > 0` (l.4266, verified in the venv) = the D1 flaw (true on EVERY step), so the MTP-verify decode shape (captured on FIRST USE — not in the warmed decode buckets) took the cache-OFF mode and the entry's mode is STICKY. The env-var MECHANISM works; the signal + capture timing were fatal. |
+| **HARDENED gather_sum (RA-021, dda3df7)** | the >16 MiB size cap + the fp32 sum deployed, env-gated; the A/B deferred | Landed as specified. The cap matters only for a future cache-ON >2,048-row prefill profile. |
+| **Router histogram + per-layer scores-dump (91d6192)** | `GLM_ROUTER_HISTOGRAM` / `GLM_ROUTER_DUMP_DIR` staged, env-gated default-off | The **N5 k=4 expert-union measurement is now instrumented** (the exact number for the Q21 k=4 sizing). |
+| **COMBINED-WIN** (draft graphs + cache-off, 09:56) | decode **42.1-43.3** (the adopted level — NOT the Q01v2 +20%); the dip band FIXED (5,555/6,626/7,731/6,997) | **New fact: the Q01v2 +20% is CACHE-DEPENDENT** — the draft graphs gain +8 t/s on cache-ON (42.4→~50) but only +5.5 on cache-OFF (37.3→42.8). Strictly better than the adopted profile for mixed workloads; not adopted (R003 97.5%). |
+| **COMPOSE** (the full composition: draft graphs + cache-off + threshold 8192 + KV 1280, 11:12) | bs=1 41.5-43.1 (adopted parity); **@16 237.6/241.7 = −7% vs the adopted 257-259**; dip band fixed; suite 97.5% (R003 3/3) | **The three-profile tradeoff matrix is complete** (§3). The @16 −7% is the FIRST @16 draft-graph measurement on the current stack — the batch-size-dependent sign flip (RA-023). |
+| **Current server** | the restored boot (11:38) = the adopted config (decode-optimized) | The next boot family should be RA-022. |
+
+### 2. The two per-phase failures, mechanistically (why the "recipe memory" verdict is not established)
+
+**2.1 PERPHASE.** Decode 44.1 in the same boot as the 2,944 OOM is the proof that the per-phase flag
+was never active at capture time (if active, the D1 signal — `> 0`, true on every step — would have
+put the decode shapes cache-OFF → 37.3). The 2,944 OOM is therefore the KNOWN cache-ON OOM
+(PFG+MHC signature), and ABCONFIG-WIN (same 2,944-row shape, wrap-time cache-OFF) proves the
+cache-free capture FITS. The Synapse recipe-workspace mechanism is REAL (corpus G25: `synWorkspaceGetSize`
+per compiled recipe handle from the device workspace pool; the two-level compile — Synapse graphs at
+launch from recipe × shape × bucket), so the question "does a TRULY cache-free 2,944 capture OOM?"
+is open and testable — that is exactly what RA-022 decides.
+
+**2.2 RA-020.** The env-var route is the vendor's own mechanism (G20, tier B: `wrapped_hpugraph_forward`
+reads `PT_HPUGRAPH_DISABLE_TENSOR_CACHE` on every call, l.697; it drives the disable_tensor_cache
+semantics AND the derived `dry_run`, l.699-700 — the full cache-OFF path). The deployment's defect
+is the SIGNAL: `_is_prompt_step = scheduler_output.total_num_scheduled_tokens > 0` (l.4266) — the D1
+flaw, carried over from the first patch — is true on every non-empty step (decode requests contribute
+≥1 each; `scheduler.py:1065`), so every serving step set the env to "1". The decode buckets warmed at
+startup (outside execute_model, env unset → the wrap-time value) are cache-ON and fine, but the
+MTP-verify shape (2N rows — the actual decode shape under MTP k=1) is NOT in the warmed buckets and
+was captured on FIRST USE during a serving step under env "1" → the entry was created cache-OFF →
+sticky (the entry is created once, per input hash, at first capture) → 36.5-38.5.
+
+**The general lesson (applies to any per-phase state on this stack):** the capture happens at
+startup (`warmup_graphs` l.5682 + `profile_run` l.6529 + the first-use captures of the unwarmed
+shapes), and the capture-time value of the per-shape state is STICKY. A signal set in execute_model
+cannot control pre-warmed shapes at all, and controls first-use shapes only if correct at that first
+step. **The control point is the CAPTURE SITE.**
+
+### 3. The three-profile tradeoff matrix (the owner's decision — T7 is the unlock)
+
+| Profile | bs=1 decode | @16 aggregate | Prefill 3-6K | Suite | Notes |
+|---|---|---|---|---|---|
+| (1) adopted (cache ON, 2,048 cap, no draft graphs) | **42.4** | 257-259 | UNMET (the dip band) | **100%** | the current restored boot |
+| (2) prefill-optimized (cache OFF, 8192, no draft graphs) | 37.3 (−12%) | 259.5 | **MET** (5,546-7,723) | 97.5% (R003) | ABCONFIG-WIN |
+| (3) composition (draft graphs + cache OFF + 8192) | 42.9 (adopted parity) | **237.6-241.7 (−7%)** | MET | 97.5% (R003 3/3) | COMPOSE |
+| (4) **RA-022 full composition** (decode cache ON + prefill >2,048 cache OFF) | **~42.4-44 (predicted)** | ~257 (predicted) | MET (predicted) | **~100% (predicted — the decode path is bit-identical to profile 1)** | **the pending decisive experiment** |
+
+Profile (4) + the draft graphs (T7-accepted): ~50 bs=1 (the +20% composes on cache-ON — the
+COMBINED-WIN cache-dependence fact), ~250-257 @16 (the −7% until T2/RA-023), MET, 97.5% (R003
+source 1 — the fusion drift, mode-independent).
+
+### 4. RA-022 — Capture-site tensor-cache control with the corrected row-count signal (DO FIRST)
+
+**Complexity:** LOW (runner patch, hours) + one boot family. **Status:** PROPOSED (supersedes the
+RA-020 deployment form; the env-var route is kept — it is the vendor mechanism).
+
+**The change (all in `vllm_gaudi/v1/worker/hpu_model_runner.py` — no vendor patch needed; revert the
+3-site graphs.py attribute patch, the `.stock-bak` files are in the venv):**
+
+1. **Correct the signal (the D1 fix):** the l.4266 site — replace
+   `_is_prompt_step = scheduler_output.total_num_scheduled_tokens > 0` with
+   `_is_prompt_step = scheduler_output.total_num_scheduled_tokens > 2048` (the demonstrated OOM
+   boundary: 2,048 rows captured fine cache-ON, 2,944 OOM cache-ON, 2,944 fine cache-OFF per
+   ABCONFIG-WIN; the decode class is ≤ 64 rows at ns32 even under MTP k=1).
+2. **Set the env at the CAPTURE SITES (the rev-8 lesson):**
+   - `warmup_graphs` (l.5682): in the bucket loop, before each `_prepare_dummy_scenario` call —
+     `batch_seq` is ALREADY computed there (l.5702-5705):
+     `os.environ["PT_HPUGRAPH_DISABLE_TENSOR_CACHE"] = "1" if (is_prompt and batch_seq > 2048) else "0"`.
+   - `profile_run` (l.6529): set `"1"` before the dummy forward (the profile dummy is max-size =
+     prompt class; a cache-ON capture there would also distort the free-memory sizing).
+   - Keep the execute_model set (item 1's signal) as the first-use safety net for the unwarmed
+     shapes (the MTP-verify shape, the draft shapes).
+3. **Revert the 3-site graphs.py attribute patch** (inert — D2; the env route makes it unnecessary).
+
+**Verification (the boot family — ORDER MATTERS, the capture-mode log is the GATE):**
+1. **The capture-mode log FIRST** (the wrapper runs verbose=1/log_frequency=1): confirm per bucket —
+   the decode buckets cached, the ≤2,048 prompt buckets cached, the >2,048 prompt buckets dry-run.
+   If any decode bucket shows dry-run (or any >2,048 bucket shows cached), STOP and fix the patch
+   before benching — this is the gate that the PERPHASE/RA-020 misreads are not repeated.
+2. Then: the decode bench bs=1 (expected 42.4-44 — the RA-001 win), the prefill ladder (the 2,944
+   MUST pass — the ABCONFIG-WIN numbers are the bar), the @16 (expected ~257-259), the suite
+   (expected 100% — the decode path is bit-identical to the pre-ABCONFIG 100% profile; a miss is a
+   T7 data point, not an RA-022 failure), the per-card HBM at IDLE (the retained graph memory —
+   feeds RA-024).
+
+**Why this is decisive (the theory discriminator):** if the 2,944 capture passes with a VERIFIED
+cache-free mode, the "Synapse recipe memory" hypothesis is refuted for our stack (ABCONFIG-WIN +
+RA-022 agree) and profile (4) exists — the best of all three measured profiles. If it OOMs with the
+verified cache-free mode, the recipe memory is REAL and independent of the tensor cache — in which
+case find the diff between the RA-022 boot and the ABCONFIG-WIN boot FIRST (the KV size, the
+threshold, the other envs), because ABCONFIG-WIN is the contradictory data point.
+
+**Risks:** a decode shape first captured during a mixed >2,048-row chunked-prefill step (bounded —
+item 2 warms the decode buckets; the draft shapes are ≤64 rows and mode-neutral at their size —
+measure in the A/B); the suite prediction (high confidence — the prefill mode does not touch the
+decode residual stream — but the 5 flip sources say: measure, don't assume).
+
+### 5. RA-023 — The batch-conditional draft graph (the @16 −7% fix; interim until T2)
+
+**Complexity:** LOW-MEDIUM (a runner gate + one A/B boot family). **Status:** PROPOSED.
+
+The draft graphs flip sign with batch size: +20% at bs=1 (Q01v2, cache-ON) vs −7% at @16 (COMPOSE).
+The runner knows the batch size per step and ALREADY HAS BOTH paths (the graphed draft,
+`VLLM_GLM_MTP_DRAFT_GRAPH=1`, and the eager draft — the pre-Q01 default). **The discriminator A/B
+(one boot family, adopted profile + draft graphs ON):** the @1/4/8/16 decode bench vs the
+eager-draft numbers (42.4 / — / 257). A ~constant gap vs rows → the SEAM (the draft graph is a
+second synchronous replay boundary per step — proportionally large on the host/launch-bound step;
+T2's chain graph is the fix; the gate's N ≈ where the seam cost equals the graphing gain, probably
+1-4). A row-linear gap → the per-row input STAGING (the gate's N higher; a shared-staging fix is
+the structural option). **The fix:** a per-step gate — graphed draft at bs ≤ N, eager draft at
+bs > N — takes the +20% at bs=1 and the 257 @16 (strictly better than all three matrix profiles at
+decode, with the prefill fixed by RA-022). **Accuracy:** unchanged per regime (same draft math per
+branch — the eager = the adopted 100%, the graphed = the R003 flip class; the mixed-concurrency
+suite is the union — measure it). **Sequencing:** independent of RA-022 (the seam/staging
+discriminator works on the adopted profile); can share RA-022's boot family. T2 (RA-018) remains
+the end-state fix — its value is now quantified at two points (@16 k=1 −7%; @16 k=4 −38% per
+MTP4-T0).
+
+### 6. RA-024 — The retained-graph-memory measurement + the abotsis 17-GiB recipe decomposition
+
+**Complexity:** LOW (an idle HBM reading per boot + a no-HPU source diff). **Status:** PROPOSED.
+
+The AB3-HYPA "3× workspace gap" (our 36-39 GB vs their 17 GiB) is now shown to be a CONTAMINATED
+comparison: their 17 GiB is the RETAINED graph memory after warmup at GMU 0.35 (30 prompt buckets
+= 13 GiB, q×(q+ctx) weighted — their estimate was 7.5; at 32k ctx the 30 buckets cost 22.2 GiB and
+both GMU attempts lost a worker in warmup), vs our 36-39 GB which is the 2,944-row capture's
+TRACE-PEAK / cache-ON retention (the MEMLOG 101 GB watermark minus weights+KV). Retained vs
+transient — not the same quantity. **The measurement:** per-card HBM at IDLE on (a) the adopted
+boot (cache-ON, 2,048 cap — fold into the current restored boot or the RA-022 boot) and
+(b) the RA-022/ABCONFIG-WIN boot (cache-OFF prefill) — the delta = each regime's RETAINED graph
+memory. If our cache-OFF retained ≈ their 13-17 GiB class → the gap is the artifact, the
+fork-level difference is closed, and RA-019's prefill value re-scopes (no longer the critical path
+— RA-022 is). If ≫ → the fork-level difference survives (the KDA/DSA-indexer/mHC implementation
+paths) and the abotsis port-source diff (our `kda_layer.py`/`mhc.py`/`model.py` vs their
+`hpu_kda_pytorch.py`/`glm5_next.py` — both in the corpus and on this host) is the named no-HPU
+investigation. **The abotsis recipe delta list (corpus G22-G24, verified against our venv
+2026-11-10):** `VLLM_HPU_DECODE_TENSOR_CACHE` — their per-phase tensor cache as a first-class
+production env ("on for glm5_next without speculative decoding, off under it — the doubled graph
+count exceeds host memory at TP=8") — **the reference fork validates the RA-022 direction** and its
+caveat is our draft-graph + cache interaction data point (we measured the +20% WITH the decode
+cache on at k=1); `VLLM_HPU_GRAPH_ASYNC_REPLAY=1` — their async-replay env (the RA-011/T6 analog;
+ABSENT from our tree); `VLLM_KDA_SCAN=parallel` — the KDA chunk recurrence as a prefix scan (−7%
+TTFT at the 3,200 bucket, neutral below; ABSENT from our tree — our KDA is a custom
+implementation); the KDA chunk kernel's blocked-MME decay dot (`_decay_dot` in their
+`ops/hpu_kda_pytorch.py` — port-specific; their TTFT 3,099 tokens 0.915→0.479 s); the mHC bf16 MME
+mix (`VLLM_GLM_MHC_MIX_DTYPE=bf16` — port-specific; our port runs vLLM's `mhc_pre_torch` with the
+loop-only Sinkhorn kernel); the Sinkhorn "tj" layout's 15k-kernels-per-layer kernel-count fact at
+T=3,200 (prefill is kernel-count bound — supports our MHC-ROWS +19% reading and constrains RA-019);
+`PT_HPU_MEMORY_POOL=none` — PRESENT in our serve script (l.19 — not a delta).
+
+### 7. RA-019 update + T7 sharpening
+
+**RA-019 (the full mHC-prep TPC kernel):** the abotsis fork TRIED AND RETIRED exactly this kernel
+(corpus G22, their `glm5_next.py`): "The TPC mHC fused-kernel experiment was retired: its
+per-launch cost ate the MME win it targeted (**multi-output custom ops don't split recipes**)."
+**Design constraint (now explicit):** structure the mHC-prep kernel as a FAMILY of single-output /
+recipe-splittable custom ops (the DSV4.1 `control_mme` pattern — G19: control_rrms_*, control_mme_f32,
+the gates, sinkhorn4), NOT one multi-output op. **Value re-scoped with RA-022:** no longer the
+prefill-OOM critical path (RA-022 resolves that at the config level) — it is (a) the
+cache-ON-everywhere composition (the >2,048 graphs WITH the decode cache win = the 4-HPU HBM
+headroom), (b) the 2,944/4,096-bucket prefill speed (MHC-ROWS +19% T7-adoptable), (c) the
+>8,192-token band. Priority: after RA-022 + T7 (weeks-scale, unchanged).
+
+**T7 (the gate policy — the linchpin):** the three-profile matrix is measured (§3) and RA-022 adds
+profile (4). The policy must carry: (1) the BASELINE definition — the current adopted profile's
+suite profile = the reference ("regression" = NEW flips vs it; the adopted profile itself is the
+100% reference today; profiles 2/3 are 97.5% = R003 only); (2) the per-flip top-2-gap attribution
+(I015, READY) — R003 (bat-and-ball) is a documented near-tie knife-edge with 5 identified sources
+(Q01v2 fusion drift, RA-011 in-flight consumption, MHC-ROWS kernel reduction order, ABCONFIG-WIN
+cache state, the AR order — all MEASURED, all 1-ULP-class); (3) the adoption condition — adopt
+profile X if its flip set ⊆ the documented near-tie class AND no new flips. The owner's
+workload-profile decision (single-stream latency vs mixed workload vs aggregate priority) then
+selects the profile; the draft graphs (+20% bs=1) are the T7-accepted add-on on top.
+
+### 8. Updated do-first order (round 3 — supersedes the rev-8 list)
+
+1. **RA-022** — the runner patch (hours) + one boot family, GATED on the capture-mode log:
+   (a) confirm per-bucket modes, (b) decode bench, (c) prefill ladder (2,944 must pass), (d) @16,
+   (e) suite, (f) idle HBM reading (feeds RA-024). The decisive experiment: profile (4) OR the
+   recipe-memory confirmation.
+2. **T7 (the gate policy + the baseline definition + the per-flip attribution)** — to the owner
+   WITH the three-profile matrix (§3) — the workload-profile decision. Unlocks profiles (2)/(3)
+   now and (4) after item 1.
+3. **RA-023 (the batch-conditional draft graph A/B)** — the @1/4/8/16 seam-vs-staging
+   discriminator (one boot family — can share item 1's boot); the gate makes the +20% adoptable at
+   bs=1 without the @16 −7%.
+4. **Q21 continues** — the fused MoE GEMV; the N5 per-row route hook: run a 100-request decode with
+   `GLM_ROUTER_HISTOGRAM` + `GLM_ROUTER_DUMP_DIR` (staged in 91d6192) and compute the 9-row
+   expert union per layer — the exact k=4 sizing number (my estimate: 2.2-3.5 ms/step floor).
+5. **RA-024 (the retained-memory measurement)** — fold into item 1's boot (the idle HBM reading)
+   + the no-HPU abotsis port-source diff (the 3× gap attribution).
+6. **RA-018/T2 (the chain graph)** — after the k4b acceptance data (the 3.33/5 ±10% calibration);
+   the value is now quantified at two points (@16 k=1 −7%, @16 k=4 −38%); the N4 desync re-lock is
+   the secondary win to measure.
+7. **RA-019 (the full mHC-prep TPC kernel — the DSV4.1 multi-op family pattern; the abotsis
+   multi-output retirement as the design constraint)** — weeks, after RA-022 + T7.
+8. **Ops (standing):** the journal rate-limit + the host-RAM headroom pre-flight.
+9. The rest continues: BG-1 (the per-layer device trace — the RA-012A decision), RA-012A (after
+   BG-1), T6 (the async-D2H redesign, after Q21), RA-009/RA-016/T4 (the drafter scoping), RA-017
+   Phase 0 (1 day CPU).
+
+---
+
+## Revision 10 note (2026-11-11) — Round-4 audit + RA-025..RA-032 (decode-focused)
+
+**Owner directive (2026-11-11): DECODE IS THE PRIORITY — prefill/prompt-processing work is
+deferred.** Full detail: `RA-025-round4-theories.md` (same directory) and
+`BOTTLENECK_RESEARCH.md` rev 1.7, §Round 4.
+
+### 1. Audit of the round-4 arc (commits d216ee7..524d35e, 2026-11-11 00:13)
+
+| Item | Result (MEASURED) | Assessment |
+|---|---|---|
+| **MTP4-T0** (k=4 acceptance, the /metrics spec-decode counters) | 417 drafts, 1,668 draft tokens (4/step), **1,119 accepted = 2.68 tok/step (67.1% of 4)** vs k=1 1.88 (94%); bs=1 40.8-41.5 (parity); @16 161-162 (−38%) | **SUCCESS — the T1 gate data.** The 67.1% rate matches the A014 reference's 66.6% at k=5 (3.33/5.0) — the ceiling is a model/workload property (the RA-018 decay theory, second data point). The bs=1 parity proves the EAGER chain cost ≈ the gain — the T1 graphed chain captures the gain at ~0 draft cost → the 59.5 t/s bs=1 (2.68 tok/0.045 s) projection stands, calibrated. |
+| **D1-3-PREFILL** (per-call server-side timing) | graphed 2,048-row 0.28 s vs eager 2,944-row 1.35 s (4.8× per-call); inter-step gaps 7.5-10.4 ms | SUCCESS (prefill — now deferred). Validates the timing-only fallback (the in-worker torch.profiler segfaults the worker). |
+| **TP4-FIX** (the 4-HPU deployment profile: TP4+EP4 + levers + MTP-1 + cache-off + 8192 + KV 320, GMU 0.95) | decode 35.6-36.4 (+8% vs Q14v2 33.26); **prefill >2,048 rows: capture OOM at the TP4 HBM budget (76.3 GB weights/card leave ~1 GB free — the 2,560-row workspace doesn't fit at ALL at TP4)**; the 1,024-row graph captured fine at 4,583 t/s | **The 4-HPU decode profile is established; the 4-HPU prefill gap is quantified (deferred).** With prefill deferred, the TP4 boot can run the cache-ON adopted profile — decode 41.3-45.1 (the Q14v2 measurement). |
+| **FP32-DRAFT** (fp32 accumulator alignment on the draft cores + draft graphs + cache-off) | decode 42.9-44.4; **the draft-graph win recovered under cache-off: 43.0 vs 37.3 = +15%**; suite 97.5% (R003 3/3) | **Honest partial.** (a) the Q01v2 +20% is not purely a cache-state artifact — part of it was the bf16 draft-accumulation loss under cache-off replay; (b) the fp32 draft cores do NOT unflip R003 — the drift is not (only) the draft-accumulation rounding. The 2nd failed alignment. |
+| **RECIPE-DIFF** (the GC-trace recipe diff, LOG_LEVEL_GC=0, 3 boots) | the captured 2,944-row session compiled **1,402,016 nodes with 136,358 removeOrMergeCasts** (27,256 fp32) vs the eager arm 444K/42K — **the draft's eager-prefill call LEAKED its ops into the capture session (26,407 draft-core nodes); FIXED by the seam isolation (mark_step+sync at both eager-draft seams)**; suite STILL 97.5% (R003 3/3) | **SUCCESS on structure, NEGATIVE on R003 (as predicted).** The 3.2× mega-recipe inflation is a real defect, now fixed (the draft cores compile in their own 26,339-node session). The drift surviving the leak fix confirms it is in the per-recipe deep compilation, not the session composition. |
+| **RECIPE-CACHE** (PT_HPU_RECIPE_CACHE_CONFIG + PT_RECIPE_CACHE_DUMP_DEBUG) | the flag format decoded (`<path>,<true\|false>,<int_size_in_MB>,<true\|false>`, LITERAL words); the true-variant boot FAILED at `hpu_recipe_cache.cpp:339` on ranks 2/6 — **the multi-rank hash-content write race** | **BLOCKED — unblock now identified from the vendor source** (G31, tier B: `recipe_cache_config.cpp` appends the RANK to the cache dir in inference mode — the dump-debug path evidently misses it, or RANK/IsInferenceMode unset). Options: (a) verify RANK in the worker envs + IsInferenceMode; (b) per-rank cache dirs via a runner patch (the 1Cat `rank{rank}` template pattern, tier D); (c) **skip the dump — the GC-trace op-stream diff (RA-027) covers the characterization without it.** |
+| **NONRECIP** (PT_HPU_MARK_NON_RECIPROCAL_CASTS=true on the seam-fixed fp32 config) | decode 42.3-43.6 (no perf cost); suite 97.5% (R003 3/3 — STILL FLIPS) | **The 3rd failed alignment. The R003 verdict is FINAL** (the agent's, and I concur): the captured-draft numerics drift is INHERENT to the captured recipe's deep compilation (the static-shape baking + the compiler optimization passes). No python/bridge-level instrument reaches it (fp32 accumulators ✗, seam isolation ✗, non-reciprocal casts ✗, mode-independence split=whole ✗ — 6 independent structural changes flip it identically). Practical unlocks: **the T7 tie-aware policy (the owner decision) or the Synapse compiler RE (closed source — not a project work item).** |
+| **T12-MAP / T12-TEST** (the pinned buckets: VLLM_BUCKETING_FROM_FILE) | the knob mapped (the file REPLACES both lists — the prompt section must replicate the 120 exactly); the adopted boot captures **277 graphs (120 prompt + 157 decode) — the ~25 min boot is dominated by the capture**; the naive pin: 215 graphs (120 + 95 — **the MTP spec-decode seed buckets add +46**), boot ~29 min (SLOWER) | **Partial success — the naive pin is a REGRESSION (reason identified: the pin file must include the MTP seed buckets, or pin the decode ctx to the minimum).** The boot-productivity goal is re-targeted by RA-031 (the recipe cache) + the corrected pin. |
+| **Q21 step-1 (39cfd76 — new since the audit window)** | the `block_fp8_gemv_glm` single-expert block-FP8 GEMV core (E4M3 [128,128], VLM-staged x, fp32 acc, lane-inserted vector store) COMPILES + REGISTERS + EXECUTES end-to-end via the B7 recipe; [4096,2048] **11-16 µs un-pipelined (0.5-0.75 TB/s)**; the E4M3 three-way semantics gap measured: **stock cast 19,519 NaNs fnuz-interp vs kernel convert 9,291 vs CPU-fn reference 0** | **The deployment mechanism is proven; the calibration is the next step** (the NaN gap must be resolved to the CPU-fn reference before the parity gate); the software pipelining is the ~4× latency target (the cookbook G28 reference: 30 µs/route pipelined vs 250-300 µs/expert stock). |
+
+**Net of round 4:** the R003 question is CLOSED (verdict final — T7 is the unlock; the evidence
+package is RA-027); the MTP k=4 value is calibrated (2.68 tok/step); the 4-HPU decode profile
+exists; the boot-productivity problem is understood (277 graphs / 25 min); and the corpus
+discovery in §2 fills the decode map with measured reference numbers for exactly this problem.
+
+### 2. The round-4 corpus discovery — the gaudi-cookbook GLM-5.3 decode playbook (tier D, thediymaker/gaudi-cookbook @ 15402637)
+
+A complete MEASURED production playbook for the same decode problem — GLM-5.3 (744B, 78 layers,
+256 experts top-8, MLA+DSA, MTP k=1, TP8+EP, 8× Gaudi 2, SW 1.24.1). This is the reference
+implementation for our decode path (it supersedes the abotsis fork as the primary reference for
+decode; the abotsis fork remains the reference for the MTP chain-graph wiring):
+
+- **(G27) the 8-rank decode-step anatomy** (`docs/results/moe-decode-step.md`): step 39 ms =
+  **expert kernels 19.5 ms on the SLOWEST EP rank** (mean 9.6 — the EP imbalance is 9.9 ms of the
+  step) + MLA attention 6.9 + MoE-other 3.8 + 162 ARs 3.4 + host-with-device-idle 5.5 (the host
+  runs ahead — critical only at the step boundary). The balls-in-bins analysis (16 routes into 8
+  ranks: busiest 4.45 vs mean 2.0; no hot rank; the MTP verify/draft pair shares 2.4 of 8 experts
+  ≈ 1.0 ms). **The EP4×TP2 layout: expert 18.4-19.1 → 14.0-14.4 ms, decode +11% (v7) / +5% (v8);
+  the per-route kernel cost 47 / 25 / 17.7 µs at full / half / quarter expert width (the fixed
+  staging part doesn't shrink — "EP2×TP4 wins only at one request").** The step-boundary levers
+  (router fast ~1.7 ms; early draft + device rejection ~2 ms with the float64→float32 rounding
+  trick — EXACTLY our Q18 levers, independently converged). "A lazy-mode collective ends a recipe
+  → 322 graph launches per step at ~74 µs host each" (the B2 structure). The method: "trace ALL
+  ranks; the slowest-rank critical path per collective."
+- **(G28) the MXFP4 MoE decode TPC kernels** (`docs/kernels/mxfp4-moe.md` + README): the stock op
+  = a `cast_packed_mxfp4_to_bf16` TPC node per touched expert (4× packed bytes written) + tiny
+  GEMMs + DMAs (124K cast calls = 47.6 ms TPC in a 97 ms step at batch 4; 0.2-0.5 TB/s of 2.2 TB/s
+  HBM); the custom kernels (2 launches/layer): in-register unpack (512-value chunks, LUT,
+  per-lane scale, fp32 accumulate), routing in the kernel (counting-sort by local expert,
+  other-rank routes free, routing-independent work split), software pipelining; per-call
+  3.6-10× (30 µs/route vs 250-300 µs/expert); **GLM-5.3: 23.3 → 59.1 tok/s (2.5×), CLOSER to fp32
+  than the stock op.**
+- **(G29) the GLM-5.3-MXFP4 production port** (`docs/ports/glm-5-mxfp4.md`): the accuracy gates
+  (per-token KL 0.042, **top-1 agreement 91.6%** vs BF16, GSM8K 49/50, needles 3/3 at 16-128K,
+  tools 40/40); the MTP 8-patch checklist; **"a second draft costs ~10 ms per step at one stream
+  and pays only above ~0.9 acceptance"** (their 0.76-0.82 → k=1; OURS 0.94 → deeper k PAYS); the
+  DSA decode's context-independent 2,048-row gather (the 1M feasibility fact); the MXFP4→FP8
+  per-channel conversion is EXACT (power-of-two channel scale) — the FP8→MXFP4 reverse is the
+  lossy direction.
+- **(G30/G31/G32) the production envs — all three verified present in our deployed venvs (2026-11-11):**
+  `VLLM_MOE_CHUNK=256` + `VLLM_MOE_TOKEN_BOUNDARY=2048` — the stock op "skips expert slots no
+  token routes to; the output is unchanged"; "1.6× to 2.2× faster per call at 2 to 8 tokens"
+  (MiniMax-M3 FP8-native op, one card) — **present in our vllm-gaudi v0.26.0 features.py
+  l.118-119 (verified on the server)**; `PT_HPU_RECIPE_CACHE_CONFIG=<dir>,False,131072` — caches
+  the GC compilation stage across boots (7.9-9.2 s first-iteration compile per rank, gaudi-benchmark
+  Tip 6), the per-rank dir appending in inference mode (vendor source, tier B — the RECIPE-CACHE
+  unblock); `PT_HPU_ENABLE_LAZY_COLLECTIVES=true` (the Kimi-K2.7-Code / Muse-Spark production
+  recipes) — **present in our 1.24.1 venv (verified: the hccl `__init__.py` + the backend .so)** —
+  the flag targeting the 322-launch B2 structure.
+
+### 3. New proposals RA-025..RA-032 (all PROPOSED; full sections in `RA-025-round4-theories.md`)
+
+**RA-025 (FLAGSHIP, decode) — the Q21 routing-aware fused MoE GEMV, the cookbook-validated design + the EP4×TP2 coupling.**
+The G28 mxk design transposed to our block-FP8 layout: in-register E4M3→bf16 exact cast
+([128,128], per-lane fp32 scale), in-kernel routing (the counting-sort by local expert —
+other-rank routes free), software pipelining (the 11-16 µs un-pipelined core in 39cfd76 → the
+~3-4 µs/route target class), 2 launches/layer. **The coupling (the rev-10 correction to the
+round-2 record):** the Q17 −22% EP4×TP2 layout result is now EXPLAINED as KERNEL-DEPENDENT — the
+stock all-experts op reads the same 36 local experts per card regardless of routing, so the
+layout can only help a routing-aware kernel; **re-test the placement fit (the 91d6192 histogram —
+the routing recorder is staged) AFTER the kernel.** bs=1 MoE: 15.5 → 2.3 ms (mean rank) / 5.4 ms
+(slowest rank, before the layout) — ~6.7×. @16: NO byte saving (all 36 local experts touched by
+the 256+ route slots) — the @16 value = the launch/dispatch reduction only (−2-5 ms).
+**Complexity: HIGH (weeks). Status: the implementation agent is IN PROGRESS (39cfd76); the
+micro-benchmark protocol (8 calls × 30 replays inside a graph, per-route cost per slice width)
+gates the rollout; the E4M3 NaN calibration (19,519/9,291/0) is the correctness gate.**
+
+**RA-026 (decode) — the batch-conditional MTP depth + the T1 graphed chain (the calibrated 2.68 tok/step).**
+k=4 at bs ≤ 4, k=1 at bs ≥ 8 (the measured 2.68 tok/step at k=4; the W5 wall at @16). The cookbook
+rule "a second draft pays only above ~0.9 acceptance" — our 0.94 k=1 acceptance crosses the
+threshold (their 0.76-0.82 didn't — the same rule, opposite decision). The T1 projection:
+2.68 tok at the ~45-55 ms graphed step = **49-60 t/s bs=1 (+15-40%)**, bs ≤ 4 the same class.
+Sequencing: after the Q21 micro-benchmark (the kernel validates the TPC pattern + the per-route
+cost model); the MTP 8-patch checklist (G29) at depth k=4; `GLM_EARLY_DRAFT=0` (Q19); the (bs, k)
+pinned-bucket file (RA-031) bounds the shape count; the Q11 unblock = the T7 owner decision.
+**Complexity: MEDIUM-HIGH (the chain graph — the private-storage draft cores, the A014 reference
+mode; the RECIPE-DIFF session-leak class must not recur — the seam discipline is deployed).**
+
+**RA-027 (decode) — the R003 T7 evidence package (the owner-decision input).**
+(a) **The 10× canary:** 400-1,000 greedy prompts, adopted profile vs the draft-graph config —
+the flip RATE + the per-flip top-2 gaps (I015, READY) → the production-scale regression estimate
+(predicted ≤ 0.5% of items ≈ 0.01-0.2 pp << the 0.5 pp budget — the T7 adoption number; the 40-prompt
+suite is a canary far stricter than any production eval). (b) **The GC-trace op-stream diff** (no
+HPU — the RECIPE-DIFF archived logs): which op classes the deep compilation fuses differently —
+the mechanistic record for the T7 baseline definition. (c) The RECIPE-CACHE unblock (per-rank
+dirs — LOW priority). **Complexity: LOW (bench time + no-HPU analysis). This is the quantified
+input to the owner's T7 tie-aware-policy decision — the unlock for the draft graphs, the async
+replay, the EP layout, and the Q21 rollout.**
+
+**RA-028 (decode) — the target feasibility quantification + the 4-HPU program (the owner decision input).**
+**The 200 t/s bs=1 = the FULL decode stack** (Q21 + host overlap (RA-032 + RA-011-class async) +
+MTP k=2-4 (RA-026) + EP layout + AR reduction): **estimated 120-170 t/s, best case 200 (±30%)** —
+the milestones: 55-60 (Q21 alone, k=1), 95-120 (+ host overlap), 135-180 (full stack, k=4).
+**The 800 @16 = 8 HPUs ONLY:** the MEASURED @16 device is 53 ms (D1) vs the roofline's 24.5 ms —
+**the 28 ms gap (the EP imbalance wait + the per-layer dispatch + the AR payload scaling) is the
+unknown that decides the 800 — the 8-rank per-layer trace (BG-1, the cookbook method: trace ALL
+ranks, the slowest-rank critical path per collective; our in-worker torch.profiler segfaults —
+the vendor HPU profiler or the mark-step ranges + the hl-smi sampling are the substitutes) is the
+decisive missing measurement.** With Q21 + the host program: ~460-550 t/s @16; the 800 requires
+the device 53 → ~30-35 ms (the MXFP4 2× (−8 ms) + the EP layout + the AR reduction + the
+attention kernels — ESTIMATED 650-750, ±25%). **INFEASIBLE at 4 HPUs:** the weight traffic
+doubles per card (74 GB/card/step → ~30 ms device MoE) → the ceiling 450-550 t/s; the MXFP4
+(RA-029) → ~600-700 at the 2-pp-class accuracy cost. **The owner decision this quantifies: the
+4-HPU final deployment delivers bs=1 ~200 (full stack) + @16 ~450-550; the 800 @16 requires the
+8-HPU dev allocation at the full stack.** The 4-HPU decode program (priority order): (1) the TP4
+cache-ON boot (the Q14v2 41.3-45.1 re-confirmed on the current levers stack), (2) the Q21 kernel
+at TP4 (72 local experts — the bs=1 active experts per card double: ~1.7-2.5 ms MoE — the 200
+target holds), (3) the host program at TP4, (4) the MTP depth gate at TP4, (5) the @16 ceiling
+confirmation. **Complexity: — (analysis) + the TP4 program (boot families).**
+
+**RA-029 (decode, owner-gated) — the MXFP4 MoE weights (the 2× weight streaming).**
+The E2M1 + E8M0/32 re-quantization of the 328 GiB block-FP8 MoE weights → ~152-175 GB: the bs=1
+MoE floor 2.3 → ~1.2-1.5 ms; the @16 MoE 38.1 → 19-25 GB; the 4-HPU ceiling 450-550 → ~600-700.
+The corpus evidence: the cookbook GLM-5.x variant exists (our shapes — 288 experts, 4096 hidden,
+2048 intermediate — need a variant build: "one kernel core builds a variant per model family");
+the converter `ports/glm-5-mxfp4/convert` is reusable (the Quark-rule/OCP-floor encoders). **The
+accuracy gate (the owner's call):** the cookbook's BF16→MXFP4 GLM-5.3 regression = the 2-pp class
+(top-1 91.6%, GSM8K 49/50) — ABOVE our 0.5 pp budget as stated; the block-FP8→MXFP4 delta is
+likely smaller (the weights are already 8-bit) but UNMEASURED — a re-baselined accuracy run is
+the gate. **Complexity: HIGH (the conversion + the kernel variant + the re-baselining).**
+
+**RA-030 (decode) — the stock-op MoE chunk hints: `VLLM_MOE_CHUNK=256` + `VLLM_MOE_TOKEN_BOUNDARY=2048`.**
+2 env vars, no code — both present in our v0.26.0 features.py l.118-119 (verified; the current
+serve script sets neither). **REV 10.1 CORRECTION (same day, after the vendor-code audit):
+REFUTED FOR DECODE.** The vendor chunking code (tier B: gaudi-pytorch-bridge @ 5176b1b2 = our
+deployed venv commit; `hpu_ops/backend/mixture_of_experts_gen.cpp` `calculate_num_chunks`):
+for EVERY call with `num_tokens ≤ 256` (all our decode calls — bs=1 k=1 = 2 rows, @16 = 32 rows),
+`num_chunks = min(8 × num_tokens, 36 local experts)` is INDEPENDENT of the chunk_size argument —
+the auto path (our current default) computes the identical (256, 16) geometry at bs=1 that the
+explicit hint would set; the `fp8_fused_weights[_dynamic]` variants (our path, `MoeFP8Matmul.forward`
+in `extension/ops.py` l.1358-1390) route through the same sizing function. The measured stock
+decode MoE (15.5 ms = 38.1 GB/step = ALL 36 local experts per call) confirms the weight DMAs
+cover every local expert regardless of chunking — the per-slot chunks organize the activation
+GEMMs, not the weight loads. The cookbook's "1.6-2.2× per call at 2-8 tokens" (MiniMax-M3, a
+different op generation) is not reproducible from this knob at 2-8 tokens here. **What the knob
+DOES change: only `num_tokens > 256` calls (the prefill chunks) — that is the RA-033 prefill
+knob, deferred per the owner directive.** Retained use: keep the chunk-hints arm in the first
+boot family ONLY as a 0%-delta confirmation of the code reading (a non-zero delta falsifies the
+reading and re-opens the question). **The real zero-code decode items are RA-032 + RA-031.**
+**Complexity: LOW (2 env vars).**
+
+**RA-031 (decode, cadence) — the boot-productivity stack: the recipe cache + the corrected pinned buckets.**
+`PT_HPU_RECIPE_CACHE_CONFIG=<dir>,False,131072` (the GC compilation stage cached across boots —
+7.9-9.2 s first-iteration compile per rank skipped; the per-rank dir appending is automatic in
+inference mode — the vendor source, G31) + the corrected pin file (VLLM_BUCKETING_FROM_FILE with
+the MTP spec-decode seed buckets included — the T12-TEST regression cause) → the boot 25 →
+5-12 min (the 3-5× cadence for every subsequent experiment boot in the decode program). The
+unblock for the dump-debug failure (the RECIPE-CACHE item above) is a verification of RANK in the
+worker envs, not a blocker for the production-mode cache. **Complexity: LOW (env + the bucket
+file + 1 boot).**
+
+**RA-032 (decode, the B2 attack) — `PT_HPU_ENABLE_LAZY_COLLECTIVES=true`.**
+1 env var — PRESENT in our 1.24.1 venv (verified: the hccl module + the backend .so; the current
+serve script does not set it). The mechanism (G27/G32): without it, a lazy-mode collective ENDS
+the recipe — our per-layer 2-recipe structure (the collective + the post-collective tail) →
+**322 graph launches per step at ~74 µs host each (the B2 host-replay 14 ms)**; with it, the
+collective is inlined in the recipe → ~162 launches, the B2 host replay → 7-10 ms. The Kimi and
+Muse production recipes set it (the v0.30.0 image class). **+10-15% estimated (the host floor is
+the B2 estimate's −50%).** A/B arm on the same boot as RA-030 (the 4-arm design: base / chunk
+hints / lazy collectives / both). **Complexity: LOW (1 env var).**
+
+### 4. Updated do-first order (round 4 — decode-focused; supersedes the rev-9 list)
+
+1. **RA-032 + RA-031 (the first decode boot family, ~1-2 days, zero code; RA-030 demoted to a
+   confirmation arm — REFUTED for decode by the tier B chunking code, see the RA-030 correction
+   in §3 above):** the 4-arm env A/B (baseline / lazy collectives / recipe-cache+pin / both —
+   the chunk-hints arm is kept ONLY to confirm the 0% code reading) + the corrected pin file
+   (with the MTP seed buckets). Per arm: the launch-count reading + the per-call MoE timing (the
+   GLM_TIMING_LOG) + the decode bench bs=1/@16 + the sanity + the golden 12. **The answer: the
+   RA-032 host win (the B2 14 → 7-10 ms, +10-15% estimated) + the 3-5× boot cadence, before the
+   kernel work.**
+2. **RA-025 (the Q21 routing-aware GEMV — the critical path for both the 200 and the 800,
+   weeks):** the per-route micro-benchmark FIRST (the viability gate + the EP-layout data — the
+   11-16 µs un-pipelined core exists (39cfd76); the E4M3 calibration is the correctness gate) →
+   the single-layer integration → the 42-layer rollout + the parity A/B → the EP4×TP2 re-test
+   (run the 100-request decode with the 91d6192 router dump NOW — no-HPU-after-boot — the
+   placement fit).
+3. **RA-026 (the MTP depth: the T1 chain graph + the batch-conditional gate):** after the Q21
+   micro-benchmark; the MTP 8-patch checklist (G29) at k=4; the (bs, k) pinned-bucket file; the
+   Q11 unblock = the T7 decision.
+4. **RA-027 (the T7 evidence package — parallel track, to the owner):** the 10× canary (the bench
+   time) + the GC-trace op diff (no HPU — the RECIPE-DIFF archived logs) → the quantified T7
+   adoption evidence.
+5. **RA-028 (the 4-HPU program + the target-feasibility report to the owner):** the TP4 cache-ON
+   boot (the Q14v2 baseline re-confirmed) → the Q21 at TP4 → the host program at TP4 → the @16
+   ceiling confirmation; **the report: the 200 bs=1 = full-stack (120-170 estimated, best case
+   200); the 800 @16 = 8 HPUs (650-750 estimated) / infeasible at 4 HPUs (450-550 ceiling, MXFP4
+   ~600-700 at the 2-pp-class accuracy cost) — the owner's 4-HPU-vs-8-HPU deployment decision.**
+6. **The BG-1 8-rank @16 trace (the 28 ms device-gap unknown — the 800-feasibility decider):**
+   the cookbook method (all ranks, the slowest-rank critical path per collective) — the vendor
+   HPU profiler or the mark-step ranges + the hl-smi sampling (the torch.profiler segfaults on
+   our stack); fold into the RA-030 boot family's @16 arm if the profiler cooperates.
+7. **RA-029 (the MXFP4 — owner-gated on the accuracy budget):** the conversion (the cookbook
+   converter) + the kernel variant (our shapes) + the re-baselined accuracy gates.
+8. **The rest continues:** RA-011/T6 (the async replay + the async-D2H — T7-gated, after the
+   RA-032 data — the +29% is now the host-overlap piece of the 200 stack), RA-015 (the DSA
+   indexer — with the 1M/Q10; the DSA 2,048-row-gather feasibility fact is now in the corpus,
+   G29), RA-017 Phase 0 (1 day CPU), the ops standing items (the journal rate-limit, the
+   host-RAM headroom pre-flight).
+9. **Deferred (prefill, per the owner directive):** RA-022 (the capture-site tensor cache —
+   still valid for the 8-HPU profile (4) and for any TP4 >1,024-row prefill need; the 2,944 OOM
+   is a TP8 story), RA-033 (the prefill chunk-size knob: max_num_batched_tokens=2048 at 8-HPU
+   ~7,200 t/s / =1024 at 4-HPU ~5,000-5,500 t/s — the measurements exist), RA-019 (the mHC
+   kernel — the prefill value deferred; the 4-HPU KV-headroom value remains), RA-024
+   (re-scoped: the cookbook is now the PRIMARY decode-path reference — the diff targets = our
+   KDA/MLA/mHC decode kernels vs the cookbook's, once the 8-rank trace exists).
+
+### 5. Status changes (rev 10)
+
+- **RA-004:** T0 MEASURED (2.68 tok/step at k=4; the T1 projection calibrated — see its Status).
+- **RA-002:** the implementation agent STARTED the kernel (39cfd76 — the single-expert GEMV core
+  compiles + executes; the E4M3 calibration is the next step — see its Status).
+- **RA-018:** unchanged (the T1 sub-package is sequenced per the do-first item 3, after the Q21
+  micro-benchmark + the T7 decision).
+- **RA-022:** DEFERRED (prefill, per the owner directive) — the mechanism stands for the 8-HPU
+  profile (4) and the TP4 >1,024-row prefill need.
+- **RA-005 (the 4-HPU decision document):** the 4-HPU point is now the TP4-FIX profile (decode
+  35.6-36.4 cache-off / 41.3-45.1 cache-ON; the prefill gap quantified) — the feasibility
+  numbers are superseded by RA-028 (the 200 bs=1 = full stack at 4 HPUs; the 800 @16 = 8 HPUs).
+- **RA-001 / RA-003:** unchanged (ADOPTED).
+
+---
+
+## Revision 11 note (2026-11-11) — The bridge compile/dispatch track + the gap catalog (owner directive: the implementation agent is profiling workload gaps + the pytorch bridge graph compile/dispatch)
+
+Full detail: `RA-034-round5-bridge-gaps-theories.md` (same directory) and `BOTTLENECK_RESEARCH.md` rev 1.8.
+
+### 1. The dispatch-latency correction — RA-032 reclassified (NO-OP as an A/B arm)
+
+**`PT_HPU_ENABLE_LAZY_COLLECTIVES=true` is ALREADY ON in production** (tier B + MEASURED): our
+v0.26.0 plugin (`vllm_gaudi/platform.py` l.432-433, server-verified) auto-sets it at import in
+lazy mode ("multi-HPU inference with HPUGraphs requires enabling lazy collectives" — the corpus
+GLM-5.3-Flash recipe: "auto (all archs, if unset) — required for multi-rank HPU-graph serving");
+the live worker env (boot 2026-11-11 02:52) shows `=true`; the implementation agent verified the
+same (RESEARCH-001 addendum 8, 3ccd9af). **Consequences:** (a) RA-032 changes nothing — remove
+it from the A/B family; (b) the 322-launch structure (B2) was measured WITH lazy collectives ON
+— the per-layer boundaries are NOT (only) collectives ending recipes; (c) `GLM5_NEXT_DECODE_LAYER_GROUP=45`
+is ALSO already on (the cookbook mechanism, bit-identical, in every serve script — the Muse
++15% / reference +10% values are already banked in the 42.4 baseline); `VLLM_GLM_SKIP_LAYER_MARKSTEP=1`
+has ~0 marginal decode effect (the hook already doesn't fire on decode steps) — prompt/mixed only
+(prefill, deferred). **The env-flag surface for dispatch is essentially exhausted on our tree — the
+B2 fix lives in the LAUNCH COUNT (per-class, §2), the PER-LAUNCH COST (the Q21 op reduction),
+and the OVERLAP (RA-011/T6 — the async-D2H design, §3).**
+
+### 2. RA-034 (new) — The decode launch-boundary census + the per-class program
+
+**Complexity: LOW (the census uses the ARCHIVED RECIPE-DIFF GC-trace logs — no new HPU time).**
+The B2 "162 AR segments containing 322 recipes" is a MODEL, not a census. The protocol (§2.2 of
+the note): from the GC trace of one decode step, tag every recipe boundary with its op class
+(collective / mark_step / sync / cast / dynamic-shape / op transition), aggregate per layer.
+Candidate classes: the 90 ARs (intrinsic to TP — verify they still cut recipes with lazy
+collectives ON); **the dequant-then-GEMM chains (the agent's own UNVERIFIED finding, B2 l.182:
+`apply_block_fp8_linear_hpu` dequants every block-FP8 linear weight to BF16 then runs a BF16
+GEMM — ~180 dequant+GEMM pairs/step; if the compiler doesn't fuse the cast+mul into the GEMM
+weight path, each adds boundary nodes AND doubles the non-MoE weight traffic — RA-035)**; the
+KDA state-update internals (34 layers); the MTP seams + the EAGER draft boundary family (B5,
+7.5 ms); the dtype/dynamic-shape cast sites; the (already minimized) marks. **The per-class fix
+table (§2.3) maps each census result to its lever:** AR → one-shot/gather_sum (T7) + the EP
+coupling (RA-025); dequant → RA-035; KDA → the RA-024/T3 family; MTP → RA-026 (T7); marks →
+done. **Expected-value order before the census: (1) the MTP draft graphing (removes the whole
+B5 family + 7.5 ms), (2) the dequant-fusion question (the ~90 linear chains), (3) the AR class,
+(4) KDA.**
+
+### 3. The gap catalog (for the flame-graph match — §3 of the note)
+
+Ranked predicted gap classes with flame-graph signatures, sizes, causes, fix pointers — the
+agent matches each observed gap to a class; a gap matching NONE is a new finding: **G1 the
+replay-internals launch storm (~14 ms host, 93.3% in `graphs.py:75`, D1 — the RA-034 census +
+Q21 + RA-011/T6); G2 the eager draft traversal (7.5 ms bs=1 / 10.6 @16, B5 — the RA-026 T1
+chain graph, T7-gated, the 59.5 t/s projection calibrated); G3 the step-boundary
+device-idle host work (~5.5 ms cookbook-class — T6 async-D2H); G4 the AR waits (~3.2 ms, 162
+ARs — the census class); G5 the MoE weight streaming (15.5 ms FLOOR, not a gap — Q21/RA-025
+in progress, 39cfd76); G6 the KDA/DSA attention (~3.5 ms — the RA-024 re-scoped diff); G7 the
+per-row worker overhead (~11% of sampler/meta — the agent's I015 integration); G8 the @16
+device gap (53 ms MEASURED vs 24.5 roofline — the 28 ms unknown, the BG-1 8-rank trace is the
+decider).** **The async-replay implementation sensitivity (§3.1):** the reference's naive
+`VLLM_HPU_GRAPH_ASYNC_REPLAY` MEASURED A REGRESSION (double-digit single-stream loss,
+`sample_tokens` contention) while our RA-011 measured +29% (rejected on R003, the in-flight
+consumption of cached outputs) — the separating design constraint: the async path must not let
+the host consume the graph's cached output tensors in flight, and the output copy must be the
+async-D2H (the T6 redesign; the vendor scopes the flag "along with async D2H"). Any RA-011
+re-measurement must be T6-shaped.
+
+### 4. RA-035 (new) — The dense-linear dequant-fusion question (the Q21 analog for the non-MoE path)
+
+**Complexity: the verification LOW (the census + the archived GC op stream); the kernel HIGH (weeks, if needed).**
+The census answers whether the Synapse compiler fuses the dequant cast+mul into the GEMM weight
+path (look for the cast/mul node classes between the weight DMA and the GEMM of one attention
+linear in the RECIPE-DIFF op stream). If UNFUSED: the non-MoE weight traffic doubles
+(~1-2 GB/card/step FP8 → ~2-4 GB materialized → ~1-1.6 ms/step of device time, ESTIMATED ±50%)
++ the boundary surface grows. The fix: the fused block-FP8 linear kernel — the EXACT Q21 design
+on the ~90 non-MoE linears (one op vs cast+mul+GEMM; the 39cfd76 GEMV core is the start — the
+[N,K] GEMV family is shape-generic); the target is BIT-IDENTICAL (the shared E4M3 NaN
+calibration gate: 19,519/9,291/0 → the CPU-fn reference). Sequencing: after the census + after
+the Q21 core is calibrated.
+
+### 5. The live-env discrepancy flag (the ACC_PAR mismatch — for the agent)
+
+The current boot (02:52, the profiling boot) runs **`PT_HPU_LAZY_ACC_PAR_MODE=0`** while the
+pinned serve scripts export `=1` (3ccd9af). The flag (tier B, `kernels_accumulation.cpp`):
+enables the bridge's ACCUMULATION THREAD POOL (`IsAccThreadEnabled = ACC_PAR!=0 && LAZY_MODE==1`)
+— the host-side op-accumulation work off the main thread; the agent's addendum 8 already
+identified it as "the busy-wait core our prefill profiling identified". **Action:** confirm
+which launcher started the 02:52 boot; if the profiling numbers should represent the pinned
+recipe, re-boot with `=1`; the =1 vs =0 A/B is exactly the dispatch surface the owner named
+(ESTIMATED ±50%: if the accumulation phase is a meaningful fraction of the 24 ms host, =1 moves
+several ms; the numerics risk is low — host-side scheduling — but the R003 canary runs anyway).
+
+### 6. The graph-compile theory (the 25-min boot — §6 of the note)
+
+Two-stage per-graph compile (the GC op-level stage ~8 s first-iteration per gaudi-benchmark Tip
+6 + the HPU-graph capture); the T12-TEST lesson (the cost is the PER-GRAPH COMPILE, ctx-size-
+dependent — not the graph count; 215 graphs took 29 min). Levers: (1) **RA-031 the production-
+mode recipe cache** (`PT_HPU_RECIPE_CACHE_CONFIG=<dir>,False,131072` — caches the GC stage
+across boots; only the DUMP-DEBUG path is blocked by the multi-rank race) → boot 25 → ~8-12 min;
+(2) **NEW — the decode-only boot:** the decode A/B program needs only the 157 decode buckets
+(the 120 prompt buckets are prefill, deferred) — `VLLM_SKIP_WARMUP=true` (the documented
+start-time/live-compile trade-off) or a prompt-bucket cap (verify) → boot ~12-15 min without
+the cache, ~5-8 min with it; (3) the regional compilation: NOT available at our release (no
+vendor flag found) — the recipe cache IS the compile-time lever. The recipe cache composes
+freely with everything else (boot-time-only, no numerics change — the canary confirms).
+
+### 7. Updated do-first order (round 5 — supersedes the rev-10 list where conflicting)
+
+1. **The agent's profiling (in flight):** match the flame-graph gaps to the catalog (§3); the
+   BG-1 8-rank @16 trace (G8 — the 28 ms gap, the 800 decider); **flag: the 02:52 boot runs
+   ACC_PAR=0 vs the pinned =1 (§5) — confirm the launcher before trusting the dispatch numbers.**
+2. **RA-034 census (no new HPU time):** the per-class boundary table from the archived
+   RECIPE-DIFF GC logs — re-ranks the B2 attack surface; answers the RA-035 fusion question
+   from the same logs.
+3. **RA-031 + the decode-only boot (one boot family):** the production-mode recipe cache + the
+   corrected pin (with the MTP seed buckets) + the `VLLM_SKIP_WARMUP`/prompt-skip verify → the
+   3-5× cadence for the rest of the program.
+4. **The ACC_PAR A/B (one boot, in the family):** =1 vs =0 — the accumulation thread pool.
+5. **Q21/RA-025 continues (the critical path):** the E4M3 NaN calibration gate → the per-route
+   micro-benchmark → the pipelining (the 39cfd76 core: 11-16 µs un-pipelined → the ~4× target).
+6. **RA-026 (the T1 chain graph + the depth gate):** after the Q21 micro-benchmark — G2 (7.5 ms)
+   is the biggest single gap class; the 2.68 tok/step calibrated; T7-gated.
+7. **RA-027 (the T7 evidence — parallel, to the owner):** the 10× canary + the op diff.
+8. **RA-035 (the fused block-FP8 linear kernel):** after the census sizes it + after the Q21
+   core is calibrated (the shared kernel).
+9. **RA-028 (the 4-HPU program + the feasibility report — to the owner):** unchanged.
+10. **The rest continues:** RA-011/T6 (the §3.1 design constraint), RA-015 (1M/Q10), RA-017
+    Phase 0, ops. **Deferred (prefill):** RA-022, RA-033, RA-019 (its cast sites are in the
+    RA-035 census scope), the MUSE decode-graph cap (the 1M class).
+
+### 8. Status changes (rev 11)
+
+- **RA-032: RECLASSIFIED — NO-OP as an A/B arm** (the flag is already ON in production — the
+  plugin auto-set, server-verified + live-env-verified + the agent's addendum 8). The
+  launch-count program is now RA-034 (the census) + RA-035 (the dequant class) + the Q21 op
+  reduction + RA-011/T6 (the overlap).
+- **RA-030: unchanged** (REFUTED for decode per rev 10.1 — the confirmation arm stands).
+- **RA-031: promoted** (the production-mode recipe cache is NOT blocked — only the dump-debug
+  path is; the decode-only boot is the new cadence lever).
+- **RA-002/Q21: unchanged** (IN PROGRESS — 39cfd76; the E4M3 calibration is the next gate; the
+  39cfd76 core is now also the RA-035 starting point).
+- **RA-011: sharpened** (the §3.1 implementation-sensitivity finding — the reference's naive
+  async measured a regression; the T6-shape is the only re-measurement worth running).
+- **New: RA-034 (the launch-boundary census + per-class program), RA-035 (the dense-linear
+  dequant-fusion question).**
+
+### 9. Q21 E4M3 calibration recipe (rev 11.1 addendum — the 39cfd76 NaN gap, resolved from the corpus)
+
+**The three-way gap (39cfd76):** stock cast 19,519 NaNs / the kernel's `v_f8_ld_tnsr_b +
+v_convert_f8_to_bf16_b` 9,291 / the CPU e4m3fn reference 0 — on a real [4096,2048] expert
+weight. **The settled device semantics (MEASURED on HPU, `g2-opt-manual` 03-porting.md §3.4.1,
+full table in the round-5 note §9.1):** the device fp8 is `e4m3fn` CODES (bias 7) with the
+E=15 bin RESERVED — bytes 0x78/0xF8 (M=0) → ±inf, 0x79-0x7E / 0xF9-0xFE → NaN; max finite 240
+(0x77). The OCP checkpoint is full e4m3fn (max finite 448 = 0x7E; 256-448 in the E=15 bin; NaN
+only at 0x7F/0xFF). `float8_e4m3fnuz` is NOT a supported dtype on HPU (the runtime rejects it).
+The device decoder matches the CPU e4m3fn table 242/256 — the 14 differing bytes are exactly
+the top bin. **So: the checkpoint is raw OCP e4m3fn with top-bin bytes present; the kernel's
+9,291 = those bytes under the device decoder; the CPU 0 confirms no 0x7F/0xFF in the data; the
+1Cat core as-is is only correct for pre-converted (≤240) weights — "follow the 1Cat core"
+needs one more piece.** The production MoE op is OCP-exact (the suite is 100% on the raw
+checkpoint — the MME FP8 GEMM implements full e4m3fn, unlike the TPC v_convert decoder) →
+**the Q21 parity target = the OCP CPU reference (0 NaNs, exact 256-448), not the device
+decoder.**
+
+**The fix (in the project's own tree):** the DSV4.1 dequant remap
+(`csrc/deepseek_v4/include/deepseek_v4_dequant_gather_bf16.h`): for the top-bin bytes
+(120-126/248-254) **subtract 8 from the raw byte** (→ the E=14 bin, mantissa + sign preserved:
+128..224 / -128..-224), **convert with the standard bias-7 path, multiply by 2.0** → exactly
+256..448. All 14 poison bytes covered (incl. the inf-mapped 0x78/0xF8); the 242 in-range bytes
+untouched → **bit-exact vs the OCP reference, 0 NaNs.** The ×2 folds into the scale multiply
+with no extra rounding (2.0 is exact in bf16; the scale stays bf16-rounded-BEFORE-multiply per
+the model contract).
+
+**The protocol (no HPU for step 1):** (1) the 256-bin byte histogram of the probe weight (CPU):
+verify N(0x7F/0xFF)=0, N(0x79-0x7E)+N(0xF9-0xFE) [= +N(0x78/0xF8) if inf was counted] = 9,291,
+and decompose the stock's 19,519 by convention (fnuz poison {0x7E,0xFE,0x80} vs other); (2)
+the remap patch in the 39cfd76 core (the DSV4.1 magnitude-lane idiom); (3) the parity gate:
+kernel vs the 1Cat-form CPU reference (`weight.to(bf16)` + `scale.to(bf16)` BEFORE multiply) =
+0 mismatches / 0 NaNs over all 8.4M elements; the three-way re-run must read 0 for the kernel;
+(4) histogram 2-3 more experts (different layers) before the rollout — part of the rollout
+gate. **This converts the 39cfd76 "calibration is the next step" into a one-kernel-patch +
+one-CPU-histogram task; after it, the per-route micro-benchmark is the only gate before
+rollout.** Detail: `RA-034-round5-bridge-gaps-theories.md` §9.
+
+### 10. Rev 11.2 (2026-11-11) — the Q21 micro-benchmark protocol spec + the T12-TEST audit
+
+**(a) The per-route micro-benchmark protocol is now a complete executable spec**
+(`RA-034-round5-bridge-gaps-theories.md` §10): the in-graph **8-calls × 30-replays** design (8
+sequential calls on 8 DIFFERENT real experts — no compiler dedup, routing diversity, tiny recipe
+so the per-graph compile cost stays negligible per T12-TEST; replay-1 reported separately per
+the D1 localization; per-call cost = median(replays 2-30)/8), the **slice widths** (full
+[4096,2048] 8.4 MB / half / quarter) with the **linearity check** (t(half)/t(full) ≈ 0.5 =
+bandwidth-bound → the 25.2 MB expert projects directly; deviation = the issue-bound fixed
+overhead → the D4 tile sweep + the pipelined-load variant become mandatory, the 39cfd76
+"~4× target"), the **Arm B stock reference** (the exact production op sequence, not a
+reimplementation — it is both the parity reference and the harness calibration against the
+1.696/1.945/2.147 TB/s envelope), the **parity gate** (the cookbook's method: 0 NaNs, the
+FP8-contract tolerance = scale-rounded-to-bf16 + fp32-acc explained on the top-10 diffs, a
+structural diff = a bug, VERIFY clean, the ws[0]=K/ws[1]=N glue invariant), and the **verdict
+gates** (GATE-2: full 25.2 MB expert ≤ 16.8 µs = PASS / 16.8-40 µs = MARGINAL to the owner
+with the pipelining plan / ≥ 40 µs = FAIL, the 4-HPU decision proceeds with the ~50-60 t/s
+projection; GATE-3 end-to-end ≥ 80 t/s bs=1, @16 not regressed, T>32 fall-through clean) + the
+bs=1 projection formula (per-route µs × routed-experts/rank/step, the D5/router-dump count, the
+slowest-rank binding). **Sequencing unchanged: the §9 calibration gate FIRST (one kernel patch +
+one CPU histogram), then this bench, then the rollout.** The no-HPU items (the histogram, the
+RA-034 census on the archived GC logs) can run in parallel with the agent's HPU-heavy kernel
+session.
+
+**(b) T12-TEST (a71ff64) audited — the pinned-bucket refutation CONFIRMS the per-graph-compile
+theory** (detail: the round-5 note §11): the pinned boot (215 graphs) took ~29 min vs the
+adopted 277-graph boot's ~25 min — SLOWER with FEWER graphs (8.1 vs 5.4 s/graph): the capture
+cost is the per-graph COMPILE, shape-regularity dependent (the sparse ctx rows compile ~50%
+slower per graph than the regular exponential series) — the naive T1.2 bucket reduction is
+refuted, the boot lever is the compile-time state sharing (recipe cache / regional compilation —
+the agent's own conclusion, converging with RA-031); the pinning costs −5% decode (40.3, the
+coarser ctx padding) and the spec-decode path adds +46 seed buckets on top of the file's 49
+decode rows (the RA-031 file-design constraint: row count ≠ graph count, ×1.9 decode expansion,
+dense ctx coverage required); the R003 suite null (97.5%) as predicted. Production stays on the
+exponential bucketing (agreed). **The agent is now on the Q21 critical path (39cfd76 is HEAD) —
+the §9 calibration + §10 bench are the next two gates.**
+
+### 11. Rev 11.3 (2026-11-11 ~12:05) — audit: the agent's uncommitted dtype fix CONFIRMS the E4M3 analysis
+
+Live audit (no new commits; HEAD still 39cfd76):
+
+1. **The agent has an uncommitted one-line change in `kernels/mxfp4-moe/extra/block_fp8_dequant_glm/op.cpp`:
+   the validation gate changed from `weight.scalar_type() == at::kFloat8_e4m3fnuz` to
+   `== at::kFloat8_e4m3fnuz || == at::kFloat8_e4m3fn`.** This is independent confirmation of the
+   §9 E4M3 analysis (the checkpoint is OCP `float8_e4m3fn`; fnuz is not the real storage dtype —
+   the corpus's MEASURED settlement says the same: the device accepts `float8_e4m3fn` only, and
+   the fnuz-declared path is runtime-rejected). The agent arrived at the dtype conclusion by
+   hitting the gate; the §9 recipe (the top-bin remap for the 9,291 conversion NaNs) is the
+   NEXT step of their calibration — the dtype fix alone makes the op accept the checkpoint but
+   does not fix the conversion semantics (the TPC decoder still NaNs the top bin). If their
+   histogram (the §9.3 step 1) shows the top-bin bytes as predicted, the §9.2 remap is the patch.
+2. **A fresh production boot is in progress (started 12:00):** the full production config
+   (TP8, MTP k=1, 32768 ctx, 8192 batch tokens, 2048 capture size, GPU 0.82, prefix off,
+   `GLM5_NEXT_DECODE_LAYER_GROUP=45`, MHC sinkhorn kernel, KDA scan, `GLM_EARLY_DRAFT=1`,
+   `GLM_ROUTER_FAST=1`, `GLM_SPEC_DEVICE_REJECT=1`, **`GLM_FP8_MXK=0`** — the Q21 custom MoE op
+   is OFF in this boot; `VLLM_SKIP_WARMUP=true`; **`PT_HPU_LAZY_ACC_PAR_MODE=1`** — the pinned
+   serve-script value, confirming this boot's dispatch numbers will be at ACC_PAR=1 (the D7
+   question stands only for the custom-op boots). The 02:52 boot is dead. Likely purpose:
+   re-establish the production baseline + continue the profiling session (the gap-catalog
+   cross-check waits on this) — the Q21 calibration probe itself runs in the GC_KERNEL_PATH
+   probe environment (39cfd76's method) or with `GLM_FP8_MXK=1` after the remap.
+3. **New untracked accuracy results** (`nonrecip.json`, `pinned.json`, `seamfix.json`) — the
+   suite outputs for the NONRECIP / T12-TEST / RECIPE-DIFF experiments (the 97.5% runs) —
+   consistent with the committed findings; no new experiment data.
+4. **Gap-catalog cross-check remains BLOCKED on the agent's flame-graph findings** — no new
+   commits, `current_bottleneck.md` unmodified since the last audit. The catalog (G1-G8) stands
+   as written; the fix pointers and sizes need no revision in the interim. The next audit
+   trigger: the agent's profiling commit or the Q21 calibration/bench commit.
+
+### 12. Rev 12 (2026-11-12) — RA-036: thirty theories for DFlash2 on 4 and 8 HPUs (owner-requested)
+
+**Owner's ask:** "at least 20 theories on how to get DFlash2 working on 4 and 8 HPUs, it should
+predict at least 4 tokens. Go in depth and look at the work the implementation agent has done
+so far." **Deliverable: `RA-036-dflash2-theories.md` (30 theories, T1-T30, ~110 KB)** — the
+full mechanism deep-dive (the 1Cat `hpu_dflash2.py` + the Strata `dflash.hpp` + the inco blog
++ the GLM checkpoint), the audit of the agent's MTP/draft work through **df9ef76 2026-11-12
+00:55**, the reference-anchor arithmetic, and the theory groups:
+
+- **Group A (T1-T7) — the port:** the 1Cat proposer ported to our 0.26.1 runner (T1, incl.
+  the F2 piggyback contract for the draft tokens); the aux-hidden capture at
+  [5,14,24,33,42] — the TP-replicated-residual property + the mHC-vs-plain-residual question
+  the checkpoint's fc input shape answers on CPU (T2); the KDA verify at L=8 — our tree is
+  structurally ready (derived spec_len, the one-call `hpu_recurrent_kda` all-states, the
+  candidate columns; MTP4-T0 proved L=5) (T3); the rollback slot pool + the HBM table (T4);
+  the draft's TP sharding (T5 — the draft is the cheapest TP-shard in the system); the
+  prefill-shaped [bs,8] draft attention with the explicit bias (T6); the draft's 2048-ring
+  context KV — **the draft is ctx-INDEPENDENT** (T7 — the strategic property that makes the
+  draft graph population tiny, T8).
+- **Group B (T8-T14) — execution + the R003 regime:** the three draft-graphing strategies —
+  fully graphed with the tiny population (T8), **eager first (T9 — reinforced as the bs=1-
+  correct choice by the BS1-HOSTBOUND finding: the step is host-PACED with device slack, the
+  MTP4-T0 parity is the proof point)**, regional compilation (the 1Cat pattern, the T12-
+  TEST-named compile-time lever) (T10); the verify graph population containment (T11, the
+  F3-SCOPED bs=1/3 recapture-tax note); the R003 design rules for the DFlash2 capture surface
+  (T12 — the adoption gate); **the conv-chain fusion — our kda_layer.py conv path is a python
+  for-loop over spec_len: 34 layers × 8 iterations ≈ 800 launches/step at block 8 → one banded
+  op per layer (T13)**; the device-prepared metadata port (T14).
+- **Group C (T15-T21) — clearing the ≥4 bar:** **T15 is the go/no-go — the acceptance
+  calibration, one boot family, the MTP4-T0 method** (the AL grid block {4,5,8} × bs {1,4,16};
+  the anchor arithmetic: the inco GLM AL 5.48-6.02 − the stack gap ≈ 3.9-4.7 expected —
+  straddling the bar; the calibration decides); the block-size sweep (T16 — the checkpoint is
+  block-8-trained, block-N-deployable, the Strata `STRATA_HPU_DFLASH_BLOCK=2..8` precedent);
+  the batch-conditional depth (T17 — the @16 arithmetic recorded honestly: the drafter alone
+  does NOT reach 800@16; it is the acceptance term composing with Q21); the FP8 feature
+  alignment (T18); the beam-2 selector walk (T19 — the runner-side knob, no retraining); the
+  MTP-head ensemble (T20 — the high-complexity ceiling push); the DSpine swap-in (T21 — the
+  port investment amortized, the model-agnostic interface rule).
+- **Group D (T22-T24) — the 4-HPU deployment:** the TP4 HBM fit formula (the rollback pool
+  ≈ 4.9 GB/rank at block-8 is the largest DFlash2-specific term — the block-4 preference +
+  the compact state are the mitigations) (T22); the TP4 verify-row economics + the Q21/
+  DFlash2 compounding (the routing set grows with the drafter depth → the Q21 absolute cut
+  grows) (T23); **the end state restated on the BS1-HOSTBOUND physics: the step = max(host',
+  device') ≈ 26-30 ms for AL 4.5-5.5 → 150-210 t/s bs=1 at TP8, 140-180 at TP4; the 200
+  bs=1 needs AL ≥ 4.5 + device' ≤ host' (the Q21 + T13 base case) + the host window ≤ 25 ms
+  (the agent's engine-side program — the 17 ms unaccounted gap — is the complementary lever);
+  the 800@16 stays the 8-HPU allocation's target** (T24).
+- **Group E (T25-T30) — cross-cutting:** the non-greedy extension (the greedy-only is a
+  1Cat SCOPE choice — the rejection-sampling verify restores the distribution; the T1
+  interface rule: expose (logits, draft-logits), not a fused greedy) (T25); the warmup vs
+  capture-on-demand (T26); **the rollback-correctness battery — accept-0 storm, preemption
+  storm, page-crossing, padding-lane identity — ADOPTION-REQUIRED** (T27); the long-context
+  block-table carry (T28 — fine at our 32K window, the sharing lever is the 1M prerequisite);
+  the concurrency ceiling re-derivation (T29 — the 16-active bound is NOT the state HBM at
+  the GLM KDA sizes — the D13 closure); **the measurement ladder — Stage 0 no-HPU (the
+  checkpoint inspection, the op capability, the state shapes, the routing dump) → Stage 1 the
+  port → Stage 2 the T15 calibration (GATE G1: AL ≥ 4.0) → Stage 3 the execution A/B (GATE
+  G2: the R003 suite ≤ 0.5 pp) → Stage 4 the end-to-end at TP8 then TP4 (GATE G3)** (T30).
+
+**Two audit updates for the agent's attention:** (1) **the license flag is STALE — the
+incoai/GLM-5.3-Flash-DFlash2 card now carries `license: apache-2.0`** (the rev-5 RA-009/
+RA-016 NC-ND caveat is gone — pin the revision at download time); (2) **the BS1-HOSTBOUND /
+ENGINE-BS1 findings re-frame the drafter's bs=1 value: the drafter works by converting the
+host-paced window into 2-3× the tokens per window — its bs=1 gain does NOT depend on the
+device term (the device has the slack), so the program is viable before the Q21 integration
+completes; the 17 ms unaccounted engine gap and the drafter are complementary levers on the
+same window.** The strategic case, one sentence: **the MTP head is MEASURED at 2.68
+accepted/step — below the 4.2 roofline both objectives require; DFlash2 is the only drafter
+class that clears it on this stack.**
+
+**Do-first for the agent (no HPU, days — Stage 0):** the checkpoint inspection (Q1: the
+combine fc input shape — 20480 vs 81920 — the mHC question; Q2: the training precision), the
+op capability checks (Q3: the `hpu_recurrent_kda` all-states at L=8 — the abotsis test
+pattern; Q4: the MHA op's bias input), the KDA conv width (Q5), the routing dump at the 8-
+row verify (Q6), the sampler-in-region question (Q7), the license pin (Q10). Then Stage 1
+(the port, weeks) → the T15 calibration (the decision point). The full T/Q tables, the
+mermaid spine, and the gate definitions are in the RA-036 doc.
+
+### 12.1 Rev 12.1 (2026-11-12) — RA-036 rev 12.1: the implementation feedback is incorporated (one retraction, four corrections)
+
+**The agent's feedback is in** (`docs/research/IMPLEMENTATION-FEEDBACK-DFLASH2.md`, written
+against the rev-12 doc): the DFlash2 port is **STAGED at ~40%** — the checkpoint is on the
+server (config verified against the doc), the `flashinfer_gaudi` minimal port is done, the
+`HpuDFlash2Proposer` + ops are copied with the `laguna_dflash` swap, the speculative factory
+is wired (the `method=="dflash"` branch ahead of `use_eagle()` — upstream would pick the
+wrong proposer), and the aux-hidden flag is set. **T1(c) and the T2 flag are implemented,
+not just proposed.** The research doc now has a **§0 (rev 12.1)** recording what the
+feedback changes; the agent should read §0 before the next session.
+
+**One retraction (I was wrong):** my rev-12 "the DFlash2-GLM license is now apache-2.0, the
+NC-ND flag is STALE" is **RETRACTED** — the agent's direct inspection of the downloaded
+checkpoint AND the current HF card (README frontmatter `license: cc-by-nc-nd-4.0`,
+`base_model: zai-org/GLM-5.3-Flash`) confirm **CC BY-NC-ND 4.0, non-commercial**. The rev-5
+RA-009 flag stands: **the owner must rule on non-commercial use before this path is taken
+to production** (DSpine, RA-016, Apache-2.0, remains the clean-license alternative — T21
+amortizes the port investment so the swap does not strand the work).
+
+**Four corrections to the theories:**
+1. **T3 "structurally ready" → the B1 hard gate.** The 1Cat's DFlash2 verify is a
+   Qwen-GDN-hybrid-specific integration (the corpus `_validate_hpu_dflash2_config`:
+   `is_qwen3_5_hybrid_model`, the Qwen3.8-27B field tables, exactly 7 speculative tokens,
+   ≤16 seqs, the compiled `gdn_recurrent_compound` rollback ops — **absent from our venv**).
+   For GLM (MLA+KDA+MoE) the verify's rollback call sites must be REMAPPED onto our KDA
+   candidate-slot machinery (the generic `[groups, bs, 1+num_spec+1]` layout we already run
+   at k=1). The KDA state math remains validated (the abotsis L≤8 tests); the gate is the
+   integration — days-to-weeks class. Research recommendation: **ride the KDA slots** (not
+   port the GDN ops — they are Qwen-shaped and the GLM target is not).
+2. **T14 "device-prepared fast path" → not available as-is.** The agent measured
+   `score_select native promoted: False` — **the 1Cat never built the native
+   `flashinfer_gaudi_ops*.so`; it does not exist on the server.** The active selector is
+   the PYTHON reference. The DEVICE_PREPARE path depends on the native.
+3. **NEW physics (the sharpest item): the reference selector is host-side Python, and bs=1
+   is host-PACED.** The drafter's value is converting the ~23.8 ms host window into 2-3×
+   the tokens per window; a host-side selector competes for that same window. **At bs=1 the
+   fast (native or a small custom HPU rank-256-bilinear) selector may be NECESSARY for the
+   drafter to net-positive, not merely an optimization.** Do-first item 3 (new): MEASURE the
+   reference selector's host cost (the F4-TS instrument, `GLM_PHASE_TS=1`, already live)
+   before any native investment — it decides bs=1 viability.
+4. **T5 confirmed (B3):** the 1Cat qualified TP1 only; the per-channel conv + the full-
+   hidden rank-256 selector are the sharding-sensitive components; the fallback is the
+   replicated draft (+2 GB/rank, the D13 gate).
+
+**Also recorded:** B2 (the V1 platform gate — the `_get_v1_model_runner_unsupported_features`
+monkey-patch + the `VLLM_HPU_FLASHINFER_DFLASH2` env, ~20 lines mechanical; the GLM port
+needs its OWN shape gate — the Qwen field tables cannot be reused); the F4-TS per-phase
+timestamp patch (the agent's instrument for the ~17 ms unaccounted host gap + the
+propose-phase cost — keep it for the DFlash2 A/B). **Net:** the drafter remains the only
+class that clears the 4.2-accepted/step roofline (the MTP head is MEASURED at 2.68); the
+port is ~40% done; the remaining hard work concentrates in the B1 KDA-rollback remap and
+the selector path. The bs=1 case keeps its reinforcement (device slack inside the host
+window) but gains a new host-side cost to measure; the @16 case is unchanged (device-paced,
+Q21-first).
+
+
+---
+
+## Licensing and commercial-use statement (owner instruction, 2026-11-12: "make sure that
+all you write is allowed for commercial use")
+
+**These documents.** All text in these documents is original analysis by the independent
+research architect, produced for this project. The owner may use the documents and their
+conclusions commercially. These documents contain no license to, and grant no rights in,
+any third-party material.
+
+**Third-party material referenced or quoted — license status (verified 2026-11-12 against
+the upstream repositories / HF cards):**
+
+| Source | License | Use in these documents | Commercially usable |
+|---|---|---|---|
+| 1CatAI/1Cat-vLLM-Gaudi | Apache-2.0 | short code excerpts, identifiers, mechanism descriptions — attributed | YES (attribution retained) |
+| JChen-318/gaudi2-single-card-strata (Strata) | MIT | config values, mechanism descriptions, acceptance facts | YES |
+| mw00/project-maya | MIT | production-config facts (the DFlash2-GLM 148.6 t/s run) | YES |
+| z-lab/dflash | MIT | methodology reference | YES |
+| Tencent/DSpine | Apache-2.0 (with third-party-component exceptions) | RA-016 / T21 alternative drafter | YES |
+| NatTuck/g2-opt-manual | **NO LICENSE FILE (all rights reserved)** | facts and measurements only (the FP8 device-semantics table, the audit verdicts) + short attributed phrases — **no code reproduced** | facts freely usable; phrases are internal citations only |
+| zeyuyang8/ecf8 | **NO LICENSE FILE (all rights reserved)** | method description + repo-layout facts (RA-017) — **no code reproduced** | facts/method freely usable; no code dependency |
+| inco.ai DFlash2 blog (2026-08) | copyrighted, no open license | factual numbers (acceptance, recall, oracle gap) + short attributed phrases | facts freely usable; phrases are internal citations only |
+| incoai/GLM-5.3-Flash-DFlash2 (checkpoint) | **CC BY-NC-ND 4.0 — non-commercial, no derivatives** | **config values only (factual data). No weights, code, or model content in these documents** | **NO for the weights — owner ruling required before production** |
+| Intel/Habana official docs (habana-docs, SDK headers, 1.24.1) | Intel reference documentation | vendor API sentences quoted with attribution (tier B) | YES — standard citation of vendor documentation |
+
+**Assurances:**
+1. No model weights or checkpoint content appear in these documents (config fields are
+   factual data).
+2. No code from the unlicensed sources (g2-opt-manual, ecf8) is reproduced anywhere in
+   these documents; every code excerpt comes from an Apache-2.0/MIT repository and keeps
+   its attribution.
+3. Verbatim quotation is limited to (a) vendor API documentation, (b) short attributed
+   phrases, and (c) open-licensed code; quotations from non-openly-licensed sources were
+   converted to paraphrase + factual citation (rev 1.9.2 pass, 2026-11-12).
+4. **The single not-commercially-usable component is the incoai DFlash2-GLM checkpoint
+   (CC BY-NC-ND 4.0)** — flagged since rev 5 and re-confirmed in rev 12.1: the owner must
+   rule before it is used in production (options: negotiate a commercial license with
+   incoai, or substitute DSpine — Apache-2.0 — via T21/RA-016).
+5. If any of these documents is published externally rather than used inside the project,
+   re-review the two "NO LICENSE FILE" rows and the remaining short attributed phrases.
+
