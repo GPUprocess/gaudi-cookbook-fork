@@ -224,6 +224,32 @@ summary `t1b_summary.json`):**
   21–27% (131–164 W): the compute units are ~75% idle while the memory streams —
   consistent with the masked-GEMV memory-bound regime.
 
+**T1b CORRECTIONS (2026-11-13, later the same day — the engine-metric cross-check):**
+- **The step-delta AL method is INVALID**: the F4TS engine stamp counter carries
+  duplicated increment blocks (the patch applied with two `+1` sites per step) — the
+  stamp-count×16 arithmetic produced impossible ALs (0.5–1.07). The authoritative AL
+  source is the engine's own spec-decoding metrics line.
+- **The AL@16 = 1.82** (the engine metrics, 07:40:33: `Mean acceptance length: 1.82` at
+  the generation 251.7 tok/s) — **the MTP acceptance HOLDS at @16**; it does NOT
+  collapse. The MTP@16 wash comes from the STEP COST (the 32-row verify ~doubles the
+  host dispatch), not the acceptance.
+- **The @16 step ≈ 116 ms** (251.7 ÷ (16 × 1.82)); the T1B completion-stamp total
+  (115.2 ms) MATCHES it — the per-step sync added nothing at @16 because the host path
+  already dominates. **The split: the host ≈ 89 ms (the launch 65 + the post-sampler
+  24), the device drain ≈ 26 ms → P-HOST-@16 by direct measurement**, refining the
+  bytes-rule verdict above: the 43.6 GB are structural (the dense pass reads them every
+  step) but the device completes them in a ~26 ms burst (1.7 TB/s in-burst) and then
+  idles behind the host. **The @16 master lever is the L3 host program (the launch path
+  + the sampler host); Q21 shrinks the device burst 26→~12 ms — the combination, as the
+  diagnosis concluded.**
+- The F4TS `sample_tokens` stamp (~56 ms) vs the T1B worker total (115 ms): the engine's
+  executor call returns ahead of the worker completion (the async-output plumbing) — a
+  measurement-architecture caveat for the next instrumentation round; the engine-metrics
+  step (116) and the T1B total (115) are the consistent pair.
+- **Ops incident:** the EngineCore was killed by a stray `SIGUSR1` probe (the default
+  USR1 action is terminate) at 07:42:07 — the production was restored from
+  `boot_f4ts.sh` (the adopted config). Lesson: never signal the engine processes.
+
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
 Extend the F4-TS stamps to the API-server side (the serving process): stamp (i) the
@@ -745,14 +771,27 @@ BW during the MoE read, the MTP acceptance @16) + the ten research questions —
 incorporated above.
 
 **T1b run (2026-11-13, the implementation agent):** the @16 physics boot executed per
-§3 T1b — **P-DEV-@16 confirmed** by the bytes rule (the dense-pass all-read 43.6
-GB/rank/step ≥ 25), the routed-union histogram captured (16.1 distinct local
-experts/rank/layer mean → the Q21 expert-byte cut 2.24×, the total → ~22.5 GB), the
-completion-stamp split delivered (launch 65 / sync-wait 26 / post 24 ms, serialized),
-the @16 bench parity 253–258 tok/s reproduced (the earlier 205–211 was the custom-script
-artifact — corrected). Artifacts: `benchmarks/accuracy/results/t1b_*` +
-`t1b_summary.json`. The instrumentation (the env-configurable histogram window + the
+§3 T1b — the routed-union histogram captured (16.1 distinct local experts/rank/layer
+mean → the Q21 expert-byte cut 2.24×, the total 43.6 → ~22.5 GB), the completion-stamp
+split delivered, the @16 bench parity 253–258 tok/s reproduced (the earlier 205–211 was
+the custom-script artifact — corrected). Artifacts: `benchmarks/accuracy/results/t1b_*`
++ `t1b_summary.json`. The instrumentation (the env-configurable histogram window + the
 GLM_STEP_TS runner stamps) is deployed default-inert. Full results: §3 T1b.
+
+**T1b corrections + L2.1 (2026-11-13, later):** (1) the stamp-delta AL method is
+invalid (the duplicated F4TS counter increments) — the engine's own spec metrics give
+**AL@16 = 1.82: the acceptance HOLDS at @16**; the MTP@16 wash is the 32-row step cost.
+(2) The @16 step ≈ 116 ms matches the T1B stamp total (115.2): **the host ≈ 89 ms
+(launch 65 + post 24), the device drain ≈ 26 ms → P-HOST-@16 by direct split** — the
+bytes are structural but the device completes them in a burst and idles behind the
+host; the @16 master lever is the L3 host program, with Q21 shrinking the device burst
+26→~12 ms. (3) **L2.1 (the API-cadence arm) CLEARED at bs=1**: the end-to-end wall
+13.52 s / 512 tok vs the stamps → the step 49.6 ms of which the sample_tokens 47.5 —
+the API/output overhead ≈ 2 ms (4%); consistent with the T1a P-HOST verdict. (4) Ops:
+the EngineCore was killed by a stray SIGUSR1 probe; restored from boot_f4ts.sh. The
+L2 next arms: the in-process-engine-core A/B (`VLLM_ENABLE_V1_MULTIPROCESSING=off`,
+one boot) and the SHM-wakeup micro-benchmark — but the L2 upside at bs=1 is bounded by
+the ~2 ms API term; the L3 launch-path attack (65 ms) is the bigger prize.
 
 **License statement:** appended below (the owner's 2026-11-12 commercial-use
 instruction; this document is commercial-only by construction — every lever names its
