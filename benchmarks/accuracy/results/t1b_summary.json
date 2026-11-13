@@ -1,0 +1,41 @@
+{
+  "id": "T1b",
+  "date": "2026-11-13",
+  "title": "the @16 step physics: P-DEV-@16 confirmed (the bytes rule), the routed-union histogram, the completion-stamp split",
+  "workload": "bench_concurrent 16 streams (the standard bench; the 256-token prompts), the adopted config minus F2 (the boot_ts env), the measurement boot with the T1b instrumentation",
+  "bench": {
+    "aggregate_tok_s_no_instr": [253.0, 255.7, 254.3, 258.5],
+    "note": "the historical @16 level REPRODUCED with the standard bench; the earlier-session 205-211 claim was the custom 512-token-script artifact (the ffb5495 lesson again) — corrected",
+    "aggregate_with_histo_instr": [168.3, 203.8, 208.0],
+    "note2": "the histogram bincount (42 D2H syncs/step) costs ~20% aggregate — the measurement-only cost"
+  },
+  "aip_util_load_window": {
+    "per_card_mean_pct": [24.3, 21.4, 24.7, 23.8, 26.6, 26.1, 24.5, 26.1],
+    "power_W": "131-164 of the 600W cap",
+    "rank_skew": "mild (r1 21% / r7 26%); the expert placement is NOT needed"
+  },
+  "bytes_step_rank": {
+    "stock_dense_pass_GB": 43.6,
+    "basis": "the deployed MoE op is a DENSE pass (every token x every local expert, masked; hpu_fused_moe.py:87) -> the 36-expert all-read is batch-independent: 38.1 GB experts + ~5.5 GB non-expert",
+    "verdict": "43.6 >= 25 GB -> P-DEV-@16 (the T1b decision rule); Q21 is the master @16 lever",
+    "effective_BW": "43.6 GB / 57 ms step = 0.76 TB/s = 31% of the 2.45 TB/s peak — the dense pass wastes BOTH the bytes (the un-routed experts) AND the compute (the masked row-expert ops: 40x36 vs the routed ~16x36 per layer)"
+  },
+  "routing_union_histogram": {
+    "capture": "20 eager-phase steps (the graph replays do not execute the python hook — the hook recorded the capture/warm-up steps only; the routing distribution is execution-independent so the estimate holds)",
+    "steady_40row_steps": 4,
+    "distinct_local_experts_per_rank_layer_step": {"mean": 16.1, "p50": 16, "p90": 21, "max": 27},
+    "padding_note": "the 40-row bucket carries 8 padding rows -> the union is an UPPER bound on the true routed union",
+    "per_rank_union_mean": [16.0, 16.1, 17.0, 16.0, 16.5, 16.1, 15.5, 15.6],
+    "q21_model": "36 dense -> 16.1 union = 2.24x expert-byte cut; the expert term 38.1 -> 17.0 GB; the total 43.6 -> ~22.5 GB/rank/step"
+  },
+  "completion_stamp_split": {
+    "clean_replay_phase_n": 985,
+    "launch_ms": 65.21,
+    "sync_wait_ms": 25.85,
+    "post_ms": 24.14,
+    "total_ms": 115.20,
+    "caveat": "the per-step torch.hpu.synchronize() serializes the pipeline (the real step 57-76 ms vs the stamped 115); the launch term absorbs the device-backpressure in the lazy mode — the split is directional: the host dispatch and the sampler host are ~half the step, the device drain ~26+ ms",
+    "f4ts_engine_stamps_16stream": "sample_tokens 52-72 ms (the mean ~58); schedule+broadcast+rpc ~0.2-0.4 ms"
+  },
+  "next": "L1 (the Q21 integration to the A/B) now carries the GB ground truth: the A/B must report the per-rank GB/step (the invariant) and the union histogram per arm; L4.0 (the MTP-ON @16 decomposition) is the next measurement"
+}

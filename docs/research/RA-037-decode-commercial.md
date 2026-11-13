@@ -197,6 +197,33 @@ Either way the 42 ms "replay" term is split: launch-CPU (the graph launch descri
 build for the 16-row graph) vs sync-wait (the hidden device) — the completion stamp does
 that split directly.
 
+**T1b RUN (2026-11-13, this boot family; artifacts `benchmarks/accuracy/results/t1b_*`,
+summary `t1b_summary.json`):**
+- **Verdict: P-DEV-@16.** The deployed MoE op is a dense pass (every token × every local
+  expert, masked — `hpu_fused_moe.py:87`): the 36-expert all-read is batch-independent →
+  **43.6 GB/rank/step (38.1 expert + ~5.5 non-expert) ≥ 25** — and it wastes BOTH bytes
+  (the un-routed experts) and compute (40×36 masked row-expert GEMVs/layer vs the routed
+  ~16×36). The effective BW is 0.76 TB/s = 31% of the peak: not bandwidth-saturated —
+  the dense-pass structure is the waste, which is exactly Q21's target.
+- **The routed-union histogram (the Q21 GB ground truth):** the distinct local experts per
+  rank-layer-step **mean 16.1 (p50 16, p90 21, max 27)**, balanced across ranks
+  (15.5–17.0 — the expert placement is NOT needed). The 40-row decode bucket carries 8
+  padding rows → the union is an upper bound. **Q21 model: 36 → 16.1 = 2.24× expert-byte
+  cut; the total 43.6 → ~22.5 GB/rank/step.** Capture caveat: the hook is python-side and
+  does not execute inside the graph replays — the 20 recorded steps are the eager
+  capture/warm-up phase (the routing distribution is execution-independent, so the
+  estimate holds).
+- **The completion-stamp split (the replay phase, n=985):** launch 65.2 / sync-wait 25.9 /
+  post-sampler 24.1 ms (the stamped total 115.2 is serialized by the per-step
+  `torch.hpu.synchronize()`; the real step is 57–76 ms). Directional: the host dispatch +
+  the sampler host ≈ half the step, the device drain ≈ 26+ ms. The F4TS engine stamps:
+  sample_tokens 52–72 ms (mean ~58); schedule+broadcast+rpc ~0.2–0.4 ms.
+- **The @16 aggregate parity check:** the standard bench reproduces the historical level
+  **253–258 tok/s** (F2 off). The earlier-session 205–211 claim was the custom
+  512-token-script artifact (the ffb5495 lesson) — corrected. The AIP-Util @16 is
+  21–27% (131–164 W): the compute units are ~75% idle while the memory streams —
+  consistent with the masked-GEMV memory-bound regime.
+
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
 Extend the F4-TS stamps to the API-server side (the serving process): stamp (i) the
@@ -716,6 +743,16 @@ postreboot/seamfix/vparse/vparse2 arms). The current_bottleneck.md bottleneck ta
 AR) + the unknowns list (the per-layer device time, the host/device overlap, the HBM
 BW during the MoE read, the MTP acceptance @16) + the ten research questions — all
 incorporated above.
+
+**T1b run (2026-11-13, the implementation agent):** the @16 physics boot executed per
+§3 T1b — **P-DEV-@16 confirmed** by the bytes rule (the dense-pass all-read 43.6
+GB/rank/step ≥ 25), the routed-union histogram captured (16.1 distinct local
+experts/rank/layer mean → the Q21 expert-byte cut 2.24×, the total → ~22.5 GB), the
+completion-stamp split delivered (launch 65 / sync-wait 26 / post 24 ms, serialized),
+the @16 bench parity 253–258 tok/s reproduced (the earlier 205–211 was the custom-script
+artifact — corrected). Artifacts: `benchmarks/accuracy/results/t1b_*` +
+`t1b_summary.json`. The instrumentation (the env-configurable histogram window + the
+GLM_STEP_TS runner stamps) is deployed default-inert. Full results: §3 T1b.
 
 **License statement:** appended below (the owner's 2026-11-12 commercial-use
 instruction; this document is commercial-only by construction — every lever names its
