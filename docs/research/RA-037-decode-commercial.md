@@ -388,19 +388,28 @@ only, NO histogram; corrects the T1B split above):**
   post 15.6) + the send/API ~2-9 → Q21 (the drain → ~12) + the launch/sampler trims
   → the iteration ~45-50 ms → the STEADY @16 ≈ 600-690 tok/s.** The 800 bench-number
   needs the k=4/drafter AND the ramp/tail dilution accounted.
-- **REOPENED (the final wrinkle): the drafted metric counts ~10.3 proposals/iteration
-  (140.9 tok/s ÷ 13.7 iters/s) vs the ~15.5 running — ~⅓ of the request-steps schedule
-  WITHOUT their draft** (the vLLM streaming emits one delta per step per request, so
-  the chunk count = the steps ✓ and the streaming request's own AL 1.95 shows drafting
-  works WHEN scheduled). **The prime suspect: the scheduler's spec-scheduling
-  arithmetic** — `num_scheduled_spec_tokens = num_new_tokens + num_computed_tokens −
-  num_tokens − num_output_placeholders` (scheduler.py:624-628) can compute ≤0 for a
-  freshly-rejected request (the num_computed_tokens rewind at update_from_output:1690),
-  stripping that request's draft for the step — an alternating draft/no-draft pattern
-  per request would cost the acceptance on those steps. **The next session: trace
-  num_scheduled_spec_tokens per request under the @16 load (a debug print or the
-  scheduler dump), and if confirmed, the fix is a scheduler arithmetic patch (the
-  small, testable class).**
+- **REOPENED → RESOLVED (the spec-scheduling census, the final boot):** the
+  `[SPEC-TS]` census in the scheduler's spec branch (GLM_SPEC_SCHED_TS=1) counted
+  **2720/2720 decode request-steps scheduled WITH the draft — arith0=0, no_draft=0**
+  over the SPECCHK bench: **there is NO draft-skipping; the num_scheduled_spec_tokens
+  arithmetic never strips the drafts; the drafted metric ≈ the census** (the drafted
+  ~2600 over the same window ✓). **The drafted-metric-based cadence (113-129 ms) is
+  RETRACTED — its "10-s window" assumption is unverified and it is the one
+  inconsistent instrument** (it implies ~0.64× the census-confirmed proposals).
+- **THE FINAL CONSISTENT PICTURE @16 (all instruments now agree):** the iteration
+  **~72.5 ms** (the streaming 131 chunks / 9.5 s ✓ = the LOOP step_fn 61.5 + the
+  worker post tail ~11 ✓), the AL **~1.95** (the chunk count 131 for ~256 tokens ✓ =
+  the drafted metric 1.82-1.83 within the slop ✓ = the per-position 0.833 ✓), the
+  per-request rate **~27 tok/s** (the streaming ✓ = the bench per_stream 21.8-25.4 ✓),
+  **the instantaneous aggregate ≈ 415-430 tok/s** — the bench's 246-258 is the
+  ramp/tail-diluted batch average (the dilution ~40%, uniform across the arms so the
+  relative comparisons hold). **The optimization target: the iteration 72.5 → the
+  worker 71 (the launch 28 + the drain 27 + the post 15.6) + the tail ~11 → Q21 (the
+  drain → ~12) + the launch/sampler trims → the iteration ~45-50 ms → the STEADY @16
+  ≈ 600-690 tok/s.** The measurement lessons: (1) never derive the cadence from the
+  spec metrics' window; (2) the streaming chunk count IS the per-request step count
+  (one delta per iteration); (3) the bench aggregate = the batch average, not the
+  steady rate.
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
