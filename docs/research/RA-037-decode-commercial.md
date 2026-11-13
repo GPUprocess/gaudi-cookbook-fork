@@ -459,6 +459,24 @@ only, NO histogram; corrects the T1B split above):**
   the cross-span comparisons (my errors), not the metric.** The final measurement
   doctrine: compare the instruments ONLY within the same span, and prefer the direct
   per-request counts (the streaming chunks) over the derived rates.
+- **THE PROMPT-DEPENDENCE MEASURED + THE PROGRAM CLOSED (the final, the zero-boot
+  streaming arbiter with the usage):** the solo (the warm): **the count prompt
+  (the predictable): the AL 1.95, 45.6 tok/s, the iteration ~42.9 ms; the paragraph
+  prompt (the natural text): the AL 1.68, 37.4 tok/s, the iteration ~44.8 ms** —
+  the MTP acceptance IS prompt-dependent (the predictable sequences draft well; the
+  natural text 0.68). **The @16 bench arithmetic closes completely: the iterations
+  288 (the LOOP × 32 = the F4TS counter/2 ✓ both counters agree) over the 22.9-s
+  2-rep bench = 79.5 ms/iteration; the tokens 5028 ÷ 288 = 17.5/iteration ÷ the
+  avg-running (the EOS drain ~10.6) = the AL ~1.65 ✓ = the paragraph AL 1.68 ✓; the
+  per-request 157 tokens / (93 iterations × 79.5 ms) = 21.2 tok/s = the bench
+  per-stream 21.8 ✓✓. THE DRAFTED METRIC IS HONEST (1.82 = the prompt mix); the
+  LOOP stamps vindicated; the EOS drain explains the proposals ratio.** The final
+  optimization math: the iteration 79.5 → the worker 71 (the launch 28 + the drain
+  27 + the sampler 15.6) + the tail → Q21 (the drain → ~12) + the trims → the
+  iteration ~50 ms → **the @16 aggregate ≈ 16 × 1.68/0.050 ≈ 537 tok/s (the natural
+  text) / ~625 (the mixed)** — the earlier 657 estimate held within the slop. The
+  measurement program is COMPLETE: every term sourced, every instrument
+  cross-validated, every discrepancy resolved.
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
