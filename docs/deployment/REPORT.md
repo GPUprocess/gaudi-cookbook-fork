@@ -275,3 +275,11 @@ self-trained drafter path remains open, gated on the training-infra decision).
 - The research sessions run on the same node concurrently with serving; the
   measurement boots trade ~25 min of downtime each (documented per boot in the
   git history).
+- **The bare HPU tests need the FULL production env** (11-13 late): after
+  `kill_glm.sh`, a bare `python -c "matmul"` failed with synStatus 26 (Can not
+  compile graph) persisting through the AIP reset, the driver reload, and even a
+  full host reboot — **the root cause: the bare python lacked the serving env
+  (PT_HPU_LAZY_MODE/LAZY_ACC_PAR_MODE/MEMORY_POOL/OMPI set by the boot scripts);
+  the production boot post-reboot compiled with ZERO failures**. The BG-1
+  benchmark procedure: run it with the boot-script env exported. The host reboot
+  is the clean-slate recovery (5 min boot + the 25 min production boot).
