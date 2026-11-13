@@ -410,6 +410,21 @@ only, NO histogram; corrects the T1B split above):**
   spec metrics' window; (2) the streaming chunk count IS the per-request step count
   (one delta per iteration); (3) the bench aggregate = the batch average, not the
   steady rate.
+- **THE FULL RECONCILIATION (the LOOP stamps vindicated on the production boot):**
+  the current production (the LOOP stamps active) under the bs=1 verification runs:
+  **23 stamps / 30 s = 40.8 ms/iteration vs the throughput-derived 43.7 ms (the gen
+  43.4 tok/s ÷ the AL 1.88) ✓✓ — the LOOP stamp is the true iteration.** The bench
+  aggregate mystery resolved: **the bench requests finish at ~155 tokens (the EOS
+  early-finishes: 2482 total / 16 = 155, not the 256 cap) — the 246-258 aggregate is
+  the EOS-mix effect, NOT the ramp/tail dilution.** All the numbers now close: the
+  per-request rate 21.8-27 tok/s ✓ (the streaming = the bench per-stream), the
+  iteration 72.5-76.8 ms @16 ✓ (the streaming gap = the per-stream rate ÷ the AL),
+  the AL ~1.95 ✓ (the chunk counts), the drafted metric's 0.66× proposals/iteration
+  = the one open minor question (its own accounting; possibly the EOS-approaching
+  requests not drafting). **The optimization math (unchanged, now fully sourced): the
+  iteration 72.5 = the engine 61.5 + the tail 11 → Q21 (the drain 27→12) + the
+  launch/sampler trims → the iteration ~45-50 ms → for the fixed-length workloads
+  16 × 1.95/0.0475 ≈ 657 tok/s; for the EOS-mixed workloads proportionally less.**
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
