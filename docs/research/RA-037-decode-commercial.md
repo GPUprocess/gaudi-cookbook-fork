@@ -316,9 +316,25 @@ only, NO histogram; corrects the T1B split above):**
   (the detok lives in the APIServer process). **The next instrumentation target: the
   py-spy on the APIServer pid under the @16 load** — it re-ranks the L3 program a
   second time (the output path may be co-master with the launch path).
+- **The output-path term REFUTED (the same day, the APIServer py-spy dumps):** 12
+  point dumps on the APIServer under the @16 load — **11/12 idle in the asyncio
+  selector** (`Runner.run` → `_PollLikeSelector.select`); the output path is NOT the
+  bottleneck. **The resolution of the 115.6-vs-71 contradiction: the 115.6 ms/step
+  (the throughput ÷ AL) is the BENCH-AVERAGE wall per step — it mixes the steady
+  decode steps (~71 ms serialized) with the prefill forwards, the request ramp, and
+  the straggler tail; it is NOT the steady decode step.** The steady decode anatomy
+  (the clean): **71.1 ms = the launch 28.3 (prep 0.00 + the fwd replay 27.9 + the
+  logits 0.47) + the sync_wait 27.3 + the post 15.6**; the engine's wait ≈ 56-60 ms
+  = the launch + the drain ✓ consistent with the F4TS sample_tokens. The open
+  question (the next session): the serialized-vs-unserialized gap — the per-step
+  `torch.hpu.synchronize()` in the T1B instrumentation serializes the pipeline; the
+  production (no sync) may hide part of the 27 ms drain under the next launch, so the
+  TRUE steady step is 71 ms (serialized-measured) to ~45-55 ms (the overlapped
+  estimate) — settle it with a no-sync boot variant (the stamps with the sync removed)
+  before designing the L3 fixes against the number.
 - The revised @16 attack list: 1) the worker launch 28 ms (the replay — the Q21 device
   part inside), 2) the device drain 27 ms (Q21 → ~12), 3) the worker post 15.6 ms (the
-  sampler), 4) **the engine+API output path ~57 ms (NEW — unmeasured internals)**.
+  sampler), 4) ~~the engine+API output path~~ (refuted — the APIServer idle).
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
