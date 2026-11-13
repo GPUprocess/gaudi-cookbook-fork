@@ -342,6 +342,29 @@ only, NO histogram; corrects the T1B split above):**
   sampler), 4) **the ~40 ms/step loop overhead (NEW — the engine/API/transport
   blind spot; the step-total stamp first)**.
 
+**The worker profile closed + the loop-gap staged (2026-11-13, the final round):**
+- The nonblocking py-spy `record` on the worker (`--nonblocking` works where the
+  default mode starves — the recipe) under the @16 load (458 samples): **the replay
+  44% + the parse_output 21% = 65%** — the two halves of the worker's 71 ms step
+  (the fwd 28 + the post 15.6 at the T1B split ✓ consistent), plus the D1-named eager
+  leaves visible (the dynamic_quant, the mark_step, the OpOverload dispatch, the
+  decode_lean _h2d/_accept_grid, the HpuEagleProposer.propose). The worker side is
+  MEASURED and attackable: Q21 (the device) + the sampler vectorization + the draft
+  dispatch fusion.
+- **The ~40 ms/step loop gap is the LAST unresolved @16 term.** The established
+  arithmetic: the drafted metric = the proposals = 1 per running request per step
+  (the generated = the accepted + the drafted, exact); the drafted ~1358/10 s ÷ ~15.5
+  running → ~87.6 steps/10 s → **the cadence ~114 ms/step**; the engine's step()
+  total = 45-72 ms (the p50 ~53, the update_tail 0.1 — stamped); the worker's
+  serialized branch = 71 ms. The gap lives in: the post_step hook (the F2 consumption
+  — the code path is cheap-looking but unstamped), the output_queue put + the sockets
+  thread + the ZMQ send, or the input-queue handling. **The next session's FIRST
+  action (one boot): add the loop-level stamp in `_process_engine_step` —
+  `t0 = perf_counter()` at the entry, print `[F4TS engine] loop-total` after
+  `post_step` — then the 40 ms decomposes into the post_step vs the output-put vs
+  the unaccounted.** The 10-s metric windows and the point dumps CANNOT resolve it
+  (the mixed time bases — demonstrated today).
+
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
 Extend the F4-TS stamps to the API-server side (the serving process): stamp (i) the
