@@ -351,19 +351,42 @@ only, NO histogram; corrects the T1B split above):**
   decode_lean _h2d/_accept_grid, the HpuEagleProposer.propose). The worker side is
   MEASURED and attackable: Q21 (the device) + the sampler vectorization + the draft
   dispatch fusion.
-- **The ~40 ms/step loop gap is the LAST unresolved @16 term.** The established
-  arithmetic: the drafted metric = the proposals = 1 per running request per step
-  (the generated = the accepted + the drafted, exact); the drafted ~1358/10 s ÷ ~15.5
-  running → ~87.6 steps/10 s → **the cadence ~114 ms/step**; the engine's step()
-  total = 45-72 ms (the p50 ~53, the update_tail 0.1 — stamped); the worker's
-  serialized branch = 71 ms. The gap lives in: the post_step hook (the F2 consumption
-  — the code path is cheap-looking but unstamped), the output_queue put + the sockets
-  thread + the ZMQ send, or the input-queue handling. **The next session's FIRST
-  action (one boot): add the loop-level stamp in `_process_engine_step` —
-  `t0 = perf_counter()` at the entry, print `[F4TS engine] loop-total` after
-  `post_step` — then the 40 ms decomposes into the post_step vs the output-put vs
-  the unaccounted.** The 10-s metric windows and the point dumps CANNOT resolve it
-  (the mixed time bases — demonstrated today).
+- **The loop stamps DEPLOYED and MEASURED** (`[LOOP]` in `_process_engine_step`, the
+  same boot family): **step_fn 46-72 ms (the mean 61.5), outq 0.01, post_step 0.01**
+  — the engine's iteration is the step_fn entirely; the output-queue put and the
+  post_step hook are ZERO. The loop gap is NOT in the engine loop.
+- **THE OPEN CONTRADICTION (the session's final unknown):** the tokens/step at @16.
+  The cadence path: the drafted ~1300/10 s ÷ 16 running → ~81 steps/10 s → **113
+  ms/step** → the tokens/step = 258 × 0.113 = **29.1 (the AL 1.83 ✓ the per-position
+  acceptance 0.833 confirms the drafts ARE accepted)**. The loop-stamp path: the
+  iteration 61.5 ms → the tokens/step = 258 × 0.0615 = **15.9 (the AL ~1.0 — the
+  drafts ALL rejected)**. Both cannot hold. The candidates: (a) the LOOP stamps
+  sample a SUBSET of the iterations (the draft/verify two-phase iterations? the
+  HpuEagleProposer runs in-worker though), (b) the drafted metric counts the
+  proposals for a SUBSET of the requests (the make_spec_decoding_stats returns None
+  when num_draft_tokens=0 — the non-drafting request-steps are invisible), (c) the
+  bench aggregate mixes the phases (demonstrated). **The zero-boot arbiter for the
+  next session: a single STREAMING request among the 16-stream load — the inter-chunk
+  cadence = the iteration cadence (the 113 ms chunks with ~1.8 tokens vs the 61.5 ms
+  chunks with ~1 token), directly readable from the client-side chunk timestamps.**
+- **THE ARBITER RUN (the zero-boot, chunk_cadence.py):** one streaming request among
+  the 15 fillers, the client-side chunk timestamps: **the bs=1 gap 47.5 ms (the p50
+  46.7 — the solo step ✓ the F4TS agrees); under load: the gap p50 72.7 / the mean
+  79.9 (the p10 57.7, the p90 73.4 — TIGHT), the tokens/chunk 1.00.** The three
+  cadence measurements now agree on **the @16 iteration ≈ 62-80 ms** (the LOOP 61.5 +
+  the API/send latency ≈ the streaming 73-80; the drafted-implied 113 is the
+  outlier). **The drafted metric over-counts the proposals per wall-time ~1.5×:
+  ~2/3 of the request-steps draft, ~1/3 SKIP drafting** — consistent with
+  `make_spec_decoding_stats` returning None for the zero-draft request-steps (the
+  invisible in the metric). **THE NEXT SESSION'S THREAD: why do ~1/3 of the
+  request-steps skip the draft?** — the scheduler's spec_token_ids lifecycle
+  (scheduler.py update_draft_token_ids / the request.spec_token_ids state), the
+  decode_lean early-draft path (glm5_next_hpu/decode_lean.py), the SPEC_DEVICE_REJECT
+  interaction. If the skipping is a fixable limitation (not a deliberate lever),
+  restoring the full drafting at @16 is worth ~+20-40% aggregate. The final attack
+  list: 1) the draft-skipping root cause (zero-boot code read first), 2) the worker
+  replay 28 ms + the drain 27 ms (Q21 → 12), 3) the sampler/parse 15.6, 4) the
+  API/send tail (the streaming gap 73-80 vs the engine 61.5).
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
