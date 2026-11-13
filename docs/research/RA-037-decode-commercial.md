@@ -220,6 +220,25 @@ summary `t1b_summary.json`):**
   experiment: measure the MoE device time and the bytes directly** (the env-gated
   event timers around the moe_op call at bs=1 vs @16 — one boot), which decides
   the Q21's fate and the P-DEV/P-HOST-@16 verdict honestly.
+- **THE FP8 MoE OP STRUCTURE (the session's key find for the optimization path):**
+  GLM's `VllmMixtureOfExpertsOpFP8.forward` (ops.py:1258) **dequantizes ALL 36
+  local experts to BF16 on every step** (`get_dequant_weight()` →
+  `dequant_block_fp8_weight_naive` — production runs `GLM_FP8_MXK=0`, the stock
+  cast+mul chain; the deployed AB-DEQ/MXK TPC op would only speed the dequant
+  itself, not the structure), then calls `torch.ops.hpu.mixture_of_experts` on
+  the **BF16** weights. **The traffic multiplier ~3-5× the FP8-only read**
+  (the FP8 read + the BF16 write + the BF16 GEMM read), unless the Synapse
+  compiler fuses the dequant into the GEMM — **the doc's open question BG-1**.
+  HBM cannot hold both copies (38.1 FP8 + 76.2 BF16 > 96 GB), so the dequant
+  re-executes per replay. **This explains the AB-DEQ parity result** (a faster
+  dequant op inside a 3-5×-traffic structure moves little) **and reframes the
+  Q21 opportunity: the fused dequant+GEMV kernel eliminates the structure, not
+  just the dequant speed.** **The next session's first experiment (one boot):
+  the event timers around the dequant and the mixture_of_experts call inside
+  the FP8 MoE forward at bs=1 and @16 — it answers BG-1 (the fused vs the
+  separate) and quantifies the dequant traffic share directly.** If the BG-1
+  is "not fused", the dequant-elimination is likely the largest single @16
+  lever (the traffic cut ~3-5× on the expert term).
 - **The routed-union histogram (the Q21 GB ground truth):** the distinct local experts per
   rank-layer-step **mean 16.1 (p50 16, p90 21, max 27)**, balanced across ranks
   (15.5–17.0 — the expert placement is NOT needed). The 40-row decode bucket carries 8
