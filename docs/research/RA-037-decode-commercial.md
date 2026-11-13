@@ -280,6 +280,12 @@ statement the T7 spec demands. Probe: `kb_staging/r003_probe.py`,
   stamp — the mamba/KDA allocation spikes suspected at the batch transitions; flag for
   the next instrumentation), the rest the queue plumbing; the output-forwarding thread
   idle (the L2.1 conclusion holds at @16).
+- The py-spy `dump` point-samples on the worker (15 × 1 s @16, rank 0 — the `record`
+  mode cannot sample the lazy-mode worker but the one-shot `dump` can): the MainThread
+  ~47% in `HPUGraph.replay`, ~13% in `RejectionSampler.parse_output`, plus the eager-op
+  dispatch (`OpOverloadPacket.__call__`) and the functorch unwrapping
+  (`unwrap_dead_wrappers`) in the launch path — the D1-named eager leaves, the concrete
+  L3 fusion targets.
 - **The complete measured @16 anatomy (116 ms):** the engine schedule ~0.2 ms → the
   broadcast ~0.15 ms → **the worker critical path ~115 ms (the T1B split: the launch
   host 65 + the device drain 26 + the sampler host 24)** → the update/API ~2-5 ms.
