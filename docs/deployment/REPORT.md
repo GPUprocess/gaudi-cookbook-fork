@@ -225,20 +225,28 @@ path (the doc RA-037 §6, re-scoped after the 11-13 corrections):
 1. **The MoE device-time/bytes measurement first** (one boot: the env-gated event
    timers around the moe_op call at bs=1 vs @16) — it decides whether the Q21
    kernel has any byte-saving value at all (the stock op may already be
-   routed-only; the 43.6 GB figure was an unverified assumption).
-2. **Q21 routing-aware fused MoE kernel** (conditional on 1): the kernel step-1
-   (the single-expert block-FP8 GEMV, bit-exact) is committed
-   (`kernels/mxfp4-moe/extra/block_fp8_gemv_glm/`); the step-2 integration
-   (the routed-only multi-expert fused op) is weeks-class.
+   routed-only; the 43.6 GB figure was an unverified assumption). **The 11-13
+   inference: the BG-1 = fused (the unfused model requires ~78 ms of pure
+   traffic — impossible inside the 72.7 ms iteration), so the stock op reads the
+   FP8 once, routed-only, and the Q21 byte case collapses; the boot-window
+   benchmark remains as the confirmation instrument.**
+2. **Q21 routing-aware fused MoE kernel** (conditional on 1; **deprioritized —
+   the byte case collapsed**): the kernel step-1 (the single-expert block-FP8
+   GEMV, bit-exact) is committed; the step-2 integration is weeks-class for the
+   expected single-digit-percent gain (the dequant compute, already near-free per
+   the AB-DEQ parity).
 3. **The launch/sampler trims** (the replay 28.3 + the parse 15.6): the graph
-   population and the sampler vectorization.
-4. **The MTP k=4 chain graph or a DFlash2-class drafter** for the 800-tok/s
+   population and the sampler vectorization — **the primary @16 levers**.
+4. **The acceptance-side** (the AL 1.68 on the natural text vs 1.95 on the
+   predictable): the draft quality/the sampler — the MTP k=2 probe.
+5. **The MTP k=4 chain graph or a DFlash2-class drafter** for the 800-tok/s
    target (the k=4: the RA-018 chain graph; the drafter: gated on the
    licensing/training-infra decision — the DFlash2 checkpoint is CC BY-NC-ND).
 
-Combined (if the Q21 case confirms): **the iteration ~45–50 ms → ~657 tok/s @16
-for the fixed-length workloads** (proportionally less for the EOS-mixed; the AL
-1.68 on the natural text vs 1.95 on the predictable).
+Combined (the trims + the acceptance-side): **the iteration ~50–55 ms → ~450–500
+tok/s @16** (the 657 estimate assumed the Q21 byte savings — retracted;
+proportionally less for the EOS-mixed; the AL 1.68 on the natural text vs 1.95 on
+the predictable).
 
 ### 6.4 Infrastructure hardened
 

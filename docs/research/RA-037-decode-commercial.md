@@ -239,6 +239,27 @@ summary `t1b_summary.json`):**
   separate) and quantifies the dequant traffic share directly.** If the BG-1
   is "not fused", the dequant-elimination is likely the largest single @16
   lever (the traffic cut ~3-5× on the expert term).
+- **BG-1 ANSWERED BY INFERENCE (the standalone benchmark hit the Synapse compile
+  wall on the raw op call — the full vLLM stack context is required to compile the
+  fused MoE recipe; the boot-window run remains available):** the unfused
+  dequant-then-GEMM model requires ~190 GB/rank/step (~78 ms of pure traffic at
+  the 2.45 TB/s peak) — **impossible inside the measured 72.7 ms iteration with a
+  27.3 ms device drain**. The drain fits the FP8-only read (~38.1 GB at ~1.4 TB/s,
+  57% of the peak). **Conclusion: the Synapse fuses the dequant into the GEMM
+  (BG-1 = fused), the steady traffic ≈ the FP8 read once, and the deployed op is
+  routed-only (consistent with the T1a bs=1 device reading).**
+- **THE Q21 INVESTMENT VERDICT: NOT JUSTIFIED by the byte savings** — the stock op
+  already reads the FP8 weights once, routed-only. The remaining Q21 value: the
+  dequant compute elimination (the AB-DEQ parity showed it near-free) and the
+  marginal kernel efficiencies — **the weeks-class integration is not worth the
+  expected single-digit-percent gain.** **The revised @16 lever ranking: (1) the
+  sampler/parse (15.6 ms — the vectorization/optimization), (2) the launch/replay
+  path (28.3 ms — the graph population), (3) the drain's non-MoE parts (the
+  attention, the communicate), (4) the acceptance-side (the AL 1.68 on the natural
+  text — the draft quality/the sampler; the MTP k=2 probe), (5) the Q21 (marginal,
+  deprioritized).** The honest aggregate ceiling after the trims: **the iteration
+  ~50-55 ms → ~450-500 tok/s @16** (the 657 estimate assumed the Q21 byte savings
+  — retracted).
 - **The routed-union histogram (the Q21 GB ground truth):** the distinct local experts per
   rank-layer-step **mean 16.1 (p50 16, p90 21, max 27)**, balanced across ranks
   (15.5–17.0 — the expert placement is NOT needed). The 40-row decode bucket carries 8
