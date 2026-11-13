@@ -269,6 +269,19 @@ summary `t1b_summary.json`):**
   multiply-on-load; no extra HBM round-trip), consistent with the timing inference
   (the 27.3 ms drain fits the FP8-only read). **BG-1 = fused, confirmed by both
   the timing and the capture structure. The Q21 verdict stands: not justified.**
+- **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
+  local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
+  40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
+  read — ✓ the T1a's ~1.26 ms device reading CONFIRMED analytically: the stock op
+  IS routed-only); **@16: the MoE floor 6.9 ms** (the 16.9 GB routed-union read at
+  the peak; the ~17 ms at the realistic ~1 TB/s), the compute 3.1 ms — **the MoE
+  is memory-bound and only ~25% of the 27.3 ms drain; the non-MoE device work
+  (the attention/KDA/KV) ≈ 10-20 ms is the remaining drain component.** **The Q21
+  case closed by three independent confirmations: the analytical (the stock reads
+  the routed unions), the empirical (the AB-DEQ parity, the timing), and the
+  capture structure (the fused dequant nodes). The next profiling target: the
+  non-MoE device kernels (the attention/KDA/KV) — the kernel-level profiler on a
+  measurement boot.**
 - **The routed-union histogram (the Q21 GB ground truth):** the distinct local experts per
   rank-layer-step **mean 16.1 (p50 16, p90 21, max 27)**, balanced across ranks
   (15.5–17.0 — the expert placement is NOT needed). The 40-row decode bucket carries 8
