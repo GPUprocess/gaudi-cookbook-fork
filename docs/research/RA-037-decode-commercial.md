@@ -250,6 +250,24 @@ summary `t1b_summary.json`):**
   USR1 action is terminate) at 07:42:07 — the production was restored from
   `boot_f4ts.sh` (the adopted config). Lesson: never signal the engine processes.
 
+**R003 tie measured (2026-11-13, the T7 evidence, no boot):** the live production probe:
+the answer token's top-2 gap is **0.75 logits** (`10` at −0.392 vs `5` at −1.142; the
+`</think>` gate 2.88) — R003 is a genuine near-tie item. The greedy answer is
+deterministically **"10" (the trap) ×5 in BOTH the serial and the 16-stream concurrent
+shapes** on the current stack — the current baseline is self-consistent, no
+batch-shape sensitivity. **The results archaeology:** ALL the recorded suite arms since
+the Q18 era score 39/40 with R003="10" — INCLUDING the arms the docs describe as
+"rejected by R003" (q01s3, mhc_rows8192, f1async all record "10", 39/40); the
+early-MTP1 and TP4 arms record "5" (40/40). The rejection bookkeeping (which arm
+flipped R003 in WHICH direction, and against which reference) does not reconcile with
+the recorded JSONs and needs the git-history archaeology before the T7 gate policy is
+finalized. What stands: (1) R003 is tie-class (0.75 logits) — any 1-ULP numerics change
+can flip it in either direction; (2) the current stack's 97.5% baseline IS the
+R003-wrong state; (3) the answer-level suite cannot see a "flip" that lands on the
+other side of a tie — the parity-vs-correctness gate semantics need the explicit
+statement the T7 spec demands. Probe: `kb_staging/r003_probe.py`,
+`r003_load_probe.py`.
+
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
 Extend the F4-TS stamps to the API-server side (the serving process): stamp (i) the
