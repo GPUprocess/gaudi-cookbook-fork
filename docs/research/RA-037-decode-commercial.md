@@ -319,22 +319,28 @@ only, NO histogram; corrects the T1B split above):**
 - **The output-path term REFUTED (the same day, the APIServer py-spy dumps):** 12
   point dumps on the APIServer under the @16 load — **11/12 idle in the asyncio
   selector** (`Runner.run` → `_PollLikeSelector.select`); the output path is NOT the
-  bottleneck. **The resolution of the 115.6-vs-71 contradiction: the 115.6 ms/step
-  (the throughput ÷ AL) is the BENCH-AVERAGE wall per step — it mixes the steady
-  decode steps (~71 ms serialized) with the prefill forwards, the request ramp, and
-  the straggler tail; it is NOT the steady decode step.** The steady decode anatomy
-  (the clean): **71.1 ms = the launch 28.3 (prep 0.00 + the fwd replay 27.9 + the
-  logits 0.47) + the sync_wait 27.3 + the post 15.6**; the engine's wait ≈ 56-60 ms
-  = the launch + the drain ✓ consistent with the F4TS sample_tokens. The open
-  question (the next session): the serialized-vs-unserialized gap — the per-step
-  `torch.hpu.synchronize()` in the T1B instrumentation serializes the pipeline; the
-  production (no sync) may hide part of the 27 ms drain under the next launch, so the
-  TRUE steady step is 71 ms (serialized-measured) to ~45-55 ms (the overlapped
-  estimate) — settle it with a no-sync boot variant (the stamps with the sync removed)
-  before designing the L3 fixes against the number.
+  bottleneck. **The resolution of the 115.6-vs-71 contradiction — the metric
+  definitions decoded (the same day):** the engine's spec-decoding metrics satisfy
+  **generated = accepted + drafted EXACTLY** (the 20-s window: 5160 = 2325 + 2841 ✓),
+  i.e. `drafted` = the proposals = the request-steps (1 draft per running request per
+  step) and the "Mean acceptance length 1.82" = 1 + the accepted/drafted ratio
+  (0.817) — per proposal. **The true steady cadence: the drafted 142/10 s ÷ 15.5
+  running ≈ 91.6 steps/10 s → the step ≈ 109-113 ms** (confirming the throughput÷AL
+  derivation). The F4TS stamp-count cadence (65.8 ms) is WRONG — the stamp counter
+  over-counts ~1.67× (a third counter artifact; never use the stamp counts for the
+  cadence). **The remaining ~40 ms/step gap** (the step ~110 − the worker's serialized
+  71): NOT the APIServer (idle), NOT the schedule/broadcast (stamped 0.2-0.4 ms), NOT
+  the update_from_output (the py-spy ~4%) — the suspects: the engine's additional wait
+  (the take_draft_token_ids RPC + the result assembly), the output transport round
+  trip, the API processing bursts below the point-dump resolution, or the engine-side
+  step-total blind spot (the F4TS stamps only schedule/broadcast/rpc/sample_tokens).
+  **The next instrumentation: a step-TOTAL stamp in the engine step() (the wall from
+  the schedule start to the update end) + the API-side receive stamps — one boot
+  family, then the 40 ms decomposes.**
 - The revised @16 attack list: 1) the worker launch 28 ms (the replay — the Q21 device
   part inside), 2) the device drain 27 ms (Q21 → ~12), 3) the worker post 15.6 ms (the
-  sampler), 4) ~~the engine+API output path~~ (refuted — the APIServer idle).
+  sampler), 4) **the ~40 ms/step loop overhead (NEW — the engine/API/transport
+  blind spot; the step-total stamp first)**.
 
 ### T1c — the 17 ms gap localization (folds into T1a; no extra boot)
 
