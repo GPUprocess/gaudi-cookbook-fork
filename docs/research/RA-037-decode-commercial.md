@@ -269,6 +269,20 @@ summary `t1b_summary.json`):**
   multiply-on-load; no extra HBM round-trip), consistent with the timing inference
   (the 27.3 ms drain fits the FP8-only read). **BG-1 = fused, confirmed by both
   the timing and the capture structure. The Q21 verdict stands: not justified.**
+- **THE MFU/BW INSTRUMENT DEPLOYED + THE DEFINITIVE P-HOST CONFIRMATION (the
+  final, `--enable-mfu-metrics`):** the vLLM-gaudi per-window hardware metrics
+  (the TF/s/GPU + the GB/s/GPU) logged live. **The steady @16 decode: the BW
+  328-331 GB/s/GPU = 13.4% of the 2.45 TB/s HBM peak; the compute 1.4 TF/s/GPU =
+  0.32% of the 432 TFLOPS peak — the device is 87% BW-idle and 99.7%
+  compute-idle during the steady decode.** The prefill bursts: 330 GB/s (the
+  same 13%). **P-HOST CONFIRMED AT THE HARDWARE-LEVEL, DEFINITIVELY — the
+  entire optimization program is HOST-SIDE: the device could sustain ~2000
+  tok/s @16 if the host fed it (the 38.1 GB weights ÷ the full BW = the 15.6 ms
+  iteration floor), and the host delivers ~13% of that.** The device-side levers
+  (the Q21, the kernel work): ZERO value until the host saturates the device.
+  The instrument: `--enable-mfu-metrics` (the boot variant `serve_mtp_mfu.sh` +
+  `boot_mfu.sh` staged) — the permanent per-window device-utilization
+  visibility for every future experiment.
 - **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
   local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
   40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
