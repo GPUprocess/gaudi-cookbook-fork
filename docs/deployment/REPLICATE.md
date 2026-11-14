@@ -215,6 +215,10 @@ The throughput benchmark against the running server:
   recipe's "What not to do".
 - **Never signal the engine processes** (a SIGUSR1 to EngineCore terminates it —
   USR1's default action). Restart via `kill_glm.sh` + the boot script instead.
+- **Don't use `VLLM_BUCKETING_STRATEGY=pad`** for the launch-path reduction: it
+  generates ~2× MORE buckets (384 vs the exponential's 195) with the decode
+  parity — tested 11-13; the bucket-file pinning has the same issue (the
+  spec-decode seeds add buckets).
 - **The wedged-card recovery**: after the rapid kill/reset cycles the HL-225B
   cards can wedge at the 50W power cap (the card shows no memory reading);
   `sudo hl-smi -r` cannot recover — use the BMC chassis cycle:

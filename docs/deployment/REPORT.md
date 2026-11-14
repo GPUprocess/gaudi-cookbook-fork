@@ -260,6 +260,12 @@ path (the doc RA-037 §6, re-scoped after the 11-13 corrections):
 5. **The MTP k=4 chain graph or a DFlash2-class drafter** for the 800-tok/s
    target (the k=4: the RA-018 chain graph; the drafter: gated on the
    licensing/training-infra decision — the DFlash2 checkpoint is CC BY-NC-ND).
+6. **The bucketing strategies: TESTED AND REFUTED** — the pad strategy
+   (`VLLM_BUCKETING_STRATEGY=pad`) generated **384 buckets vs the exponential's
+   195 (~2× more, not fewer)** with the decode parity (42.3 t/s, the sanity
+   391); the bucket-file pinning (the T12) also refuted (the spec-decode seeds
+   add buckets). **The bucket-strategy knob does not reduce the graph
+   population** — the launch-path lever needs a different mechanism.
 
 Combined (the trims + the acceptance-side): **the iteration ~50–55 ms → ~450–500
 tok/s @16** (the 657 estimate assumed the Q21 byte savings — retracted;
