@@ -359,6 +359,14 @@ summary `t1b_summary.json`):**
   achievable via the torch profiler on this stack.** The alternatives: the
   Synapse-native profiling (the hl_qual, the recipe-level profiling), the
   custom TPC instrumentation, or the future Habana kineto support.
+- **THE PROFILER CRASH INCIDENT (the ops, 11-14):** the `/stop_profile` call
+  returned "cancelled" (the 500) → the nanobind reference-counting leaks →
+  the engine died → the server down. The zombie workers held the devices
+  (the 19-33 GiB/card growing) until the full process-tree kill. **The
+  lesson: the torch profiler on the HPU vllm-gaudi is not only unavailable
+  but CRASH-PRONE — do not enable it on the production serving.** The clean
+  config restored via `kill_glm.sh` + `boot_f4ts.sh`; the verified: the
+  decode 41.2-41.8 t/s, the sanity 391.
 - **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
   local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
   40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
