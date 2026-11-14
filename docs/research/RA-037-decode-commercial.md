@@ -370,6 +370,19 @@ summary `t1b_summary.json`):**
   per-step reads are the routed-only ~17 GB (the MFU/BW ✓), the dequant is NOT
   per-step (the cached views ✓), and the HBM headroom supports the 1,062,400-
   token max context (measured ✓).
+- **THE GRAPH STRUCTURE RESOLVED + THE Q21 NODE-COUNT DIMENSION (the
+  correction):** the runner wraps the **WHOLE MODEL in ONE HPUGraph** (the
+  single replay per step — the [LAUNCH] fwd 28.3 ms = the one submission of the
+  ~20K-node command buffer at the ~1.4 µs/node; the batch-independent ✓). The
+  consolidation already exists — BUT this reveals the Q21 dimension I missed:
+  **the MoE region's 1,496 batch_gemm nodes could collapse to ~84 fused
+  kernels (the 42 layers × 2 GEMMs) = the −1,412 nodes = the ~7% node-count
+  reduction**, speeding both the replay submission (28.3 → ~26) and the device
+  execution. **The corrected Q21 verdict: the byte savings = zero ✓, but the
+  node-count value = the ~2-7%** (the weeks-class integration for the ~2-7% —
+  the weak ROI but not the zero). The rank-1 lever remains the launch/replay
+  internals; the node-count reduction (the Q21-class kernels, the norm chains,
+  the cast elimination) is the broader program.
 - **THE RECIPE-LEVEL STEP ANATOMY (the final reframe):** the captured recipe has
   **~20,485 nodes** (the addNode trace; the MoE region 23,094 trace lines ≈ the
   89%, the non-MoE ~2,300: the attention gemms ~133, the normalizations ~40
