@@ -60,7 +60,9 @@ def run_gate():
     if ok:
         ok = _stage("s2_w_fp8_cast", lambda: acc["s1_w_f32_dev"].to(torch.float8_e4m3fn), acc)
     ok = ok and _stage("s3_scales_f32_dev",
-                       lambda: torch.rand(E, I2 // 128, H // 128, device=dev) * 0.02 + 0.005, acc)
+                       lambda: torch.rand(E, I2 // 128, H // 128, device=dev) * 0.02 + 0.005
+                       if os.environ.get("GLM_GATE_SCALES_ONES", "0") != "1"
+                       else torch.ones(E, I2 // 128, H // 128, device=dev), acc)
     ok = ok and _stage("s4_x_bf16_dev",
                        lambda: (torch.randn(T, H, device=dev) * 0.5).to(torch.bfloat16), acc)
     ok = ok and _stage("s5_ids_i32_dev",
@@ -77,7 +79,9 @@ def run_gate():
     w13, s13, x, ids, wts = (acc["s2_w_fp8_cast"], acc["s3_scales_f32_dev"],
                              acc["s4_x_bf16_dev"], acc["s5b_ids_perm_dev"], acc["s6_wts_f32_dev"])
     ok = _stage("s6b_w2_cast", lambda: (torch.randn(E, H, I2 // 2, device=dev) * 0.05).to(torch.float8_e4m3fn), acc)
-    ok = ok and _stage("s6c_s2_rand", lambda: torch.rand(E, H // 128, (I2 // 2) // 128, device=dev) * 0.02 + 0.005, acc)
+    ok = ok and _stage("s6c_s2_rand", lambda: torch.rand(E, H // 128, (I2 // 2) // 128, device=dev) * 0.02 + 0.005
+                       if os.environ.get("GLM_GATE_SCALES_ONES", "0") != "1"
+                       else torch.ones(E, H // 128, (I2 // 2) // 128, device=dev), acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "w2 staging failed", "stages": sorted(acc)}
