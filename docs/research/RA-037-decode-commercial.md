@@ -348,6 +348,17 @@ summary `t1b_summary.json`):**
   uvicorn/asyncio threads mostly in the poll/wait). **The kernel-level device
   breakdown requires the future vllm-gaudi profiler support or the
   Senapse-native profiling tools; the analytical drain decomposition stands.**
+- **THE SECOND TRACE CONFIRMS (the CLI + env boot, the /start_profile):** the
+  new trace (the 5.98 MB from the pid 462491 boot with BOTH the
+  `--profiler-config` CLI and the env): **316,965 events, 316,948
+  python_function + 16 metadata + 1 Trace — ZERO HPU device kernel events.**
+  The kineto HPU integration is definitively absent in the Habana PyTorch
+  2.11 fork / Synapse 1.24.1 — the torch profiler captures only the
+  Python-level stacks from the API-server process, regardless of the CLI or
+  the env configuration. **The kernel-level device breakdown is NOT
+  achievable via the torch profiler on this stack.** The alternatives: the
+  Synapse-native profiling (the hl_qual, the recipe-level profiling), the
+  custom TPC instrumentation, or the future Habana kineto support.
 - **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
   local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
   40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
