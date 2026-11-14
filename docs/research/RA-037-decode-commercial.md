@@ -283,6 +283,17 @@ summary `t1b_summary.json`):**
   The instrument: `--enable-mfu-metrics` (the boot variant `serve_mtp_mfu.sh` +
   `boot_mfu.sh` staged) — the permanent per-window device-utilization
   visibility for every future experiment.
+- **THE PAD-BUCKETING EXPERIMENT RAN AND REFUTED (the RA-006-B, the config-only
+  boot):** `VLLM_BUCKETING_STRATEGY=pad` (the PaddingAwareBucketingStrategy)
+  generated **384 buckets (303 prompt + 81 spec-decode) vs the exponential's 195
+  (120 + 75) — ~2× MORE buckets, NOT fewer** — refuting the RA-006-B premise
+  ("the pad bucketing trades a little device padding for a much smaller graph
+  population") for this model/config. The decode parity: 42.3-42.4 t/s, the
+  sanity 391 (no regression, no win). **The launch-path lever remains the graph
+  POPULATION reduction — the bucket-strategy knob does not provide it; the
+  remaining candidates: the bucket-file pinning (the T12 refuted: the
+  spec-decode seeds add buckets) and the custom bucketing config.** The boot
+  variant staged (`serve_mtp_pad.sh` + `boot_pad.sh`) for the future retests.
 - **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
   local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
   40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
