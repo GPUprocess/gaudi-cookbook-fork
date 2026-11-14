@@ -294,6 +294,17 @@ summary `t1b_summary.json`):**
   remaining candidates: the bucket-file pinning (the T12 refuted: the
   spec-decode seeds add buckets) and the custom bucketing config.** The boot
   variant staged (`serve_mtp_pad.sh` + `boot_pad.sh`) for the future retests.
+- **THE ASYNC-SCHEDULING PROBE RAN — PARITY (the config-only boot, 11-14):**
+  `--async-scheduling` (the F2 piggyback off — the async path skips the
+  piggyback consumption): **the bs=1 39.8-40.2 tok/s (−3-7%: the F2 RPC loss),
+  the @16 255.6 tok/s (+0-2%, within the noise), the AL 1.84 holds.** The
+  verdict: **the scheduler-level overlap does NOT realize the host-device
+  pipelining** — and the production already submits the execute non-blocking
+  (`execute_model(non_block=True)`), so the host time is mostly the device wait.
+  **The batch-queue pipelining (`max_concurrent_batches = 2`) is implicitly
+  enabled BY the async flag — tested: the parity.** The pipelining lever via
+  the vLLM scheduling flags: CLOSED. The remaining host lever: the sampler
+  host work (15.6 ms) and the deeper executor restructuring.
 - **THE REPLAY-FLOOR DISCOVERY (the platform constraint, the [LAUNCH] evidence):**
   the graph-replay host cost is **~25-31 ms at bs=24-40 and ~44 ms at bs=1 —
   roughly batch-independent** (the [LAUNCH] stamps, measured twice), ~10× the
