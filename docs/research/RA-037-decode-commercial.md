@@ -294,6 +294,19 @@ summary `t1b_summary.json`):**
   remaining candidates: the bucket-file pinning (the T12 refuted: the
   spec-decode seeds add buckets) and the custom bucketing config.** The boot
   variant staged (`serve_mtp_pad.sh` + `boot_pad.sh`) for the future retests.
+- **THE REPLAY-FLOOR DISCOVERY (the platform constraint, the [LAUNCH] evidence):**
+  the graph-replay host cost is **~25-31 ms at bs=24-40 and ~44 ms at bs=1 —
+  roughly batch-independent** (the [LAUNCH] stamps, measured twice), ~10× the
+  doc's earlier 1-3 ms estimate. **This caps the k=1 iteration at ~50-60 ms
+  REGARDLESS of the host optimization** — the "2000 tok/s if the host fed it"
+  reframe was wrong (the replay cost scales with the cycles, not the bytes).
+  **The corrected @16 ceiling: the replay 25-45 + the drain 7-27 + the sampler
+  15.6 + the tail 11 ≈ 58-99 ms → 271-463 tok/s — the ~450-500 estimate
+  CONFIRMED as the platform-constrained ceiling.** **The 800-tok/s target is
+  ONLY reachable via the drafter path** (the AL ≥ 4.5): the k=4 arithmetic
+  (the rows +150% vs the AL +80%) predicts a net loss; the DFlash2-class
+  block-diffusion drafter (the 8-token blocks per verify) is the only path —
+  gated on the owner's licensing/training-infra decision.
 - **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
   local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
   40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
