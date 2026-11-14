@@ -329,6 +329,15 @@ summary `t1b_summary.json`):**
   the non-MoE 10-20 ms) and the capture-trace structure. The profiler boot
   variant staged (`serve_mtp_prof.sh` + `boot_prof.sh`) for the retest when the
   vllm-gaudi adds the HPU worker profiler.
+- **THE TRACE ANALYSIS (the profiler output examined, 11-14):** the env-enabled
+  profiler boot DID produce the 6 MB trace (the on_trace_ready schedule), but
+  the analysis shows **all 321,534 events are `python_function` events from the
+  API-server process only — zero HPU device kernels, zero worker events** (the
+  kineto HPU integration is absent in this build; the worker processes are not
+  traced). The trace independently confirms P-HOST at the API level (the
+  uvicorn/asyncio threads mostly in the poll/wait). **The kernel-level device
+  breakdown requires the future vllm-gaudi profiler support or the
+  Senapse-native profiling tools; the analytical drain decomposition stands.**
 - **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
   local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
   40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
