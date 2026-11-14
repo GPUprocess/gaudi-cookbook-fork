@@ -8,9 +8,11 @@
 //   in 1: w13_scales F32               [E_LOCAL, 2I/128, H/128] — the TPC dims: {H/128, 2I/128, E}
 //   in 2: x          BF16 (DATA_BF16)  [T, H]             — the TPC dims: {H, T}
 //   in 3: topk_ids   int32             [T, K]             — the TPC dims: {K, T}
-//   out 0: act       BF16              [T, K, I]          — the TPC dims: {I, K, T}
-// Index space: 2-D, T × I/128 points, one point = one (token, i-block):
-// the 128 intermediate columns for ALL K=8 routed experts.
+//   out 0: raw       BF16              [T, K, 2I]         — the TPC dims: {2I, K, T}
+// Index space: 2-D, T × 2I/128 points, one point = one (token, n-block):
+// the 128 raw output columns (of the 2I dim) for ALL K=8 routed experts.
+// The SiLU + the gate/up product + the routing pre-weighting happen in PyTorch
+// between this pass and block_fp8_moe_w2_glm (the TPC has no the scalar exp).
 static GlueCodeReturn inst_block_fp8_moe_w13_glm(HabanaKernelParams* in, HabanaKernelInstantiation* out) {
     if (in->inputTensorNr != 4) { in->inputTensorNr = 4; return GLUE_INCOMPATIBLE_INPUT_COUNT; }
     if (in->outputTensorNr != 1) { in->outputTensorNr = 1; return GLUE_INCOMPATIBLE_OUTPUT_COUNT; }
@@ -31,13 +33,13 @@ static GlueCodeReturn inst_block_fp8_moe_w13_glm(HabanaKernelParams* in, HabanaK
     const uint64_t K = ids[0];
     const uint64_t I = I2 / 2;
     if (!H || !I || !E_LOCAL || !T || !K) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    if (H % 256 || I % 128 || H > 4096) return GLUE_INCOMPATIBLE_INPUT_SIZE;
+    if (H % 256 || I2 % 128 || H > 4096) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     if (ss[0] != H / 128 || ss[1] != I2 / 128 || ss[2] != E_LOCAL) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     if (xs[0] != H) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     if (K != 8) return GLUE_INCOMPATIBLE_INPUT_SIZE;  // the topk 8 for GLM-5.3-Flash
-    if (os[0] != I || os[1] != K || os[2] != T) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    // The index space: T × I/128 points (the 2-D: the dim0 = the i-block, the dim1 = the token)
-    const uint64_t npts_i = I / 128;
+    if (os[0] != I2 || os[1] != K || os[2] != T) return GLUE_INCOMPATIBLE_INPUT_SIZE;
+    // The index space: T × 2I/128 points (the 2-D: the dim0 = the n-block, the dim1 = the token)
+    const uint64_t npts_i = I2 / 128;
     const uint64_t npts_t = T;
     uint32_t p = tpcPoints(in, npts_i * npts_t);
     setIndexSpace(in, out, p);

@@ -2,18 +2,22 @@
 // block_fp8_moe_w13_glm - PT2 custom-op with LAZY registration (Q21 step 2, pass 1).
 // Same lazy-registration pattern as block_fp8_gemv_glm (the step 1): the
 // registration defers to the first call so it runs after the backend is fully
-// initialized inside the serving process (the B7 load-order recipe).
+// initialized inside the serving process (the B7 load-order recipe). The
+// output is allocated by the framework from the PartialOutputMetaData and
+// returned by descriptor.execute(inputs)[0] — no pre-allocated output arg.
 //
-//   act[T, K, I] = SiLU(W13[e_k, 2I, H] · x[T, H] / s13[e_k])
+//   raw[T, K, 2I] = W13[e_k, 2I, H] · x[T, H] / s13[e_k]
 //
 //   The pass 1 of the two-pass fused MoE: for each token and each of its K=8
 //   routed experts, the dequant (the FP8 → the BF16 with the block scales)
-//   + the GEMV over H + the SiLU on the gate columns. The output act [T, K, I]
-//   is consumed by the pass 2 (block_fp8_moe_w2_glm).
+//   + the GEMV over H. The output raw [T, K, 2I] is the PRE-ACTIVATION GEMV:
+//   the SiLU(gate) × up product and the routing pre-weighting happen in
+//   PyTorch between the passes (the TPC has no the scalar exp/div), then
+//   block_fp8_moe_w2_glm consumes the [T, K, I] pre-weighted activations.
 #include <ATen/ATen.h>
 #include <ATen/core/stack.h>
 #include <torch/library.h>
-#include "habanalabs/hpu_custom_op.h"
+#include "hpu_custom_op_pt2.h"
 
 namespace {
 
@@ -52,7 +56,7 @@ void lazy_register() {
                 auto w13 = stack.at(0).toTensor();
                 habana::PartialOutputMetaData output;
                 output.dtype = at::kBFloat16;
-                output.shape = {x.size(0), topk_ids.size(1), w13.size(1) / 2};
+                output.shape = {x.size(0), topk_ids.size(1), w13.size(1)};
                 return habana::PartialOutputMetaDataVector{output};
             },
             nullptr);
@@ -68,25 +72,20 @@ at::Tensor run(const at::Tensor& w13, const at::Tensor& w13_scales,
     TORCH_CHECK(w13.device().type() == at::kHPU);
     auto descriptor =
         habana::custom_op::UserCustomOpDescriptor::getUserCustomOpDescriptor(schema);
-    const int64_t T = x.size(0);
-    const int64_t K = topk_ids.size(1);
-    const int64_t I = w13.size(1) / 2;
-    auto act = at::empty({T, K, I}, x.options().dtype(at::kBFloat16));
-    std::vector<c10::IValue> inputs{w13, w13_scales, x, topk_ids, act};
-    descriptor.execute(inputs);
-    return act;
+    std::vector<c10::IValue> inputs{w13, w13_scales, x, topk_ids};
+    return descriptor.execute(inputs)[0];
 }
 
 } // namespace
 
 TORCH_LIBRARY_FRAGMENT(custom_op, m) {
-    m.def("block_fp8_moe_w13_glm(Tensor w13, Tensor w13_scales, Tensor x, Tensor topk_ids, Tensor act) -> Tensor");
+    m.def("block_fp8_moe_w13_glm(Tensor w13, Tensor w13_scales, Tensor x, Tensor topk_ids) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(custom_op, CPU, m) {
     m.impl("block_fp8_moe_w13_glm",
            [](const at::Tensor& w13, const at::Tensor& w13_scales, const at::Tensor& x,
-              const at::Tensor& topk_ids, const at::Tensor& act) -> at::Tensor {
+              const at::Tensor& topk_ids) -> at::Tensor {
                TORCH_CHECK(false, "block_fp8_moe_w13_glm requires HPU tensors");
                return at::Tensor();
            });
@@ -95,15 +94,7 @@ TORCH_LIBRARY_IMPL(custom_op, CPU, m) {
 TORCH_LIBRARY_IMPL(custom_op, HPU, m) {
     m.impl("block_fp8_moe_w13_glm",
            [](const at::Tensor& w13, const at::Tensor& w13_scales, const at::Tensor& x,
-              const at::Tensor& topk_ids, const at::Tensor& act) -> at::Tensor {
-               // The act: pre-allocated [T, K, I] BF16, filled by the kernel
-               validate(w13, w13_scales, x, topk_ids);
-               lazy_register();
-               TORCH_CHECK(reg_ok, "block_fp8_moe_w13_glm registration failed");
-               auto descriptor =
-                   habana::custom_op::UserCustomOpDescriptor::getUserCustomOpDescriptor(schema);
-               std::vector<c10::IValue> inputs{w13, w13_scales, x, topk_ids, act};
-               descriptor.execute(inputs);
-               return act;
+              const at::Tensor& topk_ids) -> at::Tensor {
+               return run(w13, w13_scales, x, topk_ids);
            });
 }

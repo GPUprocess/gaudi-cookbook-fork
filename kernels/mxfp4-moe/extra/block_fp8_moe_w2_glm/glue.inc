@@ -8,26 +8,26 @@
 //   in 1: w2_scales    F32               [E_LOCAL, H/128, I/128] — the TPC dims: {I/128, H/128, E}
 //   in 2: act          BF16 (DATA_BF16)  [T, K, I]             — the TPC dims: {I, K, T}
 //   in 3: topk_ids     int32             [T, K]                — the TPC dims: {K, T}
-//   in 4: topk_weights F32               [T, K]                — the TPC dims: {K, T}
 //   out 0: y           BF16              [T, H]                — the TPC dims: {H, T}
+// No topk_weights input: the act arrives PRE-WEIGHTED by the routing weights
+// (act *= topk_weights.unsqueeze(-1) in the PyTorch between the passes), so
+// this kernel does the plain accumulate over the K=8 routed experts.
 // Index space: 2-D, T × H/128 points, one point = one (token, h-block):
 // the 128 output h-columns accumulated over ALL K=8 routed experts.
 static GlueCodeReturn inst_block_fp8_moe_w2_glm(HabanaKernelParams* in, HabanaKernelInstantiation* out) {
-    if (in->inputTensorNr != 5) { in->inputTensorNr = 5; return GLUE_INCOMPATIBLE_INPUT_COUNT; }
+    if (in->inputTensorNr != 4) { in->inputTensorNr = 4; return GLUE_INCOMPATIBLE_INPUT_COUNT; }
     if (in->outputTensorNr != 1) { in->outputTensorNr = 1; return GLUE_INCOMPATIBLE_OUTPUT_COUNT; }
-    static const TensorDataType ti[5] = {DATA_F8_143, DATA_F32, DATA_BF16, DATA_I32, DATA_F32};
+    static const TensorDataType ti[4] = {DATA_F8_143, DATA_F32, DATA_BF16, DATA_I32};
     static const TensorDataType to[1] = {DATA_BF16};
     if (!checkTypes(in, ti, to)) return GLUE_INCOMPATIBLE_DATA_TYPE;
     const uint64_t* ws = in->inputTensors[0].geometry.maxSizes;
     const uint64_t* ss = in->inputTensors[1].geometry.maxSizes;
     const uint64_t* as = in->inputTensors[2].geometry.maxSizes;
     const uint64_t* ids = in->inputTensors[3].geometry.maxSizes;
-    const uint64_t* ows = in->inputTensors[4].geometry.maxSizes;
     const uint64_t* os = in->outputTensors[0].geometry.maxSizes;
-    // The TPC geometry is innermost-first: ws = {I, H, E}, ss = {I/128, H/128, E}, as = {I, K, T}, ids = {K, T}, ows = {K, T}
+    // The TPC geometry is innermost-first: ws = {I, H, E}, ss = {I/128, H/128, E}, as = {I, K, T}, ids = {K, T}
     if (in->inputTensors[0].geometry.dims != 3 || in->inputTensors[1].geometry.dims != 3 ||
-        in->inputTensors[2].geometry.dims != 3 || in->inputTensors[3].geometry.dims != 2 ||
-        in->inputTensors[4].geometry.dims != 2)
+        in->inputTensors[2].geometry.dims != 3 || in->inputTensors[3].geometry.dims != 2)
         return GLUE_INCOMPATIBLE_INPUT_SIZE;
     const uint64_t I = ws[0], H = ws[1], E_LOCAL = ws[2];
     const uint64_t T = as[2];
