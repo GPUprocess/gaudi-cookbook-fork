@@ -380,6 +380,24 @@ summary `t1b_summary.json`):**
   capture structure (the fused dequant nodes). The next profiling target: the
   non-MoE device kernels (the attention/KDA/KV) — the kernel-level profiler on a
   measurement boot.**
+- **THE Q21 RE-PRIORITIZED: THE NODE-COUNT REDUCTION IS THE MASTER LEVER (the
+  major correction, 11-14):** my earlier "not justified" verdict was based on
+  the BYTE savings (zero — the BG-1 fused). But **the step is launch-bound at
+  the RECIPE LEVEL: the 20,485 nodes × ~1.3 µs = the 26.6 ms device time, AND
+  the replay submission 28.3 ms ∝ the node count. The MoE region is ~89% of
+  the recipe nodes (~18,200 nodes: the 1,496 batch_gemm + the dequant-fused
+  + the routing multiplexer + the glue).** **The Q21 fused MoE kernel
+  collapses the ~18,200 MoE nodes to ~500 fused kernels (the 42 layers × 2
+  GEMMs + the routing) = the −86% recipe node count → (1) the replay
+  submission: 28.3 × (2,785/20,485) ≈ 3.9 ms, (2) the device execution:
+  26.6 × (2,785/20,485) ≈ 3.6 ms, (3) the sampler 15.6 + the tail 11
+  (the unchanged) → the iteration ≈ 34-35 ms → the @16: 16 × 1.68/0.035 =
+  ~768 tok/s → THE 800 TARGET WITH THE SAMPLER/TAIL TRIMS.** **The corrected
+  Q21 verdict: THE RANK-1 LEVER — the node-count reduction (not the byte
+  savings) delivers the ~2× iteration improvement and nearly reaches the 800
+  target.** The Q21 kernel step-1 (the single-expert GEMV) is committed; the
+  step-2 (the routing-aware fused multi-expert kernel replacing the
+  batch_gemm chain) is the critical engineering path.
 - **THE BF16-RESIDENT VIEW CACHE (the FINAL MoE answer, the code trace):** the
   deployed op class is `VllmMixtureOfExpertsOp` (the base, ops.py:673 — NOT the
   FP8 subclass my first patch targeted, explaining the silent stamps). Its
