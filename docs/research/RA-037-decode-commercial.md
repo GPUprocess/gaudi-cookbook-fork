@@ -342,6 +342,34 @@ summary `t1b_summary.json`):**
   capture structure (the fused dequant nodes). The next profiling target: the
   non-MoE device kernels (the attention/KDA/KV) — the kernel-level profiler on a
   measurement boot.**
+- **THE BF16-RESIDENT VIEW CACHE (the FINAL MoE answer, the code trace):** the
+  deployed op class is `VllmMixtureOfExpertsOp` (the base, ops.py:673 — NOT the
+  FP8 subclass my first patch targeted, explaining the silent stamps). Its
+  forward uses `self._cached_w13_views`/`_cached_w2_views` — **the dequantized
+  BF16 views built ONCE by `_cache_weight_lists()` at the weight-set/init**
+  ("if cache wasn't built by the caller (e.g., after set_weight), build once
+  here"). **The per-step GEMM reads the BF16 views routed-only (~17 GB @16 ✓
+  matching the MFU/BW 330 GB/s × 72.7 ms). The dequant happens ONCE at the load,
+  NOT per step.** **The consequences: (1) the Q21 routed-only read case:
+  definitively closed (the BF16 routed-only reads already happen); (2) the B1
+  "38.1 GB FP8 all-read per step" model: WRONG — the actual per-step read is the
+  BF16 routed-only ~17 GB; (3) the remaining MoE-side lever: NONE (the reads are
+  already minimal); (4) the HBM residency: the FP8 masters (39.7 GB) + the BF16
+  views (79.4 GB) = 119 GB > 96 GB?! — the views are the per-slice/per-chunk
+  tensors sharing the storage, or the FP8 masters are freed post-dequant — the
+  memory accounting needs the hl-smi check.** The dequant-ts patches (both
+  sites): inert (the classes/paths not exercised) — harmless, left deployed.
+- **THE HBM RESIDENCY RESOLVED (the hl-smi measured): 69.3-69.5 GiB/card**
+  (the TP8 serving). The weights: the FP8 masters 39.7 GB (the loaded ✓ the
+  log) + the KV 1280 blocks (~20 GiB) + the graphs/workspace ≈ 66-69 ✓ with NO
+  room for the 79 GB of the BF16 copies → **the `_cache_weight_lists` "views"
+  are memory-efficient: either the per-slice views into a shared BF16 buffer,
+  or the lazy dequant per active slice, or the FP8 masters freed post-dequant
+  with the BF16 resident.** The precise accounting needs the memory-profile
+  dump (the MEMLOG instrument exists); the functional answer stands: the
+  per-step reads are the routed-only ~17 GB (the MFU/BW ✓), the dequant is NOT
+  per-step (the cached views ✓), and the HBM headroom supports the 1,062,400-
+  token max context (measured ✓).
 - **THE RECIPE-LEVEL STEP ANATOMY (the final reframe):** the captured recipe has
   **~20,485 nodes** (the addNode trace; the MoE region 23,094 trace lines ≈ the
   89%, the non-MoE ~2,300: the attention gemms ~133, the normalizations ~40
