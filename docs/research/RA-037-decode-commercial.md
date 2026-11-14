@@ -269,6 +269,16 @@ summary `t1b_summary.json`):**
   multiply-on-load; no extra HBM round-trip), consistent with the timing inference
   (the 27.3 ms drain fits the FP8-only read). **BG-1 = fused, confirmed by both
   the timing and the capture structure. The Q21 verdict stands: not justified.**
+- **THE ZOMBIE-WORKER RECOVERY LESSON (the ops, 11-14):** the failed profiler
+  boot left **defunct `VLLM::Worker_TP*` zombie processes holding the device
+  allocations** (the 19-33 GiB/card growing!) — invisible to the process-name
+  kills (the renamed process titles evade the `vllm serve` pattern) and
+  requiring the PARENT API-server death to reap. The symptoms: the next boot
+  fails with `synStatus=8 Device acquire failed`; the hl-smi shows the growing
+  device memory with the no visible process. **The fix: `kill_glm.sh` updated
+  with the robust pattern (the `VLLM::` pkill, the pgrep-based parent kill, the
+  device-holder count in the output). The lesson: after ANY failed boot, check
+  `lsof | grep accel` for the device holders and kill the full process tree.**
 - **THE MFU/BW INSTRUMENT DEPLOYED + THE DEFINITIVE P-HOST CONFIRMATION (the
   final, `--enable-mfu-metrics`):** the vLLM-gaudi per-window hardware metrics
   (the TF/s/GPU + the GB/s/GPU) logged live. **The steady @16 decode: the BW

@@ -3,7 +3,7 @@
 Independent performance research for GLM-5.3-Flash on 8× / 4× Intel Gaudi 2.
 
 - **Author:** independent research architect (research-only; no HPU access, no implementation)
-- **Date:** 2026-11-13 (revision 13 — STRATEGIC PIVOT (owner ruling: DFlash2 excluded, non-commercial license) + RA-037: the measurement-first, commercial-only decode program (the T1 measurement set that re-ranks everything, the L1-L7 lever stack, the self-trained drafter L6, the 4-HPU roofline L7) at the end; the rev-12/12.1 RA-036 notes + the round-5 notes retained; revisions 6-10 notes retained)
+- **Date:** 2026-11-14 (revision 14 — OWNER DIRECTIVE (2026-11-14: DFlash2 deprioritized — no training hardware; prefill met — decode focus; "get MTP=4 working better"; look into MTP=5,6,7,8; always validate with GaudiGrimoire) + **RA-038: the deep-MTP (k=4-8) program + the recipe-level node-collapse program** (`RA-038-deep-mtp-recipe-fusion.md`, ~93 KB) at the end: the overnight physics is SETTLED (P-HOST at the hardware level, the replay floor 25-45 ms, the recipe anatomy 20.5-26.4k nodes / MoE 87-89%, BG-1 = FUSED, the Q21 verdict, the MTP k=2 probe win/loss split, the pad-bucketing refutation, the async-scheduling parity, the HBM residency); the central tension (the "hard floor" vs "the node count IS the device time") is resolved by the corpus cost model + the graph_editor ablation design (T2); the rev-13 RA-037 note retained with its status updates below; the rev-12/12.1 RA-036 notes + the round-5 notes retained; revisions 6-10 notes retained)
 - **Sister document (2026-11-09):** `BOTTLENECK_RESEARCH.md` (this directory) — the
   bottleneck-elimination pass: new proposals **RA-011..RA-015** (continuing this document's global
   numbering), rejections **RJ-13..RJ-19**, gaps **BG-1..BG-7**, and corrections **C1..C7** to
@@ -3774,3 +3774,204 @@ agent's ten research questions (current_bottleneck.md §11) are answered in RA-0
 (resolves into FOUR programs: the Q21+dense-dequant device track, the single-graph +
 host track, the MTP@16 recovery, the self-trained drafter; three HOLDs: the AR
 reduction, the KDA+MLA fusion, the v0.30.0 stack).
+
+---
+
+### 14. Rev 14 (2026-11-14) — OWNER DIRECTIVE + RA-038: the deep-MTP (k=4-8) program + the recipe-level node-collapse program (detail: `RA-038-deep-mtp-recipe-fusion.md`)
+
+**Owner directive (2026-11-14):** (1) Deprioritize DFlash2 — no hardware available for training
+→ **RA-036/L6 PARKED** (the ~40% port substrate + the B1 KDA-rollback remap survive as the
+future-drafter vehicle; the license remains NC-ND). (2) Prefill has met the target — **decode
+focus only** (RA-007's remaining prefill work is deprioritized with it). (3) "I don't know
+what's going on there but I feel like if you get MTP=4 working better that will be a big win"
+→ **RA-038-B** (the deep-MTP program; the quantified answer is in §RA-038-B §2.1/2.5: the k=4
+fix IS a real bs=1 latency win — 46.9 → 52-53 t/s after the graphed-chain + accept-walk levers,
+70-115 with the node collapse — but the 200-bs=1 target is NOT reachable with the MTP head at
+any k: the accept curve's ceiling (AL(8) band [2.73, 3.3], measured anchors p1 = 0.825,
+p2 = 0.559, AL(4) = 2.68) requires AL ≥ 4.0 at the floor; that is the drafter's number).
+(4) "Also look into MTP=5,6,7,8" → covered: the per-k tables (k=1..8, bs=1 + @16, current +
+post-lever), the per-k resource arithmetic (the KDA candidate slots 1+k+1, the verify rows 1+k,
+the MoE union growth — the hidden deep-k device cost: at bs=1 k=8 the verify reads ~9.8 GB/rank
+vs 2.1 at k=1; at @16 k=8 the union saturates all 36 local experts), the HBM/boot-time fit
+(278 MB slots at k=8/ns32 — negligible on 8 HPU; tight on 4 HPU at GMU 0.95; the boot
+40-60 min), and the verdict: **k=5-8 are an infrastructure play, not a t/s play, under the
+current accept curve** (the marginals p5..p8 ≈ 0.031/0.012/0.005/0.002 are below any reachable
+fractional step cost) — the value is the latency mode + the drafter-shared infrastructure.
+(5) Always validate theory against GaudiGrimoire → the research log in RA-038 §7 (four
+searches; the key finds: the g2-opt-manual cost model — the node-count census is NOT a cost
+model, rank by engine x count x mean duration, the per-launch bundle law a = 0.6706 + 8.8911 ns
+x bundles (R^2 = 0.9766), the <16 MB small-tile cliff, the MME model accurate to 0.5%, the
+markers are not execution windows; the vendor graph_exec.cpp replay path — the per-launch host
+work scales with the dynamic-tensor count; the 1Cat FX-fusion + cast-dedup patterns (the Q01v2
+drift reference); the abotsis KDA spec-decode machinery (the chunked one-call-per-layer verify,
+the candidate slots [bs, 1+num_spec+1], the dispatch-bound rationale)).
+
+**The overnight arc (2026-11-11..14) SETTLED the physics the rev-13 T1 set was built to decide.**
+The agent's measurement program (RA-037 T1) ran and its successors ran overnight:
+
+| # | Fact (MEASURED) | Commit |
+|---|---|---|
+| 1 | **P-HOST confirmed at the hardware level**: the MFU/BW instrument (`--enable-mfu-metrics`) — steady @16 decode BW 328-331 GB/s/GPU = 13.4% of the 2.45 TB/s peak; compute 1.4 TF/s = 0.32%. The device is 87% BW-idle / 99.7% compute-idle; it could sustain ~2000 t/s @16 if the host fed it | baf9d1b |
+| 2 | **The replay floor**: the graph-replay host cost ~44 ms at bs=1, ~25-31 ms at bs=24-40 ([LAUNCH] stamps, measured twice) — ~10x the earlier 1-3 ms estimate; caps the k=1 iteration at ~50-60 ms; the 2000-tok/s reframe was WRONG (the replay cost scales with cycles, not bytes); the corrected @16 ceiling 58-99 ms/step → 271-463 t/s → the ~450-500 platform-constrained estimate | 9e6a1b5 |
+| 3 | **The recipe anatomy**: the captured recipe = 20,485-26,407 nodes; the MoE region 87-89% (23,094 of 26,407: batch_gemm x1,496 + mult_bf16 x1,010 + cast_f32_to_bf16 x760 + div/mult_f32 ~766 + moe_multiplexer x1,002); the non-MoE ~2,300-3,300; at ~1.3 us/node the device execution = 26.6 ms matching the 27.3 ms drain @16 → **the step is launch-bound at the recipe level** | 88a6a74 |
+| 4 | **BG-1 = FUSED** (three confirmations: the capture structure, the timing, the AB-DEQ parity): the dequant nodes are in the recipe but Synapse compiles them into the batch_gemm load path (fused multiply-on-load, no HBM round-trip); the drain = the FP8-only read at ~1.4 TB/s. **The Q21 verdict stands: not justified** (as a traffic lever) | 7e54a90 |
+| 5 | **The MoE op is routed-union**: bs=1 ~2.1 GB/rank/step; @16 ~16.9 GB/rank/step; the MFU BW matches (328 GB/s x 62-72 ms ≈ 20-24 GB/step/rank) | 28b7655 |
+| 6 | **The HBM residency resolved**: 69.3-69.5 GiB/card (TP8) = FP8 masters 39.7 GB + KV ~20 GiB + graphs; the dequant is NOT per-step (the cached views); no room for a 79 GB BF16 copy | 7bb417e |
+| 7 | **The MTP k=2 probe** (ns32, boot 35 min): bs=1 46.9 t/s (+10-17% — the latency WIN); @16 200-204 t/s (-20% — the throughput LOSS); AL 2.38 (per-position 0.825/0.559); the mechanism: tokens +30% vs step +50% at the batch. Verdict: k=1 stays production; k=2 = the latency-mode option (scripts staged) | 7aaeaa5 |
+| 8 | **The _accept_grid**: 25-30 tiny-tensor ops/call = 1.5-3 ms/step; one fused kernel → 0.2-0.5 ms (~2-3% @16) | e860cec |
+| 9 | **The parse term**: the 15.6 ms post = the `.cpu()` D2H sync at rejection_sampler.py:273 (95/95 py-spy leaf samples) + the vectorized host parse | 83412e6 |
+| 10 | **The async-scheduling probe: PARITY** — the scheduler-level overlap does not realize host-device pipelining (the host time is mostly the device wait); the vLLM scheduling-flag pipelining lever CLOSED | d762dd2 |
+| 11 | **The pad-bucketing REFUTED** (the RA-006-B): 384 buckets (2x MORE, not fewer); decode parity; the T12 pinning also refuted (the spec-decode seeds add buckets) | bdba272 |
+| 12 | **The kernel-level profiler UNAVAILABLE** (the vllm-gaudi HPU worker; the in-worker torch.profiler segfaults) — the device breakdown must come from the capture-trace + the analytical model + the in-vllm stamps | 2cdb36d |
+| 13 | **The graph_editor staged** (the Synapse recipe graph editor from /opt/habanalabs/bin — node-level manipulation) — the instrument for the node-count program | 380303f |
+| 14 | **The @16 step anatomy (RA-037 T1b)**: the 116 ms bench step = host 89 (launch 65 + post 24) + device drain 26; the AL@16 = 1.82 (the acceptance HOLDS at @16 — the MTP@16 wash is the 32-row step cost, not the acceptance) | RA-037 §3 T1b |
+
+**Status updates (the rev-13 and earlier proposals, under the settled physics):**
+
+- **RA-037**: the T1 measurement program is COMPLETE (T1a/T1c → P-HOST at the hardware level,
+  not just py-spy; T1b → the @16 split + the AL@16 1.82; L4.0 → the k=2 probe 7aaeaa5, the
+  -20% @16 / +10-17% bs=1 split). **L6 (the self-trained drafter): PARKED** (owner: no training
+  hardware). The T1b line "with Q21 shrinking the device burst 26→~12 ms" is SUPERSEDED: the
+  26→12 mechanism, if it materializes, is the NODE COLLAPSE (RA-038-A), not the Q21 traffic
+  kernel (BG-1 = FUSED closed the traffic case).
+- **RA-002 (Q21)**: **CLOSED as a traffic lever** (BG-1 = FUSED; the read is already
+  routed-union; the AB-DEQ parity). REFRAMED in RA-038-A as a **node-count lever**: the
+  grouped-MoE GEMM (the 1,496 batch_gemm + 1,002 multiplexer nodes → ~42-150) — a different
+  value proposition, the same kernel infrastructure (the bit-exact `block_fp8_gemv_glm` core,
+  the E4M3 calibration recipe RA-034 §9, the B7-resolved load path). The kernel's new job is
+  the per-node execution + the recipe-count host term, not the bytes.
+- **RA-006-B (the pad-bucketing)**: **REFUTED** (bdba272: 384 buckets). The launch-path lever
+  remains the graph-population reduction — now via the node collapse (RA-038-A) + the
+  per-bucket k capture plan (RA-038-B D5), not the bucket-strategy knob.
+- **RA-009 / RA-036 (the DFlash2 drafter)**: **PARKED** (owner 2026-11-14: no training
+  hardware). The substrate (the ~40% port, the B1 KDA-rollback remap, the T15 calibration, the
+  T12 R003 rules) survives — the remap is also the shared gate for the deep-MTP chain
+  (the KDA state rollback at the wider candidate slots).
+- **RA-008 (the recipe/collective boundary reduction)**: SUBSUMED and SHARPENED by RA-038-A —
+  the 322-recipe structure's device side (the node classes) is now the named target with the
+  ablation design; the AR-boundary part (the 162 mark_step boundaries) survives as its small
+  separate item.
+- **RA-004 (the MTP k=4 multi-theory)**: the T0 probe ran (MTP4-T0: AL(4) 2.68, bs=1 parity,
+  -38% @16) and the k=2 probe ran (7aaeaa5); the T1 graphed-chain theory is now RA-038-B D1
+  with the measured cost structure (the Δk 6.4 ms/pass bs=1 / ~36 ms/pass @16) + the Q01v2
+  drift fix as the named prerequisite (the 1Cat `deduplicate_float_casts` reference) + the
+  batch-conditional k* policy (D5). RA-004 is SUPERSEDED by RA-038-B (the numbering retained).
+- **RA-011 (the async replay thread pool)**: the F1-async refutation stands (the thread-pool
+  launch overhead > the prep overlap at bs=1); the async-scheduling probe (d762dd2) closed the
+  scheduler-level variant. The host side of the 322-recipe structure is largely exhausted;
+  the device side (RA-038-A) is the remaining attack.
+- **The ngram probe (RA-010)**: still unrun; LOW priority under the settled physics (the host
+  is not the bs=1 constraint in the way the ngram drafting was proposed to fix — the draft
+  device pass is what the MTP chain already does; the ngram's host-side drafting saves the
+  draft pass but the MTP k=2 already banks the +10-17% at a cheaper mechanism). Deferred.
+
+**The central tension this round resolves (RA-038 §0.3):** the agent's "the replay 25-45 ms =
+the platform floor (the hard)" (e860cec) vs "the node count IS the device time ... the Synapse
+fuser configuration is the lever" (88a6a74) + the graph_editor staging (380303f). The corpus
+cost model (the g2-opt-manual, consulted per the owner's standing directive) says the truth is
+in between: a raw node-count census is NOT a valid cost model (metadata nodes are free; the
+1-3 us integer TPC nodes dominate; rank by engine x count x mean duration — the dead-ends
+list), BUT the MoE region's node classes (the batch_gemm MME nodes + the dequant-class TPC
+nodes + the multiplexer TPC nodes) are exactly the classes that carry per-node cost, and the
+measured per-launch bundle law (a = 0.6706 + 8.8911 ns x bundles) gives the 1.3 us/node
+effective value a corpus-validated magnitude. **RA-038-A is the program that decides which
+corner holds: the T2 graph_editor ablation (disable a node class, measure the [LAUNCH] stamp
+delta + the MFU BW delta + the t/s) — the first 2-3 days, no fusion built. If the floor is
+mostly node-class-removable, the 450-500 @16 ceiling opens toward 700-900 (decode-only) and
+the bs=1 floor 44 → 15-30 ms; if it is a fixed runtime cost, the ceiling stands and the
+deep-MTP value is bounded to the bs=1 latency mode. Either outcome re-ranks every other
+lever — this is the highest-information experiment on the board.**
+
+**RA-038 summary (full detail in `RA-038-deep-mtp-recipe-fusion.md`):**
+
+- **RA-038-A — the recipe-level node-collapse program (the master lever).** The per-node-class
+  collapse targets (the census-ranked): the grouped-MoE GEMM (1,496 batch_gemm → ~42-150 nodes;
+  the open feasibility question: the vendor grouped form vs the custom TPC kernel — the strata
+  grouped-hit-kernels + the 1Cat custom-kernel-in-batch_gemm-bundle precedents; the Q21 core
+  reused), the batched multiplexer (1,002 → ~42), the dequant-class (2,536 — removable? the
+  BG-1 fused-load-path evidence says maybe; the ablation decides), the fused norm chains (the
+  40x RMSNorm — the 1Cat `add_rmsnorm` native-op pattern, the corpus-verified -1 launch win),
+  the fuser-configuration sweep (config-only), the fused _accept_grid (25-30 ops → 1 kernel).
+  Target: 26,407 → ~3,000-6,000 nodes; the 322 recipes → ~100-200. Expected (theoretical,
+  the ablation selects the corner): conservative bs=1 55-70 / @16 500-600; aggressive
+  bs=1 85-120 / @16 700-950; null (the floor is fixed) → the 450-500 ceiling confirmed as
+  the platform limit. Complexity High (the grouped GEMM arm, weeks-class if the kernel is
+  needed; the ablation itself 2-3 days). Every arm gated by the R003 suite (the knife-edge
+  applies to every structural change of the decode residual stream).
+- **RA-038-B — the deep-MTP (k=4-8) program (the owner's ask).** The k* arithmetic, validated
+  against all three measured points (k=1 42.4 ✓, k=2 46.9 ✓, k=4 40.8-41.5 ✓ at bs=1; 408-430
+  ✓, -20% ✓, -38% ✓ at @16): the win condition p_{k+1}/AL(k) > Δk/step(k); the current k* = 2
+  (bs=1) / 1 (@16); the deep-k condition Δk ≤ ~1.6 ms/pass (bs=1) — unreachable eager,
+  reachable via the lever stack. **The levers:** D1 the graphed draft chain (the k-1 draft
+  passes merged into the target recipe — one replay/step; the per-pass host 3-4 ms bs=1 /
+  10.6 ms @16 disappears; the device addition ~0.8 ms/pass; **the prerequisite: the Q01v2
+  numerics-drift fix** — the fp32 draft-core accumulator A/B + the 1Cat `deduplicate_float_casts`
+  reference; the golden 12/12 + the R003 gate); D2 the fused accept-walk (25-30 ops → 1 TPC
+  kernel; the saving scales with k — ~3x more at k=8; bit-exact by construction); D3 the
+  sampler D2H tail (the 15.6 ms post term → 2-4 ms — the piggybacked output, the F2 pattern
+  extended to the sampler, the double-buffered pinned host buffer); D4 the deep-k resource
+  arithmetic (the KDA candidate slots 1+k+1 — 278 MB at k=8/ns32, fits; the verify rows 1+k —
+  the bucket population 1.5-2x, the boot 40-60 min; the MoE union growth — the hidden cost:
+  bs=1 k=8 reads ~9.8 GB/rank, @16 k=8 saturates all 36 experts; the 4-HPU fit — tight at
+  GMU 0.95); D5 the batch-conditional k* policy (k per bucket at capture: k=4 for bs 1-4
+  (the latency mode), k=1-2 for the large buckets — the existing bucket selection, no new
+  runtime machinery; the runtime k switch is NOT possible — the k is in the shape).
+  **Expected (theoretical):** the bs=1 winner moves k=2 → k=3-4 at 52-53 t/s after D1+D2
+  (vs 46.9 current — the owner's "big win" in the +10-15% sense), 68-116 with RA-038-A;
+  the @16 k* stays 1 (the +35-125% comes from the node collapse, not the depth). **The honest
+  ceiling (stated for the owner):** 200-bs=1 and 800-@16 are NOT reachable with the MTP head
+  at any k (the AL ceiling [2.73, 3.3] vs the required 4.0-4.5); the deep-MTP program buys
+  the 1.5-2.6x bs=1 latency improvement + the @16 +35-125% + the drafter-shared deep-chain
+  infrastructure.
+- **The measurement program (T1-T3, in priority order):** T2 the per-node-class attribution
+  (the graph_editor ablation — the master, 2-3 days); T1 the k=8 boot (the AL(8) pin + the
+  Δk deep-end validation + the k=8 feasibility — half a day); T3 the @16 k=2 per-row
+  decomposition (the 36 ms/pass split: the draft host x16 / the verify-row device / the MoE
+  union / the accept-sampler — one boot window).
+- **Corrections to prior docs (RA-038 §4):** (1) `current_bottleneck.md` rev 3 is STALE — its
+  B1 ("the stock op reads all 36 experts, 38.1 GB/step, the 200 t/s physically impossible
+  with the stock op") is superseded by the agent's own 386e7d6/28b7655/baf9d1b/7bb417e
+  (the routed-union read; the dequant cached; the HBM residency) — **recommend rev 4**
+  (the consolidation; all the corrected facts are in the overnight commits); (2) the RA-037
+  T1b Q21 line superseded (above); (3) the "2000 tok/s reframe" retracted (9e6a1b5);
+  (4) the B2 "14 ms replay" refined to the [LAUNCH] 44 ms bs=1 / 25-31 ms @24-40 (the
+  py-spy figure was the Python-visible call time, not the full launch window); the vendor
+  graph_exec.cpp confirms the per-launch host work (the PatchDynamicTensors H2D patch —
+  the arena-packing lever, the corpus-verified 75 → 4 patch points win, applies to this term).
+
+**The re-ranked top priorities (rev 14 — under the settled physics, replacing the rev-5 table
+which is retained for history):**
+
+| Rank | ID | One-line | Status |
+|---|---|---|---|
+| 1 | **RA-038-A T2 (the ablation)** | the graph_editor node-class ablation — decides how much of the 25-45 ms floor is removable; re-ranks everything | PROPOSED (the do-first; the tool staged 380303f) |
+| 2 | **RA-038-B D1 (the graphed chain)** | the Q01v2 drift fix + the k-1 draft passes merged into the target recipe — the owner's MTP=4 win (bs=1 46.9 → 52-53, 68-116 with #1) | PROPOSED (the prerequisite = the drift fix, 2-3 days) |
+| 3 | **RA-038-B D2 (the accept-walk fusion)** | the 25-30 sampler ops → 1 TPC kernel; worth ~3x more at k=8; bit-exact | PROPOSED (1 week, the TPC path) |
+| 4 | **RA-038-B D3 (the sampler D2H tail)** | the 15.6 ms post term → 2-4 ms; the F2 piggyback pattern extended | PROPOSED (2-3 days, parallel) |
+| 5 | **RA-038-A adoption arms** | only for the ablation-proven classes: the fuser sweep (config-only), the norm fusion (the 1Cat FX pattern), the grouped GEMM (the op or the kernel) | PROPOSED (gated on T2) |
+| 6 | **RA-038-B D5 (the batch-conditional k*)** | the per-bucket k capture plan (k=4 for bs 1-4, k=1-2 for the large) — the latency/throughput split as a capture-time policy | PROPOSED (after D1) |
+| 7 | **RA-038-B T1 (the k=8 boot)** | the AL(8) pin + the k=8 feasibility (the HBM, the slots, the boot time) | PROPOSED (half a day, first free window) |
+| 8 | **RA-038-B T3 (the @16 k=2 decomposition)** | the 36 ms/pass per-row split — the @16 k* condition quantified | PROPOSED (one boot window) |
+| 9 | **The 4-HPU deep-k boot** | the deployment check (the Q14v2 config + the k=2-3; the HBM margin at GMU 0.95) | PROPOSED (after the 8-HPU wins banked) |
+| 10 | **The drafter (RA-036/L6 substrate)** | the self-trained block-diffusion drafter — THE path to 200-bs=1 / 800-@16 (AL ≥ 4) | PARKED (no training hardware; the substrate survives) |
+
+**The do-first (rev 14, in order — RA-038 §8):** (1) the graph_editor characterization
+(0.5 day); (2) the T2 ablation arms 0-2 (days 2-3 — the dequant class + the multiplexer:
+the first answer to "is the floor removable?"); (3) the Q01v2 drift fix (2-3 days, parallel
+boot window — the D1 prerequisite); (4) the T1 k=8 boot (the first free window); (5) the T2
+arms 3-6 (days 4-6); (6) the T3 (one k=2/ns32 boot window); (7) the adoption arms (only the
+ablation-proven classes); (8) the D1 chain merge + the D5 capture plan (after the drift fix
++ the T1); (9) the D3 sampler piggyback (parallel); (10) the current_bottleneck.md rev 4
+(the consolidation); (11) the 4-HPU deep-k boot. **~1 week to the re-ranked,
+measurement-validated program.**
+
+**Also recorded this round:** the owner's "some improvements" on MTP-2 = the k=2 probe
+(7aaeaa5) + the boot scripts + the REPORT 6.3 update — the k=2 latency mode is now a staged,
+measured config (the serve_mtp_k2ns32.sh); the MTP4-T0's "T1 graphed chain captures the gain
+at ~0 draft cost" prediction is now the D1 theory with the measured Δk (the "0 draft cost"
+was optimistic — the measured eager chain cost is 6.4 ms/pass bs=1; the graphed chain's
+~0.8 ms/pass device is the realistic floor).
+
+**License compliance (re-confirmed 2026-11-14):** the g2-opt-manual (no license file) cited
+for facts + short attributed phrases only, no code; the 1Cat/abotsis/strata/vllm sources
+Apache-2.0/MIT (attribution retained); no weights; the incoai checkpoint remains excluded.
