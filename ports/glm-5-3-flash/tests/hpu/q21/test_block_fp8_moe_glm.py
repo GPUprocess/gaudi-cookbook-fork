@@ -182,6 +182,12 @@ def run_gate():
             colr = torch.arange(I2)
             exp = w13_rq[ids0][:, colr, h_star] * s13_c[ids0][:, colr // 128, h_star // 128]
             onehot[h_star] = (r - exp).abs().max().item()
+            if h_star == 0:
+                # The per-expert breakdown: the r[0,:,0] vs the exp[:,0] — the
+                # cross-expert contamination, if any, is visible in the 8 pairs
+                for k in range(K):
+                    print(f"[Q21-GATE] hot0 k={k} id={int(ids0[k])} "
+                          f"r={r[k, 0].item():.6f} exp={exp[k, 0].item():.6f}", flush=True)
         else:
             onehot[h_star] = None
     print(f"[Q21-GATE] one-hot errs: {onehot}", flush=True)
