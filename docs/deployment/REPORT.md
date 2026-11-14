@@ -222,6 +222,16 @@ The bs=1 decode is **host-dispatch-bound** (the device 78–100% idle, the AIP-U
 the step is ~65% worker (the launch replay + the drain + the sampler). The ranked
 path (the doc RA-037 §6, re-scoped after the 11-13 corrections):
 
+**⚠ THE Q21 RE-PRIORITIZATION (2026-11-14, the node-count analysis):** the
+ranking below is superseded — **the Q21 fused MoE kernel is now THE RANK-1
+LEVER**, not for the byte savings (zero, confirmed) but for the **node-count
+reduction**: the step is launch-bound at the recipe level (20,485 nodes ×
+~1.3 µs = the 26.6 ms device + the 28.3 ms replay, both ∝ the node count);
+the MoE region = ~89% of the nodes; **the Q21 fused kernel collapses the MoE
+nodes to ~500 = the −86% recipe → the iteration 72.7 → ~34 ms → ~768 tok/s
+@16 → the 800 target with the trims.** The items 1-2 below are superseded by
+this analysis; the items 3-6 remain valid.
+
 1. **The MoE device-time/bytes measurement first** (one boot: the env-gated event
    timers around the moe_op call at bs=1 vs @16) — it decides whether the Q21
    kernel has any byte-saving value at all (the stock op may already be
