@@ -160,6 +160,28 @@ def run_gate():
     # ("Empty tensor optional") — cast on the CPU after the bf16 pull
     raw_q_c, y_q_c = acc["s13c_sync"][0].float(), acc["s13c_sync"][1].float()
 
+    # The ONE-HOT x probes: the convert's per-position mapping, determined
+    # exactly. With x[0] = the unit vector at h*, raw[0,k,col] must equal
+    # w13_dq[ids0k, col, h*] * s13[ids0k, col//128, h*//128]. The five
+    # positions bracket the 128-value boundary of the convert's output pair.
+    onehot = {}
+    for h_star in (0, 1, 127, 128, 255):
+        def _p(hs=h_star):
+            xh = x.clone()
+            xh[0] = 0
+            xh[0, hs] = 1.0
+            r = torch.ops.custom_op.block_fp8_moe_w13_glm(w13_q, s13, xh, ids)
+            return r.cpu()
+        if _stage(f"s14_hot{h_star}", _p, acc):
+            r = acc[f"s14_hot{h_star}"].float()[0]
+            ids0 = ids_c[0].long()
+            colr = torch.arange(I2)
+            exp = w13_rq[ids0][:, colr, h_star] * s13_c[ids0][:, colr // 128, h_star // 128]
+            onehot[h_star] = (r - exp).abs().max().item()
+        else:
+            onehot[h_star] = None
+    print(f"[Q21-GATE] one-hot errs: {onehot}", flush=True)
+
     def cmp(q, r, name):
         err = (q - r).abs()
         scale = max(r.abs().max().item(), 1e-6)
@@ -174,6 +196,7 @@ def run_gate():
             "shapes": {"E": E, "T": T, "H": H, "I2": I2, "K": K},
             "pass_1": res_raw, "pass_2": res_y,
             "probe": probe_verdict,
+            "onehot_errs": onehot,
             "pass": bool(res_raw["pass"] and res_y["pass"])}
 
 

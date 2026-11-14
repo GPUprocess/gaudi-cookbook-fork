@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// block_fp8_moe_w13_glm v5 — Q21/RA-002 step 2, pass 1: routing-aware multi-expert
+// block_fp8_moe_w13_glm v6 — Q21/RA-002 step 2, pass 1: routing-aware multi-expert
 // block-FP8 GEMV for the GLM-5.3-Flash MoE decode path (Gaudi 2 TPC).
 //
 //   raw[T, K, 2I] = W13[e_k, 2I, H] · x[T, H] / s13[e_k]
@@ -31,15 +31,18 @@
 // 2p), .v2 = the second 128 (the h-block 2p+1) — the exact split matching the
 // two 128-value scale blocks and the two staged x chunks per 256-span. The
 // STANDARD weight order, one 256-f8 load per span (the half the v2 loads).
+//
+// THE v6 FIX (the one-hot-probe-guided): the VLM staging of x is REMOVED —
+// the one-hot probes proved every convert/scale/MAC position correct while
+// the full random-x test fails, isolating the defect to the shared-VLM x
+// staging under multi-TP point concurrency. The x rows are now loaded
+// DIRECTLY from the tensor per MAC pair: the added HBM x traffic is
+// negligible against the fp8 weight reads, and the kernel becomes
+// stateless.
 
-#ifndef MOE_W13_V5_KCH
-#define MOE_W13_V5_KCH 32  // the VLM x-chunks: H/128 <= 32 covers H = 4096
+#ifndef MOE_W13_V6_TOPK
+#define MOE_W13_V6_TOPK 8
 #endif
-#ifndef MOE_W13_V5_TOPK
-#define MOE_W13_V5_TOPK 8
-#endif
-
-__local__ bfloat128 v8_x[MOE_W13_V5_KCH];  // the activation row x[t] staged in VLM
 
 void main(
     tensor w13,         // FP8 [E_LOCAL, 2I, H] — the STANDARD H-order
@@ -53,30 +56,23 @@ void main(
     const int H = get_dim_size(x, 1);       // 4096 (the TPC dim0 of x)
     const int T = get_dim_size(x, 0);       // the tokens (the TPC dim1 of x)
     const int E_LOCAL = get_dim_size(w13, 2); // the TPC dim2 of w13
-    const int KB = H / 128;                 // the VLM x-chunks: 32
-    const int HP = H / 256;                 // the interleaved chunk pairs: 16
+    const int HP = H / 256;                 // the 256-value spans: 16
 
     const int nb = is[0];   // the n-block index (0..2I/128-1)
     const int t = is[1];    // the token index
     if (t >= T) return;
 
-    // Stage the activation row x[t] in VLM (the shared across the K experts)
-    for (int c = 0; c < KB; ++c) {
-        int5 xc = {c * 128, t, 0, 0, 0};
-        v8_x[c] = v_bf16_ld_tnsr_b(xc, x);
-    }
-
     const ushort128 lid = read_lane_id_2b_b();
 
     // Read the K=8 routed expert ids for this token
-    int expert_ids[MOE_W13_V5_TOPK];
-    for (int k = 0; k < MOE_W13_V5_TOPK; ++k) {
+    int expert_ids[MOE_W13_V6_TOPK];
+    for (int k = 0; k < MOE_W13_V6_TOPK; ++k) {
         int5 idc = {k, t, 0, 0, 0};
         expert_ids[k] = s_i32_ld_g(gen_addr(idc, topk_ids));
     }
 
     // The expert loop: OUTER (the per-expert vector store)
-    for (int k = 0; k < MOE_W13_V5_TOPK; ++k) {
+    for (int k = 0; k < MOE_W13_V6_TOPK; ++k) {
         const int e = expert_ids[k];  // the global expert id = the local (the single-rank)
 
         bfloat128 yv = (bfloat128)0.0f;  // the 128-lane output for the (t, k, nb)
@@ -102,9 +98,15 @@ void main(
                 const minifloat256 pk = v_f8_ld_tnsr_b(coord, w13, SW_UNPACK | SW_UNPCK_8_TO_16);
                 const bfloat256 wall = v_convert_f8_to_bf16_all_b(pk);
 
+                // The x loads: DIRECT from the tensor (the no VLM — the v6)
+                int5 xc1 = {p * 256, t, 0, 0, 0};
+                int5 xc2 = {p * 256 + 128, t, 0, 0, 0};
+                const bfloat128 x1 = v_bf16_ld_tnsr_b(xc1, x);
+                const bfloat128 x2 = v_bf16_ld_tnsr_b(xc2, x);
+
                 // The aligned MACs
-                acc = v_bf16_mac_acc32_b(wall.v1 * mult, v8_x[p * 2], acc);
-                acc = v_bf16_mac_acc32_b(wall.v2 * mult2, v8_x[p * 2 + 1], acc);
+                acc = v_bf16_mac_acc32_b(wall.v1 * mult, x1, acc);
+                acc = v_bf16_mac_acc32_b(wall.v2 * mult2, x2, acc);
             }
 
             // The reduce-add → the lane insert for the row
