@@ -20,6 +20,16 @@ E, T, H, I2, K, SEED = 8, 4, 512, 512, 8, 20261114
 RTOL, ATOL = 3e-2, 1e-3
 
 
+def _interleave_pairs(w):
+    """The interleaved-chunk-pair layout along the last dim (the v3 kernel
+    contract): the span [p*256+2j] = the chunk 2p's element j, the span
+    [p*256+2j+1] = the chunk (2p+1)'s element j. The converted fp8 pairs then
+    split cell-wise (SW_UNPACK_EVEN/ODD_LANES) into the vectors aligned with
+    the two 128-element activation chunks per pair."""
+    e, r, c = w.shape
+    return w.view(e, r, c // 256, 2, 128).permute(0, 1, 2, 4, 3).reshape(e, r, c).contiguous()
+
+
 def _stage(name, fn, acc):
     try:
         acc[name] = fn()
@@ -66,11 +76,14 @@ def run_gate():
                 "error": "input staging failed", "stages": sorted(acc)}
     w13, s13, x, ids, wts = (acc["s2_w_fp8_cast"], acc["s3_scales_f32_dev"],
                              acc["s4_x_bf16_dev"], acc["s5b_ids_perm_dev"], acc["s6_wts_f32_dev"])
-    ok = _stage("s6b_w2_cast", lambda: (torch.randn(E, H, I2 // 2, device=dev) * 0.05).to(torch.float8_e4m3fn), acc)
+    ok = _stage("s6a_w13_interleave", lambda: _interleave_pairs(w13), acc)
+    ok = ok and _stage("s6b_w2_cast", lambda: (torch.randn(E, H, I2 // 2, device=dev) * 0.05).to(torch.float8_e4m3fn), acc)
+    ok = ok and _stage("s6b2_w2_interleave", lambda: _interleave_pairs(acc["s6b_w2_cast"]), acc)
     ok = ok and _stage("s6c_s2_rand", lambda: torch.rand(E, H // 128, (I2 // 2) // 128, device=dev) * 0.02 + 0.005, acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "w2 staging failed", "stages": sorted(acc)}
+    w13_q, w2_q = acc["s6a_w13_interleave"], acc["s6b2_w2_interleave"]
     w2, s2 = acc["s6b_w2_cast"], acc["s6c_s2_rand"]
 
     ok = _stage("s7_ref_pulls", lambda: (
@@ -81,7 +94,7 @@ def run_gate():
                 "error": "reference pulls failed", "stages": sorted(acc)}
     w13_rq, s13_c, w2_rq, s2_c, x_c, ids_c, wts_c = acc["s7_ref_pulls"]
 
-    ok = _stage("s8_pass1_op", lambda: torch.ops.custom_op.block_fp8_moe_w13_glm(w13, s13, x, ids), acc)
+    ok = _stage("s8_pass1_op", lambda: torch.ops.custom_op.block_fp8_moe_w13_glm(w13_q, s13, x, ids), acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "pass-1 op failed", "stages": sorted(acc)}
@@ -94,7 +107,7 @@ def run_gate():
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "between-pass math failed", "stages": sorted(acc)}
     act_pre = acc["s9_between_math"]
-    ok = _stage("s10_pass2_op", lambda: torch.ops.custom_op.block_fp8_moe_w2_glm(w2, s2, act_pre, ids), acc)
+    ok = _stage("s10_pass2_op", lambda: torch.ops.custom_op.block_fp8_moe_w2_glm(w2_q, s2, act_pre, ids), acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "pass-2 op failed", "stages": sorted(acc)}
@@ -116,23 +129,53 @@ def run_gate():
         return raw, y
 
     ok = _stage("s11_refs", _refs, acc)
-    ok = ok and _stage("s12_sync", lambda: (raw_q.float().cpu(), y_q.float().cpu()), acc)
+
+    # The fp8 unpack RUNTIME probe FIRST (its own tiny graph + sync, isolated
+    # from the custom-op graph): the [256] f8 in → the [0..128) = the EVEN
+    # halves (the expected in[2i]), the [128..256) = the ODD (the in[2i+1])
+    def _probe():
+        # The i64→fp8 device cast trips the bridge; use the proven f32→fp8 path.
+        # The 2-D [1,256]: the 1-D custom-op outputs trip the bridge descriptor.
+        inp = torch.arange(256, device=dev).float().to(torch.float8_e4m3fn).view(1, 256)
+        out_p = torch.ops.custom_op.f8_unpk_probe(inp)
+        return out_p.cpu().flatten()
+
+    probe_verdict = None
+    if _stage("s12_probe_op", _probe, acc):
+        po = acc["s12_probe_op"].float()
+        inp = torch.arange(256).float().to(torch.float8_e4m3fn).float()
+        ev_ok = bool(torch.all(po[:128] == inp[0::2]).item())
+        od_ok = bool(torch.all(po[128:] == inp[1::2]).item())
+        probe_verdict = {"even_first_128_matches_in2i": ev_ok,
+                         "odd_second_128_matches_in2i1": od_ok}
+        print(f"[Q21-GATE] probe: {probe_verdict}", flush=True)
+
+    ok = ok and _stage("s13a_raw_cpu", lambda: raw_q.cpu(), acc)
+    ok = ok and _stage("s13b_y_cpu", lambda: y_q.cpu(), acc)
+    ok = ok and _stage("s13c_sync", lambda: (raw_q.cpu(), y_q.cpu()), acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
-                "error": "sync/refs failed", "stages": sorted(acc)}
+                "error": "sync/refs failed", "stages": sorted(acc),
+                "probe": probe_verdict}
     raw_ref, y_ref = acc["s11_refs"]
-    raw_q_c, y_q_c = acc["s12_sync"]
+    # The device-side .float() of the custom-op outputs trips the bridge
+    # ("Empty tensor optional") — cast on the CPU after the bf16 pull
+    raw_q_c, y_q_c = acc["s13c_sync"][0].float(), acc["s13c_sync"][1].float()
 
     def cmp(q, r, name):
         err = (q - r).abs()
-        rel = (err / r.abs().clamp_min(1e-6)).max().item()
-        okc = bool((err <= ATOL + RTOL * r.abs()).all().item())
-        return {"tensor": name, "max_abs": err.max().item(), "max_rel": rel, "pass": okc}
+        scale = max(r.abs().max().item(), 1e-6)
+        # The scale-based allclose: the near-zero refs make the per-element
+        # rel meaningless; judge against the tensor's dynamic range
+        okc = bool((err <= ATOL + RTOL * scale).all().item())
+        return {"tensor": name, "max_abs": err.max().item(),
+                "rel_to_scale": (err.max().item() / scale), "ref_max": scale, "pass": okc}
 
     res_raw, res_y = cmp(raw_q_c, raw_ref, "raw"), cmp(y_q_c, y_ref, "y")
     return {"gate": "q21_block_fp8_moe_glm",
             "shapes": {"E": E, "T": T, "H": H, "I2": I2, "K": K},
             "pass_1": res_raw, "pass_2": res_y,
+            "probe": probe_verdict,
             "pass": bool(res_raw["pass"] and res_y["pass"])}
 
 

@@ -5,6 +5,9 @@
 //
 // Contract:
 //   in 0: w13        E4M3 (DATA_F8_143) [E_LOCAL, 2I, H] — the TPC dims: {H, 2I, E}
+//        The H-order: INTERLEAVED-CHUNK-PAIR (the v3): the span [p*256+2j] =
+//        the chunk 2p's j, the [p*256+2j+1] = the chunk (2p+1)'s j (the one-time
+//        reorder at the weight prep). The shapes/dims: UNCHANGED.
 //   in 1: w13_scales F32               [E_LOCAL, 2I/128, H/128] — the TPC dims: {H/128, 2I/128, E}
 //   in 2: x          BF16 (DATA_BF16)  [T, H]             — the TPC dims: {H, T}
 //   in 3: topk_ids   int32             [T, K]             — the TPC dims: {K, T}
