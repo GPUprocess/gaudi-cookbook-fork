@@ -331,6 +331,17 @@ summary `t1b_summary.json`):**
   capture structure (the fused dequant nodes). The next profiling target: the
   non-MoE device kernels (the attention/KDA/KV) — the kernel-level profiler on a
   measurement boot.**
+- **THE RECIPE-LEVEL STEP ANATOMY (the final reframe):** the captured recipe has
+  **~20,485 nodes** (the addNode trace; the MoE region 23,094 trace lines ≈ the
+  89%, the non-MoE ~2,300: the attention gemms ~133, the normalizations ~40
+  rsqrt/sub/add/reciprocal, the reductions ~116, the casts ~113). **At the ~1.3
+  µs average per tiny node, the device execution ≈ 26.6 ms — matching the
+  measured 27.3 ms drain. THE STEP IS LAUNCH-BOUND AT THE RECIPE LEVEL: the
+  node count IS the device time.** **The optimization program is RECIPE-LEVEL
+  FUSION: the node-count reduction across the MoE (the Q21-class), the sampler
+  (the _accept_grid), the norms, and the attention — the Synapse fuser
+  configuration is the lever.** The non-MoE region decoded: the attention
+  gemms/reduces/gathers (~60%), the RMSNorm chains (~25%), the casts (~15%).
 - **THE _ACCEPT_GRID OP-COUNT ANALYSIS (the sampler fusion value, the final):**
   the device-side accept walk is **~25-30 tiny-tensor ops per call** (the H2D,
   the arange, the comparisons, the casts, the cumsum, the wheres, the cats — all
