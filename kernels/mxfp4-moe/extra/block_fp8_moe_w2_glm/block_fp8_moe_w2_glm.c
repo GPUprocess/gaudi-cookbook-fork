@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// block_fp8_moe_w2_glm v3 — Q21/RA-002 step 2, pass 2: routing-aware multi-expert
+// block_fp8_moe_w2_glm v5 — Q21/RA-002 step 2, pass 2: routing-aware multi-expert
 // block-FP8 GEMV + accumulate for the GLM-5.3-Flash MoE decode path.
 //
 //   y[T, H] = Σ_k (W2[e_k, H, I] · act_preweighted[T, K, I] / s2[e_k])
@@ -9,13 +9,9 @@
 //   kernel (act *= topk_weights.unsqueeze(-1)), so this kernel does the
 //   plain accumulate over the K=8 experts.
 //
-//   in0: w2           E4M3 [E_LOCAL, H, I]   the stacked expert w2 weights in the
-//        INTERLEAVED-CHUNK-PAIR I-order: the span [p*256 .. p*256+256) holds
-//        the original 128-i-chunks (2p, 2p+1) interleaved — the position
-//        p*256+2j = the chunk 2p's element j, the position p*256+2j+1 = the
-//        chunk (2p+1)'s element j. (One-time reorder at the weight prep.)
-//   in1: w2_scales    F32  [E_LOCAL, H/128, I/128]  (the STANDARD order: the
-//        scale [.., 2p] belongs to the evens, [.., 2p+1] to the odds)
+//   in0: w2           E4M3 [E_LOCAL, H, I]   the stacked expert w2 weights, the
+//        STANDARD I-order (the no repack)
+//   in1: w2_scales    F32  [E_LOCAL, H/128, I/128]  the STANDARD order
 //   in2: act          BF16 [T, K, I]          the PRE-WEIGHTED SiLU-activated
 //        intermediate in the STANDARD I-order
 //   in3: topk_ids     int32 [T, K]            the global expert ids per token
@@ -29,19 +25,19 @@
 //   with the act[t, k, :] read from the HBM per chunk (the no VLM staging
 //   — the act doesn't fit the 16 KB VLM for all the 8 experts).
 //
-// THE v3 ALIGNMENT FIX: the same as the w13 v3 — the interleaved weight order
-// + the SW_UNPACK_EVEN/ODD_LANES split of the converted pairs, aligned with
-// the two 128-element act loads per chunk pair (the act loads UNCHANGED: the
-// act stays in the standard I-order). One 256-f8 load per chunk pair, no
-// predication (the glue guarantees I % 256 == 0).
+// THE v5 FIX: the same as the w13 v5 — the ALL_LANES convert
+// (v_convert_f8_to_bf16_all_b) keeps ALL 256 values as the bfloat256 register
+// pair (.v1 = the span's first 128 = the i-block 2p, .v2 = the second = the
+// 2p+1), matching the two 128-element act loads and the two scale blocks per
+// span. The STANDARD weight order, one 256-f8 load per span.
 
-#ifndef MOE_W2_V3_TOPK
-#define MOE_W2_V3_TOPK 8
+#ifndef MOE_W2_V5_TOPK
+#define MOE_W2_V5_TOPK 8
 #endif
 
 void main(
-    tensor w2,           // FP8 [E_LOCAL, H, I] — the INTERLEAVED-CHUNK-PAIR I-order
-    tensor w2_scales,    // F32 [E_LOCAL, H/128, I/128] — the STANDARD order
+    tensor w2,           // FP8 [E_LOCAL, H, I] — the STANDARD I-order
+    tensor w2_scales,    // F32 [E_LOCAL, H/128, I/128]
     tensor act,          // BF16 [T, K, I]
     tensor topk_ids,     // int32 [T, K]
     tensor y             // BF16 [T, H]
@@ -61,8 +57,8 @@ void main(
     const ushort128 lid = read_lane_id_2b_b();
 
     // Read the K=8 routed expert ids for this token
-    int expert_ids[MOE_W2_V3_TOPK];
-    for (int k = 0; k < MOE_W2_V3_TOPK; ++k) {
+    int expert_ids[MOE_W2_V5_TOPK];
+    for (int k = 0; k < MOE_W2_V5_TOPK; ++k) {
         int5 idc = {k, t, 0, 0, 0};
         expert_ids[k] = s_i32_ld_g(gen_addr(idc, topk_ids));
     }
@@ -77,18 +73,18 @@ void main(
         acc.v1 = 0; acc.v2 = 0;
 
         // The expert loop: the K=8 routed experts (the plain accumulate)
-        for (int k = 0; k < MOE_W2_V3_TOPK; ++k) {
+        for (int k = 0; k < MOE_W2_V5_TOPK; ++k) {
             const int e = expert_ids[k];
 
-            // The dot over I in the 256-span chunk pairs (the dequant + the MAC)
+            // The dot over I in the 256-value spans (the dequant + the MAC)
             for (int p = 0; p < IP; ++p) {
-                // The block scales: the original i-chunks 2p (the evens) and 2p+1 (the odds)
+                // The block scales: the i-blocks 2p (the span's first 128) and 2p+1 (the second)
                 int5 sc = {p * 2, row_global / 128, e, 0, 0};
                 const bfloat128 mult = (bfloat128)s_f32_ld_g(gen_addr(sc, w2_scales));
                 sc[0] += 1;
                 const bfloat128 mult2 = (bfloat128)s_f32_ld_g(gen_addr(sc, w2_scales));
 
-                // The act read: the i-chunks 2p and 2p+1 (the STANDARD act order)
+                // The act read: the i-blocks 2p and 2p+1 (the STANDARD act order)
                 // From the HBM directly (the no VLM staging — the act doesn't fit the VLM
                 // for all the 8 experts simultaneously)
                 int5 ac1 = {p * 256, k, t, 0, 0};
@@ -96,16 +92,15 @@ void main(
                 const bfloat128 a1 = v_bf16_ld_tnsr_b(ac1, act);
                 const bfloat128 a2 = v_bf16_ld_tnsr_b(ac2, act);
 
-                // One interleaved 256-f8 load: the evens = the i-chunk 2p, the odds = the 2p+1
+                // One 256-f8 load, ALL_LANES convert: .v1 = the first 128 values
+                // (the i-block 2p), .v2 = the second 128 (the i-block 2p+1)
                 int5 coord = {p * 256, row_global, e, 0, 0};
                 const minifloat256 pk = v_f8_ld_tnsr_b(coord, w2, SW_UNPACK | SW_UNPCK_8_TO_16);
-                const bfloat128 wboth = v_convert_f8_to_bf16_b(pk);
-                const bfloat128 wE = v_bf16_mov_dual_group_unpack_b(wboth, 0xFFFFFFFF, 0, 0, 0, 0, SW_UNPACK_EVEN_LANES, (bfloat128)0, 1);
-                const bfloat128 wO = v_bf16_mov_dual_group_unpack_b(wboth, 0xFFFFFFFF, 0, 0, 0, 0, SW_UNPACK_ODD_LANES, (bfloat128)0, 1);
+                const bfloat256 wall = v_convert_f8_to_bf16_all_b(pk);
 
                 // The aligned MACs
-                acc = v_bf16_mac_acc32_b(wE * mult, a1, acc);
-                acc = v_bf16_mac_acc32_b(wO * mult2, a2, acc);
+                acc = v_bf16_mac_acc32_b(wall.v1 * mult, a1, acc);
+                acc = v_bf16_mac_acc32_b(wall.v2 * mult2, a2, acc);
             }
         }
 

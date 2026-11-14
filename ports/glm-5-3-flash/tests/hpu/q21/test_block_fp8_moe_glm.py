@@ -76,15 +76,13 @@ def run_gate():
                 "error": "input staging failed", "stages": sorted(acc)}
     w13, s13, x, ids, wts = (acc["s2_w_fp8_cast"], acc["s3_scales_f32_dev"],
                              acc["s4_x_bf16_dev"], acc["s5b_ids_perm_dev"], acc["s6_wts_f32_dev"])
-    ok = _stage("s6a_w13_interleave", lambda: _interleave_pairs(w13), acc)
-    ok = ok and _stage("s6b_w2_cast", lambda: (torch.randn(E, H, I2 // 2, device=dev) * 0.05).to(torch.float8_e4m3fn), acc)
-    ok = ok and _stage("s6b2_w2_interleave", lambda: _interleave_pairs(acc["s6b_w2_cast"]), acc)
+    ok = _stage("s6b_w2_cast", lambda: (torch.randn(E, H, I2 // 2, device=dev) * 0.05).to(torch.float8_e4m3fn), acc)
     ok = ok and _stage("s6c_s2_rand", lambda: torch.rand(E, H // 128, (I2 // 2) // 128, device=dev) * 0.02 + 0.005, acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "w2 staging failed", "stages": sorted(acc)}
-    w13_q, w2_q = acc["s6a_w13_interleave"], acc["s6b2_w2_interleave"]
     w2, s2 = acc["s6b_w2_cast"], acc["s6c_s2_rand"]
+    w13_q, w2_q = w13, w2  # the v5: the STANDARD order (the no interleave)
 
     ok = _stage("s7_ref_pulls", lambda: (
         w13.float().cpu(), s13.float().cpu(), w2.float().cpu(), s2.float().cpu(),

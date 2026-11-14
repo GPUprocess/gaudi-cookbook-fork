@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// block_fp8_moe_w13_glm v3 — Q21/RA-002 step 2, pass 1: routing-aware multi-expert
+// block_fp8_moe_w13_glm v5 — Q21/RA-002 step 2, pass 1: routing-aware multi-expert
 // block-FP8 GEMV for the GLM-5.3-Flash MoE decode path (Gaudi 2 TPC).
 //
 //   raw[T, K, 2I] = W13[e_k, 2I, H] · x[T, H] / s13[e_k]
@@ -8,13 +8,9 @@
 //   (the SiLU + the gate/up split are done in PyTorch post-processing — the TPC
 //    has no the scalar exp/div; the vectorized SiLU in PyTorch is faster)
 //
-//   in0: w13        E4M3 [E_LOCAL, 2I, H]   the stacked expert weights in the
-//        INTERLEAVED-CHUNK-PAIR H-order: the span [p*256 .. p*256+256) holds
-//        the original 128-h-chunks (2p, 2p+1) interleaved — the position
-//        p*256+2j = the chunk 2p's element j, the position p*256+2j+1 = the
-//        chunk (2p+1)'s element j. (One-time reorder at the weight prep.)
-//   in1: w13_scales F32  [E_LOCAL, 2I/128, H/128]  (the STANDARD order: the
-//        scale [.., 2p] belongs to the evens, [.., 2p+1] to the odds)
+//   in0: w13        E4M3 [E_LOCAL, 2I, H]   the stacked expert weights, the
+//        STANDARD H-order (the no repack)
+//   in1: w13_scales F32  [E_LOCAL, 2I/128, H/128]  the STANDARD order
 //   in2: x          BF16 [T, H]             the input activations
 //   in3: topk_ids   int32 [T, K]            the global expert ids per token
 //   out0: raw       BF16 [T, K, 2I]         the raw GEMV output (the pre-activation)
@@ -27,29 +23,27 @@
 //   → the per-expert 128-lane result → the vector store per expert.
 // The activation x[t] staged in VLM once (the shared across the K experts).
 //
-// THE v3 ALIGNMENT FIX (the v2 numeric-fail root cause): the f8 ld_tnsr with
-// SW_UNPCK_8_TO_16 loads the 256 fp8 as the PACKED PAIRS (2 per 32-bit cell)
-// and v_convert_f8_to_bf16_b keeps that layout — the 256 bf16 in the packed
-// pairs. MACing that against a 1-per-cell staged x vector drops the odd
-// h-values (the half-term dot). The v3: the interleaved weight order puts the
-// h-chunk 2p in the EVEN cells and the h-chunk 2p+1 in the ODD cells of each
-// converted pair, and v_bf16_mov_dual_group_unpack_b with SW_UNPACK_EVEN_LANES
-// / SW_UNPACK_ODD_LANES splits the pairs into the 1-per-cell vectors aligned
-// with the staged x chunks 2p and 2p+1. One 256-f8 load per chunk pair (the
-// half the loads of the v2), no predication (the glue guarantees H % 256 == 0).
+// THE v5 FIX (the v2/v3 numeric-fail root cause, the corpus-confirmed): the
+// plain v_convert_f8_to_bf16_b down-converts the 256 fp8 into a SINGLE
+// bfloat128 register — only 128 of the 256 values survive (the half-term dot).
+// The ALL_LANES form v_convert_f8_to_bf16_all_b converts ALL 256 values into
+// a bfloat256 register PAIR: .v1 = the span's first 128 values (the h-block
+// 2p), .v2 = the second 128 (the h-block 2p+1) — the exact split matching the
+// two 128-value scale blocks and the two staged x chunks per 256-span. The
+// STANDARD weight order, one 256-f8 load per span (the half the v2 loads).
 
-#ifndef MOE_W13_V3_KCH
-#define MOE_W13_V3_KCH 32  // the VLM x-chunks: H/128 <= 32 covers H = 4096
+#ifndef MOE_W13_V5_KCH
+#define MOE_W13_V5_KCH 32  // the VLM x-chunks: H/128 <= 32 covers H = 4096
 #endif
-#ifndef MOE_W13_V3_TOPK
-#define MOE_W13_V3_TOPK 8
+#ifndef MOE_W13_V5_TOPK
+#define MOE_W13_V5_TOPK 8
 #endif
 
-__local__ bfloat128 v8_x[MOE_W13_V3_KCH];  // the activation row x[t] staged in VLM
+__local__ bfloat128 v8_x[MOE_W13_V5_KCH];  // the activation row x[t] staged in VLM
 
 void main(
-    tensor w13,         // FP8 [E_LOCAL, 2I, H] — the INTERLEAVED-CHUNK-PAIR H-order
-    tensor w13_scales,  // F32 [E_LOCAL, 2I/128, H/128] — the STANDARD order
+    tensor w13,         // FP8 [E_LOCAL, 2I, H] — the STANDARD H-order
+    tensor w13_scales,  // F32 [E_LOCAL, 2I/128, H/128]
     tensor x,           // BF16 [T, H]
     tensor topk_ids,    // int32 [T, K]
     tensor raw          // BF16 [T, K, 2I] — the raw GEMV output
@@ -75,14 +69,14 @@ void main(
     const ushort128 lid = read_lane_id_2b_b();
 
     // Read the K=8 routed expert ids for this token
-    int expert_ids[MOE_W13_V3_TOPK];
-    for (int k = 0; k < MOE_W13_V3_TOPK; ++k) {
+    int expert_ids[MOE_W13_V5_TOPK];
+    for (int k = 0; k < MOE_W13_V5_TOPK; ++k) {
         int5 idc = {k, t, 0, 0, 0};
         expert_ids[k] = s_i32_ld_g(gen_addr(idc, topk_ids));
     }
 
     // The expert loop: OUTER (the per-expert vector store)
-    for (int k = 0; k < MOE_W13_V3_TOPK; ++k) {
+    for (int k = 0; k < MOE_W13_V5_TOPK; ++k) {
         const int e = expert_ids[k];  // the global expert id = the local (the single-rank)
 
         bfloat128 yv = (bfloat128)0.0f;  // the 128-lane output for the (t, k, nb)
@@ -94,24 +88,23 @@ void main(
             float128 acc;
             acc.v1 = 0; acc.v2 = 0;
 
-            // The dot over H in the 256-span chunk pairs (the dequant + the MAC)
+            // The dot over H in the 256-value spans (the dequant + the MAC)
             for (int p = 0; p < HP; ++p) {
-                // The block scales: the original h-chunks 2p (the evens) and 2p+1 (the odds)
+                // The block scales: the h-blocks 2p (the span's first 128) and 2p+1 (the second)
                 int5 sc = {p * 2, col_global / 128, e, 0, 0};
                 const bfloat128 mult = (bfloat128)s_f32_ld_g(gen_addr(sc, w13_scales));
                 sc[0] += 1;
                 const bfloat128 mult2 = (bfloat128)s_f32_ld_g(gen_addr(sc, w13_scales));
 
-                // One interleaved 256-f8 load: the evens = the h-chunk 2p, the odds = the 2p+1
+                // One 256-f8 load, ALL_LANES convert: .v1 = the first 128 values
+                // (the h-block 2p), .v2 = the second 128 (the h-block 2p+1)
                 int5 coord = {p * 256, col_global, e, 0, 0};
                 const minifloat256 pk = v_f8_ld_tnsr_b(coord, w13, SW_UNPACK | SW_UNPCK_8_TO_16);
-                const bfloat128 wboth = v_convert_f8_to_bf16_b(pk);
-                const bfloat128 wE = v_bf16_mov_dual_group_unpack_b(wboth, 0xFFFFFFFF, 0, 0, 0, 0, SW_UNPACK_EVEN_LANES, (bfloat128)0, 1);
-                const bfloat128 wO = v_bf16_mov_dual_group_unpack_b(wboth, 0xFFFFFFFF, 0, 0, 0, 0, SW_UNPACK_ODD_LANES, (bfloat128)0, 1);
+                const bfloat256 wall = v_convert_f8_to_bf16_all_b(pk);
 
-                // The aligned MACs: the evens × the x chunk 2p, the odds × the x chunk 2p+1
-                acc = v_bf16_mac_acc32_b(wE * mult, v8_x[p * 2], acc);
-                acc = v_bf16_mac_acc32_b(wO * mult2, v8_x[p * 2 + 1], acc);
+                // The aligned MACs
+                acc = v_bf16_mac_acc32_b(wall.v1 * mult, v8_x[p * 2], acc);
+                acc = v_bf16_mac_acc32_b(wall.v2 * mult2, v8_x[p * 2 + 1], acc);
             }
 
             // The reduce-add → the lane insert for the row

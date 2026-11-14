@@ -5,9 +5,8 @@
 //
 // Contract:
 //   in 0: w2           E4M3 (DATA_F8_143) [E_LOCAL, H, I] — the TPC dims: {I, H, E}
-//        The I-order: INTERLEAVED-CHUNK-PAIR (the v3): the span [p*256+2j] =
-//        the chunk 2p's j, the [p*256+2j+1] = the chunk (2p+1)'s j (the one-time
-//        reorder at the weight prep). The shapes/dims: UNCHANGED.
+//        The I-order: STANDARD (the v5: the no repack; the ALL_LANES convert
+//        keeps all the values: .v1 = the first 128 of each 256-span).
 //   in 1: w2_scales    F32               [E_LOCAL, H/128, I/128] — the TPC dims: {I/128, H/128, E}
 //   in 2: act          BF16 (DATA_BF16)  [T, K, I]             — the TPC dims: {I, K, T}
 //   in 3: topk_ids     int32             [T, K]                — the TPC dims: {K, T}
