@@ -331,6 +331,17 @@ summary `t1b_summary.json`):**
   capture structure (the fused dequant nodes). The next profiling target: the
   non-MoE device kernels (the attention/KDA/KV) — the kernel-level profiler on a
   measurement boot.**
+- **THE _ACCEPT_GRID OP-COUNT ANALYSIS (the sampler fusion value, the final):**
+  the device-side accept walk is **~25-30 tiny-tensor ops per call** (the H2D,
+  the arange, the comparisons, the casts, the cumsum, the wheres, the cats — all
+  on the [16, 2]-class tensors, launch-bound at the ~50-100 µs each) → **~1.5-3
+  ms/step**. The fusion (one TPC/Synapse kernel): the ~0.2-0.5 ms → **the saving
+  ~1-2.5 ms/step = the ~2-3% @16** — modest, correcting the earlier ~10%
+  estimate. **The final honest lever ranking: (1) the replay 25-45 ms — the
+  platform floor (the hard); (2) the _accept_grid fusion — the ~2-3% (the custom
+  kernel, the moderate work); (3) the parse host work — the ~1-2% (the
+  already-vectorized); (4) the non-MoE device kernels — the unknown (the
+  profiling needed); (5) the drafter — the 800 path (the owner-gated).**
 - **The routed-union histogram (the Q21 GB ground truth):** the distinct local experts per
   rank-layer-step **mean 16.1 (p50 16, p90 21, max 27)**, balanced across ranks
   (15.5–17.0 — the expert placement is NOT needed). The 40-row decode bucket carries 8
