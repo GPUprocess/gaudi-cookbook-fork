@@ -307,6 +307,17 @@ summary `t1b_summary.json`):**
   (the rows +150% vs the AL +80%) predicts a net loss; the DFlash2-class
   block-diffusion drafter (the 8-token blocks per verify) is the only path —
   gated on the owner's licensing/training-infra decision.
+- **THE KERNEL-LEVEL PROFILER UNAVAILABLE (the vllm-gaudi limitation, 11-14):**
+  the `/start_profile`/`/stop_profile` API with the `--profiler-config
+  {"profiler": "torch", ...}` boot: **the worker fails with "Profiler is not
+  enabled."** — the vllm-gaudi HPU worker does not implement the torch-profiler
+  integration in this build. **The kernel-level device breakdown (the MoE vs the
+  attention vs the KDA durations) requires the future vllm-gaudi profiler
+  support or the custom instrumentation inside the captured recipes.** The
+  interim: the drain decomposition via the analytical models (the MoE 6.9-17 ms,
+  the non-MoE 10-20 ms) and the capture-trace structure. The profiler boot
+  variant staged (`serve_mtp_prof.sh` + `boot_prof.sh`) for the retest when the
+  vllm-gaudi adds the HPU worker profiler.
 - **THE ANALYTICAL MoE CLOSURE (the dims: the hidden 4096, the moe I 2048, the 36
   local experts, the topk 8, the 42 MoE layers; the peak 2.45 TB/s, the compute
   40% of 432 TFLOPS):** **bs=1: the MoE floor 0.9 ms** (the 2.1 GB routed-only
