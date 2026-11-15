@@ -119,21 +119,15 @@ void main(
             const float64 s_a = v_f32_reduce_add(acc_a.v1 + acc_a.v2);
             const float64 s_b = v_f32_reduce_add(acc_b.v1 + acc_b.v2);
 
-            // The pack: the s_a -> the dual group 0, the s_b -> the dual group 1
-            // (the mxk8-proven plain mov_dual_group_all form — the NO mov_vb)
-            const bfloat128 ba = v_convert_f32_to_bf16_all_b((float128){s_a, s_a});
-            const bfloat128 bb = v_convert_f32_to_bf16_all_b((float128){s_b, s_b});
-            bfloat128 packed;
-            packed = v_bf16_mov_dual_group_all_b(ba, 0xFFFFFFFF, 0, 0, 0, 0,
-                                                 MkWrA(0b11, 0b00, 0b11, 0b00), (bfloat128)0);
-            packed = v_bf16_mov_dual_group_all_b(bb, 0xFFFFFFFF, 1, 1, 1, 1,
-                                                 MkWrA(0b11, 0b11, 0b00, 0b00), packed);
-
-            // The store: the row pair via the TWO partial stores (the 1 lane each)
+            // The store: the SCALAR partial stores (the deepseek mhc pattern:
+            // one partial store per output column, the count=0, the reduce
+            // result directly — no 128-lane vector construction)
+            const bfloat128 sa_b = v_convert_f32_to_bf16_all_b((float128){s_a, s_a}, SW_LINEAR);
+            const bfloat128 sb_b = v_convert_f32_to_bf16_all_b((float128){s_b, s_b}, SW_LINEAR);
             int5 yc_a = {col_a, k, t, 0, 0};
             int5 yc_b = {col_b, k, t, 0, 0};
-            v_bf16_st_tnsr_partial(yc_a, raw, packed, 1, 0);
-            v_bf16_st_tnsr_partial(yc_b, raw, packed, 1, 0);
+            v_bf16_st_tnsr_partial(yc_a, raw, sa_b, 0, 0);
+            v_bf16_st_tnsr_partial(yc_b, raw, sb_b, 0, 0);
         }
     }
     }
