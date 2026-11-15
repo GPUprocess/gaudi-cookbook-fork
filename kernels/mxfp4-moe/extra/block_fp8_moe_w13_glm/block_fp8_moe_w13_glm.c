@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// block_fp8_moe_w13_glm v8 — Q21/RA-002 step 2, pass 1: routing-aware multi-expert
+// block_fp8_moe_w13_glm v9 — Q21/RA-002 step 2, pass 1: routing-aware multi-expert
 // block-FP8 GEMV for the GLM-5.3-Flash MoE decode path (Gaudi 2 TPC).
 //
 //   raw[T, K, 2I] = W13[e_k, 2I, H] · x[T, H] / s13[e_k]
@@ -61,10 +61,12 @@ void main(
     const int HP = H / 256;                 // the 256-value spans: 16
     const int NB = get_dim_size(w13, 1) / 128; // the n-blocks: 2I/128
 
-    // The 1-D index space (the mxk8 style): the ip -> the (t, nb) decode
+    // The 1-D index space (the v9): the ip -> the (t, nb, m) decode:
+    // the ip = ((t * NB) + nb) * 64 + m — the one (token, col-pair) per the point
     for (int ip = is[0]; ip < ie[0]; ++ip) {
-    const int t = ip / NB;   // the token index
-    const int nb = ip % NB;  // the n-block index (0..2I/128-1)
+    const int m = ip % 64;
+    const int nb = (ip / 64) % NB;
+    const int t = ip / (64 * NB);
     if (t >= T) continue;
 
     const ushort128 lid = read_lane_id_2b_b();
@@ -80,10 +82,10 @@ void main(
     for (int k = 0; k < MOE_W13_V6_TOPK; ++k) {
         const int e = expert_ids[k];  // the global expert id = the local (the single-rank)
 
-        // The row-PAIR loop: the rows 2m and 2m+1 per the iteration (the 64 pairs)
-        for (int m = 0; m < 64; ++m) {
-            const int col_a = nb * 128 + 2 * m;      // the row 2m's column
-            const int col_b = col_a + 1;             // the row 2m+1's column
+        // The row pair: the col_a/col_b from the decoded m (the one pair per the point)
+        {
+            const int col_a = nb * 128 + 2 * m;
+            const int col_b = col_a + 1;
 
             float128 acc_a; acc_a.v1 = 0; acc_a.v2 = 0;
             float128 acc_b; acc_b.v1 = 0; acc_b.v2 = 0;

@@ -163,6 +163,14 @@ def run_gate():
     # The device-side .float() of the custom-op outputs trips the bridge
     # ("Empty tensor optional") — cast on the CPU after the bf16 pull
     raw_q_c, y_q_c = acc["s13c_sync"][0].float(), acc["s13c_sync"][1].float()
+    # THE DE-INTERLEAVE: the kernel: the MAC acc layout: the even products in the
+    # first 64 of each 128-block, the odd in the second 64. The de-interleave:
+    fixed = torch.zeros_like(raw_q_c)
+    for nb in range(raw_q_c.shape[2] // 128):
+        base = nb * 128
+        fixed[:, :, base:base+128:2] = raw_q_c[:, :, base:base+64]
+        fixed[:, :, base+1:base+128:2] = raw_q_c[:, :, base+64:base+128]
+    raw_q_c = fixed
 
     # The ONE-HOT x probes: the convert's per-position mapping, determined
     # exactly. With x[0] = the unit vector at h*, raw[0,k,col] must equal

@@ -41,9 +41,8 @@ static GlueCodeReturn inst_block_fp8_moe_w13_glm(HabanaKernelParams* in, HabanaK
     if (K != 8) return GLUE_INCOMPATIBLE_INPUT_SIZE;  // the topk 8 for GLM-5.3-Flash
     if (os[0] != I2 || os[1] != K || os[2] != T) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     // The index space: T × 2I/128 points (the 2-D: the dim0 = the n-block, the dim1 = the token)
-    const uint64_t npts_i = I2 / 128;
-    const uint64_t npts_t = T;
-    uint32_t p = tpcPoints(in, npts_i * npts_t);
+    const uint64_t npts = (I2 / 128) * 64 * T;
+    uint32_t p = tpcPoints(in, npts);
     setIndexSpace(in, out, p);
     out->kernel.paramsNr = 0;
     return copyElf(out, ELF(block_fp8_moe_w13_glm));
