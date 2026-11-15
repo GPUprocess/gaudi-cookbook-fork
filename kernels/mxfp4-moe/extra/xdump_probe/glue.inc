@@ -8,7 +8,7 @@ static GlueCodeReturn inst_xdump_probe(HabanaKernelParams* in, HabanaKernelInsta
     const uint64_t* os = in->outputTensors[0].geometry.maxSizes;
     if (in->inputTensors[0].geometry.dims != 2 || in->outputTensors[0].geometry.dims != 2)
         return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    if (is_[0] != 512 || is_[1] != 4 || os[0] != 256 || os[1] != 1) return GLUE_INCOMPATIBLE_INPUT_SIZE;
+    if (is_[0] != 512 || is_[1] != 4 || os[0] != 256 || os[1] != 4) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     uint32_t p = tpcPoints(in, 2);
     setIndexSpace(in, out, p);
     out->kernel.paramsNr = 0;

@@ -12,8 +12,8 @@ constexpr const char* guid = "xdump_probe";
 
 void validate(const at::Tensor& src) {
     TORCH_CHECK(src.scalar_type() == at::kBFloat16 &&
-                src.dim() == 2 && src.size(0) == 4 && src.size(1) == 512 && src.is_contiguous(),
-                "xdump_probe requires contiguous BF16 [1,256]");
+                src.dim() == 2 && src.size(0) == 4 && src.size(1) == 256 && src.is_contiguous(),
+                "xdump_probe requires contiguous BF16 [4,256]");
 }
 
 std::once_flag reg_flag;
