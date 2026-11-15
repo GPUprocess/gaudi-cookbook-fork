@@ -226,14 +226,15 @@ def run_gate():
     if _stage("s15_ones_x", _ones, acc):
         ro = acc["s15_ones_x"].float()
         w13_dq_full = _dequant_bf16(w13_rq, s13_c).float()
+        # The all-ones reference: raw[t,k,col] = sum_h w13_dq[ids[t,k],col,h]
+        # (the x = 1.0 everywhere; the w13_dq already includes the scales)
         err_o = {}
         for t in range(T):
-            eo = torch.zeros(I2, H)
-            for k in range(K):
-                eo += w13_dq_full[ids_c[t, k].long()]
-            err_o[t] = (ro[t] - eo.unsqueeze(0)).abs().max().item()
+            eo = torch.stack([w13_dq_full[ids_c[t, k].long()].sum(dim=1) for k in range(K)])
+            err_o[t] = (ro[t] - eo).abs().max().item()
         zero_rows = sum(1 for t in range(T) if ro[t].abs().max().item() < 1e-6)
-        print(f"[Q21-GATE] ones-x errs per token: {err_o}, all-zero rows: {zero_rows}/4", flush=True)
+        mags = [round(ro[t].abs().max().item(), 4) for t in range(T)]
+        print(f"[Q21-GATE] ones-x errs per token: {err_o}, all-zero rows: {zero_rows}/4, mags: {mags}", flush=True)
 
     def cmp(q, r, name):
         err = (q - r).abs()
