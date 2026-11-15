@@ -207,9 +207,33 @@ def run_gate():
                     print(f"[Q21-GATE] hot0 wrong cols: {idx}", flush=True)
                     for c in idx:
                         print(f"[Q21-GATE] hot0 col{c}: r={r0[c].item():.6f} exp={e0[c].item():.6f}", flush=True)
+            # The full 512-col dropped mask (the mod structure)
+            dropped_full = ((r[0].abs() < 1e-6) & (exp[0].abs() > 1e-4)) if h_star == 0 else None
+            if h_star == 0:
+                print(f"[Q21-GATE] hot0 full mask: {''.join('1' if d else '0' for d in dropped_full.tolist())}", flush=True)
         else:
             onehot[h_star] = None
     print(f"[Q21-GATE] one-hot errs: {onehot}", flush=True)
+
+    # The ALL-ONES x probe: every product nonzero — the discriminates the
+    # MAC-chain zero interaction (the drops vanish if the zero products are
+    # the cause) from the value-independent write defect (the drops persist)
+    def _ones():
+        xo = torch.ones(T, H, device=dev, dtype=torch.bfloat16)
+        ro = torch.ops.custom_op.block_fp8_moe_w13_glm(w13_q, s13, xo, ids)
+        return ro.cpu()
+
+    if _stage("s15_ones_x", _ones, acc):
+        ro = acc["s15_ones_x"].float()
+        w13_dq_full = _dequant_bf16(w13_rq, s13_c).float()
+        err_o = {}
+        for t in range(T):
+            eo = torch.zeros(I2, H)
+            for k in range(K):
+                eo += w13_dq_full[ids_c[t, k].long()]
+            err_o[t] = (ro[t] - eo.unsqueeze(0)).abs().max().item()
+        zero_rows = sum(1 for t in range(T) if ro[t].abs().max().item() < 1e-6)
+        print(f"[Q21-GATE] ones-x errs per token: {err_o}, all-zero rows: {zero_rows}/4", flush=True)
 
     def cmp(q, r, name):
         err = (q - r).abs()
