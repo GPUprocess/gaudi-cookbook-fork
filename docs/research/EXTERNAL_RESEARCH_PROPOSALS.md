@@ -3937,7 +3937,55 @@ lever — this is the highest-information experiment on the board.**
   (4) the B2 "14 ms replay" refined to the [LAUNCH] 44 ms bs=1 / 25-31 ms @24-40 (the
   py-spy figure was the Python-visible call time, not the full launch window); the vendor
   graph_exec.cpp confirms the per-launch host work (the PatchDynamicTensors H2D patch —
-  the arena-packing lever, the corpus-verified 75 → 4 patch points win, applies to this term).
+  the arena-packing lever, the corpus-verified 75 → 4 patch points win, applies to this term);
+  (5) **RA-017 (ECF8) 8-HPU headlines re-based on the corrected routed-union physics** (the
+  RA-017 doc was written under the B1 all-read model): the fused-mode 8-HPU decode value is
+  now ~0.5-3% of the step (@16: the 16.9 GB routed-union read → ~14.5 GB = −1.0-2.4 ms of the
+  72.5 ms iteration, largely hidden under the host-paced step) and ~0-0.5% at bs=1 (the
+  decode-ALU-vs-FMA make-or-break at M=2 may eat most of the −0.3 GB byte saving) — the
+  paper's JIT mode loss, re-based: +4-9% at bs=1, +19-43% at @16 (the 2.855× traffic extends
+  the device drain, which is ADDITIVE to the host-paced step — it does not hide); the 4-HPU
+  BG-7 FIT value (weights 328.3 → ~282 GB, the 1M KV + graphs fit with ~64 GB margin) is
+  UNAFFECTED — it is the capacity argument, and remains ECF8's binding value for the final
+  deployment. RA-017 Phase 0 (1 day, CPU-only, no HPU: the real compression ratio on our
+  checkpoint) stays a sensible cheap pre-4-HPU-freeze step, independent of the RA-038 program;
+  (6) **4-HPU t/s anchors + the partial-offload variant (owner question, 2026-11-14)**: the Q14v2
+  boot (2026-11-09, TP4+EP4) is the measured 4-HPU baseline — bs=1 41.7 t/s, @16 180.8 t/s, 100%
+  suite (production context). ECF8 (fused mode) on 4 HPU: the direct t/s delta is small (bs=1
+  ~0-2% → 42-42.5, host-bound so largely hidden; @16 +2.5-4% → ~185-188) plus the 1M-context term
+  (+0.7-1.4 ms/step); its 4-HPU value is the BG-7 1M-fit ENABLEMENT (without it or FP8-KV/window
+  reduction, 4-HPU 1M does not fit), not the t/s. The partial-offload variant (offload the coldest
+  ~15-22% of experts to sys RAM, Maya-style, to fit the 1M KV) is REJECTED on the measured PCIe
+  wall: ~12.4 GB/s/card (Gen4 x16, two cards sharing a switch; gaudi-benchmark corpus) = 1/197 of
+  HBM → @16 the touched union = 7.2-10.5 GB/step/rank = 580-850 ms of transfer time vs the 88.5 ms
+  step (7-10× oversubscribed; 180.8 → ~10-25 t/s); even bs=1 runs the link ≥100% (27-40 ms of PCIe
+  time vs the 24-26 ms step) and the feasible fraction is ~10-12% (7-8.4 GB freed → 1M KV margin
+  2-7 GB, zero slack). RJ-15's re-open condition updated in the master doc accordingly;
+  (7) **vllm-expert-cache (davetha, owner-supplied 2026-11-14) — the offload class now has a
+  working reference + a GLM-5.3-Flash OPT trace**: the MI210 implementation (device-side LRU/LFU
+  slot cache, graph-capturable, no custom GEMM, bit-exact) validates the design class, and its
+  POLICY_CEILING.md ran Belady-OPT on GLM-5.3-Flash itself: policy question CLOSED (LFU ≈ all
+  others within 1.5%; OPT gap 12-16 pp; end-to-end ceiling ~8% of the step on their machine; a
+  real predictor captures a fraction) and prefetch MEASURED DEAD on our model (5.6% of misses
+  prefetchable from the previous step; routing decided layer-by-layer mid-step → no lead time).
+  Their sizing rule (slots ≥ tokens×top_k or the step bypasses the cache) formally kills @16
+  (16×8=128 > 57-61 slots). Re-based with their hit rates: bs=1 −4 to −20% (41.7 → 33-40 t/s);
+  @16 infeasible (1.4-2.6× PCIe oversubscription). Two additional Gaudi walls found in the
+  corpus: (a) no zero-copy host reads from a device kernel (TPC hierarchy HBM→SRAM→local, no
+  host level; host↔device = static-size DMA ops) → port variants = eager MoE region (gives up
+  graph capture, ~4× per their measurement) or a vendor device-directed scatter-gather H2D in a
+  captured graph (no corpus evidence — the one open question); (b) sub-1 GB pinned allocations
+  cap at ~24-25 GB machine-wide (2 MB huge-page pool, probe-proven in gaudi-minimax-h3) vs the
+  44-60 GB our offload needs; probe-proven H2D on this node class: 24 GB/s from an allocation's
+  BASE pointer, 2-6 GB/s from an offset. **Cheap actions for the agent (all independent of the
+  RA-038 program):** (i) 1 day CPU — run their pure-Python cache_sim/test_policy numpy reference
+  over our 22M-route archive (EP4, 72 local, bs=1/@16, 15-22% offload) → measured LFU/OPT miss
+  rate at our exact operating point; (ii) 3 feasibility probes — vllm-gaudi `--cpu-offload-params
+  experts` presence (their Step 0; likely no), Synapse device-directed H2D gather in a captured
+  graph (vendor question), our node's huge-page pool size + ops willingness to grow
+  vm.nr_hugepages. If (ii) is all-negative, the offload fallback closes permanently and BG-7's
+  fit options reduce to ECF8 / FP8-KV / window. ECF8 (RA-017) remains the primary fit answer —
+  unchanged by this repo.
 
 **The re-ranked top priorities (rev 14 — under the settled physics, replacing the rev-5 table
 which is retained for history):**
