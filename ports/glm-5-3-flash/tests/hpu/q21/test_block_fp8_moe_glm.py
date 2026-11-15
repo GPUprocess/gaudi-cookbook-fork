@@ -174,6 +174,8 @@ def run_gate():
             xh = x.clone()
             xh[0] = 0
             xh[0, hs] = 1.0
+            if os.environ.get("GLM_GATE_ZERO_TOKENS", "0") == "1":
+                xh[1:] = 0  # the isolate the cross-token effect
             r = torch.ops.custom_op.block_fp8_moe_w13_glm(w13_q, s13, xh, ids)
             return r.cpu()
         if _stage(f"s14_hot{h_star}", _p, acc):
