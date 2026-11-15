@@ -188,6 +188,23 @@ def run_gate():
                 for k in range(K):
                     print(f"[Q21-GATE] hot0 k={k} id={int(ids0[k])} "
                           f"r={r[k, 0].item():.6f} exp={exp[k, 0].item():.6f}", flush=True)
+                # The displacement profile over k=0 (the 512 columns): which
+                # columns dropped their value, which gained a spurious one
+                r0, e0 = r[0], exp[0]
+                dropped = (r0.abs() < 1e-6) & (e0.abs() > 1e-4)
+                spurious = (r0.abs() > 1e-4) & (e0.abs() < 1e-6)
+                wrong = (r0.abs() > 1e-4) & (e0.abs() > 1e-4) & ((r0 - e0).abs() > 1e-3)
+                print(f"[Q21-GATE] hot0 profile: dropped={int(dropped.sum())} "
+                      f"spurious={int(spurious.sum())} wrong={int(wrong.sum())}", flush=True)
+                if dropped.any():
+                    print(f"[Q21-GATE] hot0 dropped cols: {torch.nonzero(dropped).flatten()[:16].tolist()}", flush=True)
+                if spurious.any():
+                    print(f"[Q21-GATE] hot0 spurious cols: {torch.nonzero(spurious).flatten()[:16].tolist()}", flush=True)
+                if wrong.any():
+                    idx = torch.nonzero(wrong).flatten()[:8].tolist()
+                    print(f"[Q21-GATE] hot0 wrong cols: {idx}", flush=True)
+                    for c in idx:
+                        print(f"[Q21-GATE] hot0 col{c}: r={r0[c].item():.6f} exp={e0[c].item():.6f}", flush=True)
         else:
             onehot[h_star] = None
     print(f"[Q21-GATE] one-hot errs: {onehot}", flush=True)
