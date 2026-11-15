@@ -66,16 +66,24 @@ void main(
     const int t = ip / NB;   // the token index
     const int nb = ip % NB;  // the n-block index (0..2I/128-1)
     if (t >= T) continue;
-    // DEBUG: the store the decode stamp: raw[t, k, nb*128] = the t*100 + the nb (as the bf16 via the int),
-    // and the raw[t, k, nb*128+1] = the ip
+    // DEBUG: the x dump with the THREE addressing variants side by side:
+    // the block A (the cols 0..127): the dim1 = 0 (the row 0 fixed)
+    // the block B (the 128..255): the dim1 = t (the runtime variable)
+    // the block C (the 256..383): the dim1 = 3 (the constant 3)
+    // the block D (the 384..511): the x dump via the dim0-only walk
+    int5 xa = {nb * 128, 0, 0, 0, 0};
+    const bfloat128 va = v_bf16_ld_tnsr_b(xa, x);
+    int5 xb = {nb * 128, t, 0, 0, 0};
+    const bfloat128 vb = v_bf16_ld_tnsr_b(xb, x);
+    int5 xc = {nb * 128, 3, 0, 0, 0};
+    const bfloat128 vc = v_bf16_ld_tnsr_b(xc, x);
     for (int k = 0; k < 8; ++k) {
-        int5 idc = {k, t, 0, 0, 0};
-        const int eid = s_i32_ld_g(gen_addr(idc, topk_ids));
-        const float tv = (float)(t * 100 + nb);
-        const float ev = (float)eid;
-        float128 stamp; stamp.v1 = tv; stamp.v2 = ev;
-        int5 yc = {nb * 128, k, t, 0, 0};
-        v_bf16_st_tnsr(yc, raw, v_convert_f32_to_bf16_all_b(stamp));
+        int5 ya = {nb * 128, k, t, 0, 0};
+        v_bf16_st_tnsr(ya, raw, va);
+        int5 yb = {128 + nb * 128, k, t, 0, 0};
+        v_bf16_st_tnsr(yb, raw, vb);
+        int5 yc = {256 + nb * 128, k, t, 0, 0};
+        v_bf16_st_tnsr(yc, raw, vc);
     }
-    }
+}
 }
