@@ -104,7 +104,7 @@ void main(
                 const minifloat256 pk_b = v_f8_ld_tnsr_b(coord_b, w13, SW_UNPACK | SW_UNPCK_8_TO_16);
                 const bfloat256 w_b = v_convert_f8_to_bf16_all_b(pk_b);
 
-                int5 xc1 = {p * 256, t, 0, 0, 0};
+                int5 xc1 = {p * 256, 0, 0, 0, 0};
                 int5 xc2 = {p * 256 + 128, t, 0, 0, 0};
                 const bfloat128 x1 = v_bf16_ld_tnsr_b(xc1, x);
                 const bfloat128 x2 = v_bf16_ld_tnsr_b(xc2, x);

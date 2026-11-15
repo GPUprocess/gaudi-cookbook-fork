@@ -69,9 +69,11 @@ void main(
     // DEBUG: the store the decode stamp: raw[t, k, nb*128] = the t*100 + the nb (as the bf16 via the int),
     // and the raw[t, k, nb*128+1] = the ip
     for (int k = 0; k < 8; ++k) {
+        int5 idc = {k, t, 0, 0, 0};
+        const int eid = s_i32_ld_g(gen_addr(idc, topk_ids));
         const float tv = (float)(t * 100 + nb);
-        const float iv = (float)ip;
-        float128 stamp; stamp.v1 = tv; stamp.v2 = iv;
+        const float ev = (float)eid;
+        float128 stamp; stamp.v1 = tv; stamp.v2 = ev;
         int5 yc = {nb * 128, k, t, 0, 0};
         v_bf16_st_tnsr(yc, raw, v_convert_f32_to_bf16_all_b(stamp));
     }
