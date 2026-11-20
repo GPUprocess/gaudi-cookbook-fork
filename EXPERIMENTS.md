@@ -1852,3 +1852,9 @@ The image + tool-definition prompt in one request: the model identified the
 colour (blue) AND emitted the correct tool call (get_weather city="blue",
 finish_reason=tool_calls). The two paths compose correctly — the multimodal
 understanding feeding the tool-calling decision. The serving: healthy.
+
+## EXP-Q21 step 6c — THE CONCURRENT IMAGE REQUESTS VERIFIED (2026-11-20 21:30)
+The 4 simultaneous multimodal prompts × 2 rounds: **8/8 correct colour
+identifications, zero errors** — the vision encoder handles the concurrent
+batching correctly. The multimodal serving: fully verified (the sequential,
+the concurrent, the multi-image to 3, the tools composition).
