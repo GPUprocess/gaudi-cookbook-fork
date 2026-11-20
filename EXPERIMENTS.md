@@ -1452,3 +1452,35 @@ The eliminated wiring sites (the dead code for this model, kept as records):
 HPUUnquantizedFusedMoEMethod.apply_monolithic (the BF16 method), vllm
 Fp8MoEMethod.apply_monolithic/apply (the oracle modular stack — the GLM runs the HPU
 override, not these).
+
+## EXP-Q21 step 3e — THE SERVING INTEGRATION STATE (2026-11-20 final)
+
+**ACHIEVED (boot24, the serving UP and healthy):**
+1. The correct site proven: HPUFp8MoEMethod.apply_monolithic — the ACTIVE log fires on the
+   live decode traffic (tokens=2, e_local=36, w13 float8_e4m3fn, s13/s2 f32, expert_map ✓).
+2. The per-row-scale contract: the kernels v13/v8 rewritten for the runtime format
+   (w13_weight_scale_inv [E, 2I] / w2 [E, H] — the HPU load requantizes the checkpoint's
+   blocks to the per-row scales). The full gate GREEN: p1 2.3e-4, p2 4.8e-8.
+3. The serving stable: the Q21 capture hits the lazy-input materialization
+   (ValidateSyncInputTensors/Empty tensor optional on the model's internal hidden-states —
+   the inputs the legacy custom-op cannot consume unmaterialized inside the graph capture),
+   the fail-closed fallback captures the STOCK graphs, and the steady state serves at full
+   parity (bs=1 ~41 tok/s, s16 clean) with ZERO per-call overhead (the graph replay
+   bypasses Python — the try/except ran only at the capture).
+
+**THE REMAINING BLOCKER (the precisely-scoped next task)**: the Habana custom-op-in-graph
+materialization semantics. The custom-op inputs produced by the eager op chains (the hidden
+states, the act) are lazy tensors; the legacy PT2 custom-op execute requires the
+materialized buffers (the e0f0279 H2D rule, now met for the locally-created tensors but NOT
+for the model-internal activations). The candidate fixes: (a) the Habana eager-custom-op
+registration path (the EagerOp marking), (b) the materialization via the documented Habana
+API at the capture, (c) the v0.30.0 stack where the custom-op-in-graph handling may differ.
+
+**The config**: GLM_Q21_MOE=1 on boot_q21.sh — the serving is CORRECT either way (the
+fallback = the stock); the capture adds no measurable boot time. For the pure-stock
+serving, GLM_Q21_MOE=0 (the wiring is fully inert).
+
+**The debugging ledger**: every serving defect was isolated and fixed sequentially within
+its own boot cycle: the missing os import → the expert_map quote mangling → the flat scales
+(the [E, 2I] per-row discovery) → the strided-view reshape → the mov_vb garbage lanes (the
+w13-store idiom) → the lazy-input materialization (the open item).
