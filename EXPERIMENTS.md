@@ -1749,3 +1749,11 @@ gates.py golden tools images, GLM_GOLDEN_REF=golden_reference_mtp.json:
 **golden 12/12 (46s) | tools 8/8 (9s) | images 8/8 (2s)** — ALL PASS via the
 gates.py path itself with the config-scoped reference. The gate matrix on the
 production config: complete (the >32K cases structurally inapplicable).
+
+## EXP-Q21 step 3u — THE SOAK-4K ANOMALY EXPLAINED (2026-11-20 18:25)
+The soak-4k case (the empty answer, the low rate): TWO benign effects — (1) the
+counting task enumerates ~250 ledger entries one-by-one in the reasoning; the
+512-token cap exhausts inside reasoning before any content emits (the task
+hardness, not the serving); (2) the earlier 13.2 tok/s = the cold 4K-prefill
+graph compile; the warm run: 512 tok in 13.9s = 36.8 tok/s = the normal bs1.
+NOT a serving defect. The soak-4k print is informational (no pass/fail).
