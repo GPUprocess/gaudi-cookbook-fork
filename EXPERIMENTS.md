@@ -1864,3 +1864,8 @@ The image in turn 1 (magenta), the reference in turn 2 ("Magenta") — the
 cross-turn multimodal state works. The multimodal serving: verified across
 EVERY usage pattern (the sequential, the concurrent 8/8, the multi-image 1-3,
 the tools composition, the multi-turn).
+
+## EXP-Q21 step 6e — THE 24K NEEDLE VERIFIED (2026-11-20 21:45)
+The needle at the 24K depth (the deepest fitting the 32K context): **3/3
+codes retrieved**. The retrieval verified at BOTH fitting depths (16K + 24K);
+the >32K depths structurally inapplicable.
