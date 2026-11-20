@@ -135,3 +135,16 @@ Production is down (devices free — required for the standalone iteration). Boo
 `/data/glm53/boot_f4ts.sh` restores the adopted config (MTP k=1, TP8+EP, ~42 t/s bs=1,
 ~250–258 t/s @16). Per the autonomy policy, restarts are autonomous; the engine will be
 restored when Layer A–C work pauses or completes.
+
+## 9. Outcome (same session)
+
+- Layer A: GREEN — the minimal repro is bit-exact; the "corruption" was the reference's own
+  bf16 quantization (Q21-E30).
+- Layers B–E: GREEN — the composed-kernel failure root-caused (the TPC-ordered get_dim_size
+  swap + the tpcPoints maxAvailableTpc cap; Q21-E31), fixed in w13 v12 / w2 v6 (+ the EP -1
+  sentinel), and the full 12-stage gate PASSES (pass_1 1.215e-4, pass_2 3.62e-8).
+- Layer F: the wiring applied (`patches/q21_moe_wiring.py`, GLM_Q21_MOE=1 fail-closed).
+- Layer G/H: the Q21 boot in flight; the in-serving verification + the benchmarks pending.
+- The structural comparison: `experiments/Q21-MXK8-COMPARISON.md` (the restructure design if
+  Layer H regresses).
+- The ECF8 workstream: `experiments/ECF8-001-composition.md`.
