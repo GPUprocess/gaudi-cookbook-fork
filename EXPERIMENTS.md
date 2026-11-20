@@ -1644,3 +1644,21 @@ the compounding requant noise + the roundtrip serialization. The fix path for a 
 attempt: (1) the per-group act quantization inside the w2 kernel (match the stock
 granularity), (2) the on-device act handoff (drop the CPU roundtrip), (3) the mxk8-style
 column-pair walk for pass-1. All three are kernel-level changes (the TPC C work).
+
+## EXP-Q21 step 3m — THE SAME-DAY CORRECTION: THE FAIR COMPARISON IS SAME-CONFIG
+## (2026-11-20 16:20)
+
+**The same-day stock re-run (the same serve_mtp.sh config as the Q21 bench):**
+decode bs1 33.4 tok/s, @8 90.2 agg, @16 130.1 agg; TTFT 4k 21.8s, 32k 48.5s,
+128k rejected (the max-model-len 32768). The Oct 31 numbers (30.1/125.1/213.2)
+ran a DIFFERENT serving config — the config drift between the boots is real.
+
+**The corrected deltas (same-day vs same-day):** bs1 −41%, @8 −72%, @16 +27%.
+The Q21 @16 WINS on today's config (the act roundtrip amortizes at the larger
+batch). The perf story is MIXED; the QUALITY verdict is unchanged and decisive:
+the 512-token generations collapse (the compounding requant noise). The
+decision stands: GLM_Q21_MOE=0.
+
+**The production verification (16:13):** HEALTH-UP, zero Q21 lines, the
+512-token count-to-60 sanity CORRECT ("1, 2, 3, ... 30" streaming clean).
+The fresh stock bench: stock_bench.out (the numbers above).
