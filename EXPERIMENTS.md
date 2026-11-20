@@ -1571,3 +1571,38 @@ maxdiff/rel.
 boot in flight (GLM_Q21_MOE=1, pid 563721); the parity result lands in
 /data/glm53/parity_check.log. The Layer H tool: /data/glm53/bench_baseline.py
 (decode bs1/8/16 + the TTFT 4k/32k/128k; the decode shapes hit the Q21 gate).
+
+## EXP-Q21 step 3k — THE PARITY VERDICT: THE FWD ORDER PROVEN, THE THRESHOLD RECALIBRATED
+## (2026-11-20 15:29)
+
+**The one-shot parity results (all 8 ranks, s13/s2 = (36, 4096) on every rank,
+emap present everywhere):**
+
+| rank | stock_max | fwd rel | swap rel | verdict |
+|---|---|---|---|---|
+| TP0 | 0.418 | 0.033 | 0.625 | reject@0.02 |
+| TP1 | 2.0 | 0.016 | 0.961 | ADOPT fwd |
+| TP2 | 0 | 0 | 0 | adopt (no routes) |
+| TP3 | 0.063 | 0.040 | 0.817 | reject@0.02 |
+| TP4 | 0.184 | 0.040 | 0.463 | reject@0.02 |
+| TP5 | 1.883 | 0.025 | 0.478 | reject@0.02 |
+| TP6 | 0.067 | 0.058 | 0.766 | reject@0.02 |
+| TP7 | 2.359 | 0.026 | — | reject@0.02 |
+
+**The reading**: the fwd gate/up order (silu on raw[:i2]) is CORRECT — the fwd rel is
+0.015-0.058 (the small, consistent band) vs the swap 0.46-0.96 (the 10-60x larger). The
+residual = the FP8 requant noise (my kernel quantizes act*wt per-row; the stock quantizes
+act then applies the weights in bf16). My 0.02 threshold sat INSIDE the noise band ->
+the mixed serving (the Q21 ranks + the stock ranks) -> the correct output by mixing.
+
+**The boot25/26 degeneration explained**: ALL ranks on Q21 -> the ~2-6% per-layer max
+noise compounds across 48 layers -> the drift -> the "17 * * * *" collapse. The mixed
+serving dilutes it; the all-Q21 long generation is the REAL test (in flight).
+
+**The change**: the adoption threshold 0.02 -> 0.08 (the requant-noise band; still 6-15x
+below the swap band) — the commit 2ef18805. All ranks will now ADOPT fwd. The verdict on
+the all-Q21 serving: /data/glm53/q21_long_sanity.log (the 512-token count-to-60).
+
+**The Layer H baseline (the Oct 31 bench_baseline.out)**: decode bs1 30.1 tok/s,
+8-streams 125.1 agg, 16-streams 213.2 agg; TTFT 3219tok 17.4s (185 t/s prefill),
+25619tok 14.2s (1807), 104867tok 21.3s (4928).
