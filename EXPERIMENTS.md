@@ -1333,3 +1333,69 @@ on v0.26.0/1.24.1 — not fixable in userspace.
 
 **All three paths require a build/deploy step outside this session's scope.**
 The kernel ELF, the gated library, and the op shim are staged and ready.
+
+## EXP-Q21 RECOVERY + ROOT CAUSE — the 3-session failure class resolved; the full gate
+## GREEN; the serving wiring applied (2026-11-19, Q21-RECOVERY-001)
+
+**The recovery report**: `experiments/Q21-RECOVERY-001.md`. **The anti-looping ledger**:
+`experiments/Q21-EXPERIMENT-LEDGER.md` (Q21-E01..E31 — the complete experiment history with
+the re-run rules).
+
+**Layer A (memory correctness) — GREEN (Q21-E30)**: the minimal bf16 load/store is BIT-EXACT
+(all 32 blocks of `store_test` vs the bf16-QUANTIZED reference, maxerr 0.0, fresh process,
+cache off). The historical "lanes 1-2 corruption" (5e82b83) and the "H2D behavior change"
+(e0f0279) were the TEST REFERENCEs own bf16 quantization:
+## EXP-Q21 RECOVERY + ROOT CAUSE — the 3-session failure class resolved; the full gate
+## GREEN; the serving wiring applied (2026-11-19, Q21-RECOVERY-001)
+
+**The recovery report**: `experiments/Q21-RECOVERY-001.md`. **The anti-looping ledger**:
+`experiments/Q21-EXPERIMENT-LEDGER.md` (Q21-E01..E31 — the complete experiment history with
+the re-run rules).
+
+**Layer A (memory correctness) — GREEN (Q21-E30)**: the minimal bf16 load/store is BIT-EXACT
+(all 32 blocks of `store_test` vs the bf16-QUANTIZED reference, maxerr 0.0, fresh process,
+cache off). The historical "lanes 1-2 corruption" (5e82b83) and the "H2D behavior change"
+(e0f0279) were the TEST REFERENCE's own bf16 quantization: the arange(1000,1256) input
+rounded to bf16 produces runs of 3-5 identical values spaced 4 (the 8-bit mantissa at
+magnitude 1024) — an exact mimic of a lane scramble against the unrounded arange. The
+probe@64/@96 mismatches = the overlapping-store race between the probe's own TPC instances.
+**Rule adopted: every probe/gate reference quantizes through the kernel's data path before
+comparing.**
+
+**The composed-kernel root cause (Q21-E31) — TWO bugs, both fixed, gate GREEN**:
+1. `get_dim_size(t, d)` is TPC-ORDERED (innermost-first, 0-based; the mxk8-verified). The
+   v11's `H = get_dim_size(x, 1)` read T=4 into H → HP=0 → the h-loop never ran → the
+   all-zero compute.
+2. `tpcPoints(in, units)` returns at most maxAvailableTpc (=24 measured) REGARDLESS of
+   units — the glue's big point formulas are inert caps. A kernel that treats the point id
+   as the work item covers 24 work items total (the "scattered ~5% correct" = the 24
+   processed points; everything else = stale memory-pool data). The fix: the mxk8
+   work-slice idiom — the kernel loops [ip*W/npts, (ip+1)*W/npts) with npts as the scalar
+   param.
+
+**The proof ladder (the CS probes, extra/cs1..cs3)**: CS1 = exactly 24 positions (the store
+works; npts=24 measured), CS2 = the reduce→convert→store chain exact, CS3 = the fixed
+compute: ones-x 1.8e-4, random-x 9.7e-5.
+
+**The fixed kernels (w13 v12 + w2 v6)**: the slice-loop coverage + H from TPC dim0 + the EP
+local-expert skip (the -1 sentinel → the 0 contribution; the CS8 contract proof). The **full
+12-stage HPU correctness gate PASSES**: pass_1 max_abs 1.215e-4 (rel 0.24% of the range),
+pass_2 max_abs 3.62e-8, random permuted ids, vs the PyTorch dequant reference.
+
+**The gate's s14/s15 probe stages are VOID as kernel evidence**: in the same passing run
+they still print the old "broken" pattern — they measure a poisoned late-process state (the
+s9 device-side .float() on a custom-op output = the documented bridge violation; the s12
+bridge failure compounds it). The authoritative verdict = the s11/s13 compare (PASS).
+
+**The serving wiring (step 3)**: ports/glm-5-3-flash/patches/q21_moe_wiring.py applied to
+the deployed vllm_gaudi (the fail-closed GLM_Q21_MOE gate + the decode-shape cap
+GLM_Q21_MOE_MAX_TOKENS=32 + the EP local-ids remap + the two-pass branch at the moe_op
+site). The boot: /data/glm53/boot_q21.sh (the adopted config + GLM_FP8_MXK=1 +
+GLM_FP8_MXK_LIB=/data/glm53/q21_dist + GLM_Q21_MOE=1). Layer G/H (the graph capture, the
+node count, the benchmarks vs the 41-43/246-258 baseline): in flight this session.
+
+**The ECF8 workstream opened separately**: experiments/ECF8-001-composition.md — the expert
+stack is e4m3 + f32 scales; the exponent entropy 2.58/4 bits, the mantissa incompressible;
+the lossless bound 1.44x, the practical fixed-Huffman about 1.35-1.40x; the TP8 saving
+~10 GiB/card, the TP4 ~21 GiB/card; the decode = the TPC LUT fused into the weight-load
+path.
