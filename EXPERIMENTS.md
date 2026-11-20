@@ -1879,3 +1879,9 @@ beyond a single instance at the deepest fitting depth.
 After the 24-request churn test: the images gate **8/8** and the golden gate
 **12/12 token-identical** re-run green — the correctness holds under the
 churn-and-recover state. The serving: fully stable.
+
+## EXP-Q21 step 7c — THE GOLDEN SELECTOR VERIFIED IN BOTH PATHS (2026-11-20 22:40)
+gates.py with GLM_GOLDEN_REF=the pre-MTP reference: 1/12 (the exact structural
+divergence matching the harness) — the selector mechanism works consistently
+in BOTH code paths (gates.py + mtp_validate.py). The config-scoped reference
+system: fully functional.
