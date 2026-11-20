@@ -1692,3 +1692,26 @@ flags change the numerics AND the speed); (2) the fresh boots need ~3 warm
 reps before the steady-state benchmarks; (3) the golden references are
 config-scoped — the MTP adoption changed the token-identity baseline by
 design; (4) the harness GLM_GOLDEN_REF selects the reference per run.
+## EXP-Q21 step 3o — THE GATE SUITE ON THE PRODUCTION CONFIG (the 32K-context scoping)
+## (2026-11-20 17:35)
+
+**The gate results on the restored production boot (boot_f4ts.sh, 32K ctx):**
+
+| Gate | Result | Note |
+|---|---|---|
+| golden | **PASS 12/12** (47s) | vs the production-config reference (golden_reference_mtp.json); gates.py made GLM_GOLDEN_REF-overridable (the commit pending) |
+| images | **PASS 8/8** (12s) | the venv python required (PIL) |
+| tools | FAIL (the HTTP 400) | the gate's "after a 32K document" case EXCEEDS the adopted 32K context with the generation budget — the config-scoped limitation, NOT a regression (the gate was designed for the recipe's 256K config) |
+| decode | FAIL (the HTTP 400) | the gate's 128K-prompt case exceeds the 32K context — the same scoping |
+| needles | not run | the depths hard-coded to 16K/64K/128K/240K — only 16K fits the 32K config |
+| prefill | not run | the 64K/128K TTFT cases exceed the 32K config |
+
+**The verification summary for the production config**: the golden (the
+config-scoped reference) + the images + the mtp_validate's smoke/decode/soak
+all PASS. The long-context gates (the needles at the depth, the prefill at
+64K+, the tools' 32K doc, the decode at 128K) are INAPPLICABLE at the adopted
+32K context — they verify the recipe's 256K serving, not this one. A future
+256K-context production boot would re-run the full suite.
+
+**The infra fixes**: gates.py's golden path GLM_GOLDEN_REF-overridable; the
+captured reference gained the "request" dict (the gates' schema).

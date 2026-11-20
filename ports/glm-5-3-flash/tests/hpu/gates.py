@@ -162,7 +162,9 @@ def sized_document(target_tokens: int, seed: int, inserts=(), question="") -> li
 
 # ---------------------------------------------------------------- gates
 def gate_golden():
-    ref = json.loads((HERE / "golden_reference.json").read_text())
+    import os as _os
+    _ref = _os.environ.get("GLM_GOLDEN_REF")
+    ref = json.loads(open(_ref).read() if _ref else (HERE / "golden_reference.json").read_text())
     same, notes = 0, []
     for i, case in enumerate(ref["cases"]):
         d = chat([{"role": "user", "content": case["prompt"]}], **ref["request"])
