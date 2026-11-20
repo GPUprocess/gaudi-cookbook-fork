@@ -1427,3 +1427,28 @@ visibility on the first MoE forward; the readout decides the final wiring (and w
 weights are FP8 or dequanted-to-BF16 at load — the `is_bf16` + `_cache_weight_lists`
 machinery in the unquantized method suggests the port may load BF16, in which case the
 FP8-retention loader change (the −50% weight HBM at TP4) becomes the prerequisite).
+
+## EXP-Q21 step 3c — THE ACTIVE-SITE PROOF + the first live Q21 decode (2026-11-20)
+
+1. **The layer-level DIAG (boot10)**: `RoutedExperts.forward_monolithic` runs with
+   `qmethod=HPUFp8MoEMethod`, `w13=[36, 4096, 4096] torch.float8_e4m3fn` — **the FP8
+   weights ARE retained** (the loaders copies the checkpoint bytes
+## EXP-Q21 step 3c — THE ACTIVE-SITE PROOF + the first live Q21 decode (2026-11-20)
+
+1. **The layer-level DIAG (boot10)**: RoutedExperts.forward_monolithic runs with
+   qmethod=HPUFp8MoEMethod, w13=[36, 4096, 4096] torch.float8_e4m3fn — **the FP8
+   weights ARE retained** (the loader load_fused copies the checkpoint bytes; no
+   dequant at load). 36 local experts of 288 (the EP group layout).
+2. **The correct site**: HPUFp8MoEMethod.apply_monolithic (vllm_gaudi/ops/hpu_fp8.py) —
+   the branch inserted after the routing computes topk_ids/topk_weights, before the
+   stock _gaudi_fix_moe_gather_apply. The patch file: patches/q21_hpu_fp8_wiring.py.
+3. **The first live Q21 decode attempt (boot11) CRASHED the worker with
+   NameError: name os is not defined INSIDE the Q21 gate** — positive proof the branch
+   executes on real decode traffic at the right site; the missing top-level import os
+   in hpu_fp8.py was the only defect. Fixed (the import added); the boot12
+   verification (the ACTIVE log + the sanity + the Layer G/H benchmarks) in flight.
+
+The eliminated wiring sites (the dead code for this model, kept as records):
+HPUUnquantizedFusedMoEMethod.apply_monolithic (the BF16 method), vllm
+Fp8MoEMethod.apply_monolithic/apply (the oracle modular stack — the GLM runs the HPU
+override, not these).
