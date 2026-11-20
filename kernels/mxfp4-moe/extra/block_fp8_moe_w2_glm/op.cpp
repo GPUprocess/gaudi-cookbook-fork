@@ -8,6 +8,8 @@
 #include <torch/library.h>
 #include "hpu_custom_op.h"
 
+namespace {
+
 using habana::custom_op::InputDesc;
 using habana::custom_op::input_type;
 using habana::custom_op::OutputDesc;
@@ -36,6 +38,8 @@ struct LazyReg {
     }
 };
 static LazyReg _lazy_reg;
+
+} // namespace anon_q21
 
 TORCH_LIBRARY_FRAGMENT(custom_op, m) {
     m.def("block_fp8_moe_w2_glm(Tensor w2, Tensor w2_scales, Tensor act, Tensor topk_ids) -> Tensor");
