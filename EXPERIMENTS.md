@@ -1869,3 +1869,8 @@ the tools composition, the multi-turn).
 The needle at the 24K depth (the deepest fitting the 32K context): **3/3
 codes retrieved**. The retrieval verified at BOTH fitting depths (16K + 24K);
 the >32K depths structurally inapplicable.
+
+## EXP-Q21 step 7a — THE 24K NEEDLE ROBUSTNESS (2026-11-20 21:58)
+The second 24K needle (the seed 987654, the placements 0.15/0.55/0.85 vs the
+first run 0.1/0.5/0.9): **3/3 again**. The retrieval robustness confirmed
+beyond a single instance at the deepest fitting depth.
