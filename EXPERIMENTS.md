@@ -1846,3 +1846,9 @@ The empirical: **the 2-image PASS** ("blue" correct), **the 3-image PASS**
 4-image prompt crashes (its image tokens alone = 8192 = the entire
 max-num-batched-tokens budget — structurally outside the capture range).
 The REPORT/REPLICATE warnings updated.
+
+## EXP-Q21 step 6b — THE MULTIMODAL + TOOLS COMPOSITION VERIFIED (2026-11-20 21:20)
+The image + tool-definition prompt in one request: the model identified the
+colour (blue) AND emitted the correct tool call (get_weather city="blue",
+finish_reason=tool_calls). The two paths compose correctly — the multimodal
+understanding feeding the tool-calling decision. The serving: healthy.
