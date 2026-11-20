@@ -1399,3 +1399,31 @@ stack is e4m3 + f32 scales; the exponent entropy 2.58/4 bits, the mantissa incom
 the lossless bound 1.44x, the practical fixed-Huffman about 1.35-1.40x; the TP8 saving
 ~10 GiB/card, the TP4 ~21 GiB/card; the decode = the TPC LUT fused into the weight-load
 path.
+
+## EXP-Q21 step 3b — the FP8 runtime-path discovery + the wiring retarget (2026-11-20)
+
+**Finding**: the earlier serving wiring (q21_moe_wiring.py) patched
+`HPUUnquantizedFusedMoEMethod.apply_monolithic` (vllm_gaudi) — the **unquantized BF16**
+method. The GLM-5.3-Flash checkpoint is block-FP8 → the runtime quant method is
+`Fp8MoEMethod` (vllm/quantization/fp8.py) → the oracle modular-kernel stack
+(`make_fp8_moe_kernel` → `FusedMoEKernel(prepare_finalize, experts)`). The patched branch
+never executes for this model (the boot + the decode verified: no activation line, the
+parity numbers = the stock path).
+
+**The retarget**: `q21_fp8_moe_wiring.py` patches `Fp8MoEMethod.apply_monolithic` — the
+correct site for the monolithic FP8 path. The routing: the port's own
+`select_experts_from_routed` (the laguna-fix helper reproducing the upstream select_experts
+with the layer's grouped-topk parameters). The EP mapping: `layer.expert_map[global_id] →
+the local id or -1` — EXACTLY the Q21 kernels' -1 sentinel contract. The scale attrs:
+`w13_weight_scale_inv`/`w2_weight_scale_inv` (the checkpoint's naming) with the f32 cast
+guard.
+
+**The open question (the dual-path DIAG boot in flight)**: whether the FP8 runtime takes
+`apply_monolithic` (the monolithic kernel: `is_monolithic=True`) or
+`forward_modular → apply()` (the modular path with the precomputed topk — the even cleaner
+swap site: the topk arrives precomputed). The one-shot diagnostics in BOTH paths print the
+layer's weight dtypes/shapes, the scale presence, the expert_map presence, and the op
+visibility on the first MoE forward; the readout decides the final wiring (and whether the
+weights are FP8 or dequanted-to-BF16 at load — the `is_bf16` + `_cache_weight_lists`
+machinery in the unquantized method suggests the port may load BF16, in which case the
+FP8-retention loader change (the −50% weight HBM at TP4) becomes the prerequisite).
