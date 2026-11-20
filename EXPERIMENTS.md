@@ -1789,3 +1789,21 @@ a top-2 gap 0.0 at a step — the EXACT tie: either token is equally likely;
 the batch-composition numerics pick between them (the same class as the
 golden pre-MTP divergence — by design, not a defect). The greedy determinism
 holds modulo the exact ties under the varying batch composition.
+
+## EXP-Q21 step 3z — THE MULTI-IMAGE CRASH FOUND AND THE SERVING RESTORED (2026-11-20 19:45)
+**The defect**: a 4-image prompt (the config limit) CRASHES the production
+serving — the worker FATAL (the PT_DEVMEM allocation 12582912 failed) → the
+engine dead. The mechanism: the 4-image prompt = ~8192 image tokens alone —
+a graph shape NOT captured at boot (the image gate runs 1-image prompts);
+the on-the-fly path fails the allocation mid-step. The recipe warned: each
+new image-prompt length adds graphs — this boot captured only the 1-image
+shapes. **The serving accepts requests it cannot serve: the crash instead of
+a clean rejection.**
+
+**The immediate**: the production serving RESTORED (boot_f4ts.sh, pid 721531,
+the health ~20:15); the restoration verification scheduled.
+
+**The mitigation (until the multi-image graphs are captured)**: do NOT send
+multi-image prompts to this serving — the 1-image path is fully verified (the
+image gate 8/8, the golden, the needles). The proper fix: a follow-up boot
+with the multi-image capture shapes (the recipe warning applies).
