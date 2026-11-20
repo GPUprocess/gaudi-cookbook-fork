@@ -44,7 +44,7 @@ def _dequant_bf16(w_rq, s_f32):
     """The block-FP8 dequant on the requantized f32 masters:
     f32(w8) * f32(bf16(s)) cast to bf16 (the kernel casts the scales to bf16)."""
     er, r, c = w_rq.shape
-    s_exp = s_f32.to(torch.bfloat16).float().repeat_interleave(128, dim=1).repeat_interleave(128, dim=2)[:, :r, :c]
+    s_exp = s_f32.to(torch.bfloat16).float()[:, :, None]
     return (w_rq * s_exp).to(torch.bfloat16)
 
 
@@ -60,9 +60,9 @@ def run_gate():
     if ok:
         ok = _stage("s2_w_fp8_cast", lambda: acc["s1_w_f32_dev"].to(torch.float8_e4m3fn), acc)
     ok = ok and _stage("s3_scales_f32_dev",
-                       lambda: (torch.rand(E, I2 // 128, H // 128) * 0.02 + 0.005).to(dev)
+                       lambda: (torch.rand(E, I2) * 0.02 + 0.005).to(dev)
                        if os.environ.get("GLM_GATE_SCALES_ONES", "0") != "1"
-                       else torch.ones(E, I2 // 128, H // 128).to(dev), acc)
+                       else torch.ones(E, I2).to(dev), acc)
     ok = ok and _stage("s4_x_bf16_dev",
                        lambda: (torch.randn(T, H) * 0.5).to(torch.bfloat16).to(dev), acc)
     ok = ok and _stage("s5_ids_i32_dev",
@@ -79,9 +79,9 @@ def run_gate():
     w13, s13, x, ids, wts = (acc["s2_w_fp8_cast"], acc["s3_scales_f32_dev"],
                              acc["s4_x_bf16_dev"], acc["s5b_ids_perm_dev"], acc["s6_wts_f32_dev"])
     ok = _stage("s6b_w2_cast", lambda: (torch.randn(E, H, I2 // 2) * 0.05).to(torch.float8_e4m3fn).to(dev), acc)
-    ok = ok and _stage("s6c_s2_rand", lambda: (torch.rand(E, H // 128, (I2 // 2) // 128) * 0.02 + 0.005).to(dev)
+    ok = ok and _stage("s6c_s2_rand", lambda: (torch.rand(E, H) * 0.02 + 0.005).to(dev)
                        if os.environ.get("GLM_GATE_SCALES_ONES", "0") != "1"
-                       else torch.ones(E, H // 128, (I2 // 2) // 128).to(dev), acc)
+                       else torch.ones(E, H).to(dev), acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "w2 staging failed", "stages": sorted(acc)}
@@ -96,7 +96,13 @@ def run_gate():
                 "error": "reference pulls failed", "stages": sorted(acc)}
     w13_rq, s13_c, w2_rq, s2_c, x_c, ids_c, wts_c = acc["s7_ref_pulls"]
 
-    ok = _stage("s8_pass1_op", lambda: torch.ops.custom_op.block_fp8_moe_w13_glm(w13_q, s13, x, ids), acc)
+    def _s8():
+        print(f"[Q21-GATE] s8 inputs: w13={tuple(w13_q.shape)},{w13_q.dtype},c={w13_q.is_contiguous()} "
+              f"s13={tuple(s13.shape)},{s13.dtype},c={s13.is_contiguous()} "
+              f"x={tuple(x.shape)},{x.dtype},c={x.is_contiguous()} "
+              f"ids={tuple(ids.shape)},{ids.dtype},c={ids.is_contiguous()}", flush=True)
+        return torch.ops.custom_op.block_fp8_moe_w13_glm(w13_q, s13, x, ids)
+    ok = _stage("s8_pass1_op", _s8, acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "pass-1 op failed", "stages": sorted(acc)}
@@ -195,7 +201,7 @@ def run_gate():
             r = acc[f"s14_hot{h_star}"].float()[0]
             ids0 = ids_c[0].long()
             colr = torch.arange(I2)
-            exp = w13_rq[ids0][:, colr, h_star] * s13_c[ids0][:, colr // 128, h_star // 128]
+            exp = w13_rq[ids0][:, colr, h_star] * s13_c[ids0][:, colr]
             onehot[h_star] = (r - exp).abs().max().item()
             if h_star == 0:
                 # The per-expert breakdown: the r[0,:,0] vs the exp[:,0] — the

@@ -9,19 +9,18 @@ static GlueCodeReturn inst_block_fp8_moe_w2_glm(HabanaKernelParams* in, HabanaKe
     const uint64_t* as = in->inputTensors[2].geometry.maxSizes;
     const uint64_t* ids = in->inputTensors[3].geometry.maxSizes;
     const uint64_t* os = in->outputTensors[0].geometry.maxSizes;
-    if (in->inputTensors[0].geometry.dims != 3 || in->inputTensors[1].geometry.dims != 3 ||
+    if (in->inputTensors[0].geometry.dims != 3 || in->inputTensors[1].geometry.dims != 2 ||
         in->inputTensors[2].geometry.dims != 3 || in->inputTensors[3].geometry.dims != 2)
         return GLUE_INCOMPATIBLE_INPUT_SIZE;
     const uint64_t I = ws[0], H = ws[1], E_LOCAL = ws[2];
     const uint64_t T = as[2];
     const uint64_t K = ids[0];
     if (!H || !I || !E_LOCAL || !T || !K) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    if (I % 256 || H % 128 || I > 4096) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    if (ss[0] != I / 128 || ss[1] != H / 128 || ss[2] != E_LOCAL) return GLUE_INCOMPATIBLE_INPUT_SIZE;
+    if (I % 256 || H % 128 || I > 8192) return GLUE_INCOMPATIBLE_INPUT_SIZE;
+    // THE PER-ROW SCALES: [E_LOCAL, H] -> the TPC dims {H, E}
+    if (ss[0] != H || ss[1] != E_LOCAL) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     if (as[0] != I || as[1] != K) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    if (K != 8) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     if (os[0] != H || os[1] != T) return GLUE_INCOMPATIBLE_INPUT_SIZE;
-    // THE COVERAGE FIX: maxAvailableTpc points; the kernel loops its slice with npts.
     const uint32_t npts = tpcPoints(in, T * (H / 128));
     setIndexSpace(in, out, npts);
     out->kernel.scalarParams[0] = npts;

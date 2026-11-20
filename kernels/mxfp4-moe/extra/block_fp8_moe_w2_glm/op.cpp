@@ -28,11 +28,10 @@ void validate(const at::Tensor& w2, const at::Tensor& w2_scales,
                 w2_scales.scalar_type() == at::kFloat &&
                 act.scalar_type() == at::kBFloat16 &&
                 topk_ids.scalar_type() == at::kInt &&
-                w2.dim() == 3 && w2_scales.dim() == 3 && act.dim() == 3 && topk_ids.dim() == 2 &&
+                w2.dim() == 3 && w2_scales.dim() == 2 && act.dim() == 3 && topk_ids.dim() == 2 &&
                 w2.size(1) % 128 == 0 && w2.size(2) % 256 == 0 &&
                 w2_scales.size(0) == w2.size(0) &&
-                w2_scales.size(1) == w2.size(1) / 128 &&
-                w2_scales.size(2) == w2.size(2) / 128 &&
+                w2_scales.size(1) == w2.size(1) &&
                 act.size(2) == w2.size(2) &&
                 act.size(1) == topk_ids.size(1) &&
                 topk_ids.size(0) == act.size(0) &&

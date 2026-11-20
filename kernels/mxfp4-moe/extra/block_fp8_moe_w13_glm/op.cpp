@@ -30,17 +30,16 @@ void validate(const at::Tensor& w13, const at::Tensor& w13_scales,
                 w13_scales.scalar_type() == at::kFloat &&
                 x.scalar_type() == at::kBFloat16 &&
                 topk_ids.scalar_type() == at::kInt &&
-                w13.dim() == 3 && w13_scales.dim() == 3 && x.dim() == 2 && topk_ids.dim() == 2 &&
+                w13.dim() == 3 && w13_scales.dim() == 2 && x.dim() == 2 && topk_ids.dim() == 2 &&
                 w13.size(1) % 128 == 0 && w13.size(2) % 256 == 0 &&
                 w13_scales.size(0) == w13.size(0) &&
-                w13_scales.size(1) == w13.size(1) / 128 &&
-                w13_scales.size(2) == w13.size(2) / 128 &&
+                w13_scales.size(1) == w13.size(1) &&
                 x.size(1) == w13.size(2) &&
                 topk_ids.size(0) == x.size(0) &&
                 w13.is_contiguous() && w13_scales.is_contiguous() &&
                 x.is_contiguous() && topk_ids.is_contiguous() &&
                 w13.device() == w13_scales.device() && w13.device() == x.device(),
-                "block_fp8_moe_w13_glm requires contiguous E4M3 [E,2I,H], F32 [E,2I/128,H/128] scales, BF16 [T,H] x, int32 [T,K] topk_ids");
+                "block_fp8_moe_w13_glm requires contiguous E4M3 [E,2I,H], F32 [E,2I] per-row scales, BF16 [T,H] x, int32 [T,K] topk_ids");
 }
 
 std::once_flag reg_flag;
