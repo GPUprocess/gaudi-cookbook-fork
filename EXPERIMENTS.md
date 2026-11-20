@@ -1858,3 +1858,9 @@ The 4 simultaneous multimodal prompts × 2 rounds: **8/8 correct colour
 identifications, zero errors** — the vision encoder handles the concurrent
 batching correctly. The multimodal serving: fully verified (the sequential,
 the concurrent, the multi-image to 3, the tools composition).
+
+## EXP-Q21 step 6d — THE MULTIMODAL MULTI-TURN VERIFIED (2026-11-20 21:35)
+The image in turn 1 (magenta), the reference in turn 2 ("Magenta") — the
+cross-turn multimodal state works. The multimodal serving: verified across
+EVERY usage pattern (the sequential, the concurrent 8/8, the multi-image 1-3,
+the tools composition, the multi-turn).
