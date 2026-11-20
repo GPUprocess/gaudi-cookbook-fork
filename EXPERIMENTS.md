@@ -1816,3 +1816,9 @@ leaked holders (the fuser-detected pids) cleared the cards (768MiB idle) and
 the second boot came up clean. **The recovery playbook for the fatal crash**:
 kill the leaked holders via fuser, VERIFY the cards idle via sudo hl-smi,
 then boot. The host reboot is NOT required (the earlier docs suggested it).
+
+## EXP-Q21 step 4b — THE PRODUCTION RESTORATION VERIFIED (2026-11-20 20:15)
+The second boot came up clean (the health 20:15) and the smoke verified:
+"RESTORED OK" token-exact. The serving state: the adopted config, all cards
+healthy, the zero acquire failures. The session: CLOSED — the production
+restored and verified after the multi-image crash + the device-leak recovery.
