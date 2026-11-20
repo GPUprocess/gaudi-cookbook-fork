@@ -1662,3 +1662,33 @@ decision stands: GLM_Q21_MOE=0.
 **The production verification (16:13):** HEALTH-UP, zero Q21 lines, the
 512-token count-to-60 sanity CORRECT ("1, 2, 3, ... 30" streaming clean).
 The fresh stock bench: stock_bench.out (the numbers above).
+
+## EXP-Q21 step 3n — THE GOLDEN MYSTERY RESOLVED + THE PRODUCTION FULLY RESTORED AND RE-VERIFIED
+## (2026-11-20 17:22)
+
+**The golden divergence was NOT the mxk**: the restored boot (GLM_FP8_MXK=0)
+failed the 10-31 pre-MTP reference IDENTICALLY (11/12, the same divergence
+tokens). The cause: STRUCTURAL — the MTP k=1 verify runs the 2-row batched
+forward (the numerics differ from the plain 1-row); every divergence sits at
+a near-tie (the reference top-2 gap 0.125-0.375). The 11-01 "bit-identical
+(A001)" = the one case with no near-tie hit.
+
+**The resolution**: the golden reference RE-CAPTURED on the production config
+(/data/glm53/golden_reference_mtp.json: 12 cases, the token_ids + the per-token
+top-2 gaps, 17:10); mtp_validate.py defaults to it (GLM_GOLDEN_REF overrides);
+the re-validation 12/12 token-identical in 45s.
+
+**The production re-verified** (boot_f4ts.sh, the health 17:00):
+- decode bs1 39.2-39.8 tok/s (the verified 40-43 band)
+- the concurrent @16 (bench_concurrent.py, the 11-13 methodology): the cold
+  reps 77 → 159 → 191 (the warm-up ramp), the warm reps 255.0 / 258.4 —
+  the verified 250-258 record reproduced EXACTLY
+- the smoke / the soak-repeat / the soak-multiturn PASS
+- the earlier same-day shortfalls (the golden + the @16) = the research-boot
+  flags (the mxk) + the cold-serving warm-up, both now understood
+
+**The lesson stack**: (1) the research boots never serve users (the experiment
+flags change the numerics AND the speed); (2) the fresh boots need ~3 warm
+reps before the steady-state benchmarks; (3) the golden references are
+config-scoped — the MTP adoption changed the token-identity baseline by
+design; (4) the harness GLM_GOLDEN_REF selects the reference per run.
