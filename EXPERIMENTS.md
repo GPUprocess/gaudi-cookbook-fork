@@ -1913,3 +1913,14 @@ yellow ✓, the THIRD misidentified once (said green = the second). The order
 preserved (the 1/2/4 correct); the position-3 indexing quirk at the low
 effort — the model accuracy, NOT the serving. The 4-small-image execution:
 no crash, the correct multi-image handling with the one-off indexing error.
+
+## EXP-Q21 step 9a — THE SECOND CRASH: THE WRONG KWARG NAME (2026-11-20 23:20)
+The 4-full-res test used `images_kwargs` at the request top level — the WRONG
+field (the vLLM chat API: `mm_processor_kwargs`). The kwarg didnt apply →
+## EXP-Q21 step 9a — THE SECOND CRASH: THE WRONG KWARG NAME (2026-11-20 23:20)
+The 4-full-res test used images_kwargs at the request top level — the WRONG
+field (the vLLM chat API: mm_processor_kwargs). The kwarg didn't apply, the
+full 2048 per image ran, the 8300-token prompt crashed again (the PT_DEVMEM
+fatal). The recovery playbook executed: the fuser kill cleared the leak, the
+second boot clean (the zero acquire failures, the load underway). The
+corrected test (mm_processor_kwargs: max_image_tokens 512) after the health.
