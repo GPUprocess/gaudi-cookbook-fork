@@ -1822,3 +1822,9 @@ The second boot came up clean (the health 20:15) and the smoke verified:
 "RESTORED OK" token-exact. The serving state: the adopted config, all cards
 healthy, the zero acquire failures. The session: CLOSED — the production
 restored and verified after the multi-image crash + the device-leak recovery.
+
+## EXP-Q21 step 5a — THE HBM UNDER LOAD MEASURED (2026-11-20 20:20)
+The hl-smi sampling during the 16-stream bench (the throughput 256.4-257.2 —
+the record band): **69.0-69.2 GiB / 96 GiB per card**, 34-40C, 64-180W/card.
+The 11-01 window: 64.1 GiB — the +5 GiB = the additions since. ~28 GiB
+headroom. The MTP_BENCHMARK.md updated.
