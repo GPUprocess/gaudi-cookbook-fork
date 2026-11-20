@@ -265,7 +265,9 @@ def gate_tools():
         results["multi-turn"] = False
     # a tool call after a long document
     long_msgs = sized_document(32_000, 7, (), "After reading the log above: what's the weather in Phoenix right now?")
-    calls = _calls(chat(long_msgs, **kw)["choices"][0]["message"])
+    # the 32K context leaves ~2K of budget: the tool call fires early, so cap the
+    # generation to fit (the default 2048 overflows the window by one token)
+    calls = _calls(chat(long_msgs, max_tokens=512, **{k: v for k, v in kw.items()})["choices"][0]["message"])
     results["after-32K"] = len(calls) == 1 and "phoenix" in _cities(calls)[0]
     passed = sum(results.values())
     bad = [k for k, v in results.items() if not v]

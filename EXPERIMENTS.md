@@ -1730,3 +1730,11 @@ The production config is now verified across EVERY runnable dimension: the
 golden 12/12, the images 8/8, the needle@16K 3/3, the decode@2K, the
 prefill@16K, the concurrent @16 (the warm 255/258 = the record). The only
 unrunnable checks: the >32K-context cases (the structural ceiling).
+
+## EXP-Q21 step 3r — THE TOOLS GATE FIXED FOR THE 32K CONFIG: 8/8 (2026-11-20 18:05)
+The after-32K case failed by ONE token (30721 input + 2048 requested = 32769
+vs the 32768 limit). The fix: cap that case generation at 512 (the test intent
+= the tool call after a long doc; the budget was incidental). The full tools
+gate: **8/8 PASS in 10s** on the production config. The remaining inapplicable
+gates: the decode/prefill >32K cases and the needles >32K depths (the prompts
+themselves exceed — structural).
