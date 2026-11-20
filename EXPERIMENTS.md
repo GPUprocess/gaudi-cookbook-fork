@@ -1924,3 +1924,14 @@ full 2048 per image ran, the 8300-token prompt crashed again (the PT_DEVMEM
 fatal). The recovery playbook executed: the fuser kill cleared the leak, the
 second boot clean (the zero acquire failures, the load underway). The
 corrected test (mm_processor_kwargs: max_image_tokens 512) after the health.
+
+## EXP-Q21 step 9b — THE 4-IMAGE CRASH SOLVED VIA THE REQUEST-LEVEL BUDGET (2026-11-20 23:45)
+The corrected field: mm_processor_kwargs: {max_image_tokens: 512} — the
+4-full-resolution (448x448) images with the per-image 512-token budget:
+**PASS (blue) TWICE** (the watcher + the direct run). The smart_resize
+downscales the canvas to the budget — the total ~2100 tokens hits the
+captured buckets, no crash. **The 4-image capability: FULLY RESTORED via
+the caller-side kwarg** — the callers needing 4 images pass
+mm_processor_kwargs: {max_image_tokens: 512}; the callers wanting the full
+2048/image resolution stay at 3 images max. The REPORT + the REPLICATE
+updated.
