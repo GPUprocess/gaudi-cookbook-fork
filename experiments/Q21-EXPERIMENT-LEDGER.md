@@ -1,0 +1,47 @@
+# Q21 Experiment Ledger
+
+Purpose: make it impossible for any session to unknowingly repeat a prior experiment.
+Rule: an experiment may be re-run only with a new variable or a new hypothesis, justified in a
+new entry that cites the prior entries. Back-filled from `OPTIMIZATION_STATUS.md`, `EXPERIMENTS.md`,
+and the Q21 commit chain (`8a54682`..`33c2002`).
+
+| ID | Hypothesis | Variable isolated | Result | Interpretation / next action | Commit |
+|---|---|---|---|---|---|
+| Q21-E01 | The stock op path can be replaced by a fused routed-expert kernel | — (design) | Design accepted after the dequant-ts re-measurement: the GLM MoE weights are cached as BF16 views at init; the fused kernel reads FP8 once = −50% MoE read; the node-count collapse ~18,200→~500 is the master lever | Proceed to kernel build | (RA-002 revival) |
+| Q21-E02 | The block-FP8 dequant TPC kernel qualifies on-device | kernel build | Kernel compiled, gated into `libmxk_tpc.so` (3252–3254 GUIDs), op+library gates PASS | Infrastructure proven | 8a54682 |
+| Q21-E03 | The custom op can be loaded at runtime | PT2 op shim | The DSV41-bridge include chain re-registers built-in kernels → collision. A trivial HPU-dispatch .so (no habana headers) loads clean and the op is visible | Compile ops with the venv includes, legacy `hpu_custom_op.h` API | EXPERIMENTS 2026-11-08 |
+| Q21-E04 | `float8_e4m3fnuz` works as the device tensor dtype | bridge dtype | Device cast REJECTED (`is_supported_type=false`); `float8_e4m3fn` ACCEPTED | Use fn fp8 tensors only | 8a54682 |
+| Q21-E05 | v2 kernel (packed-pair convert) computes the raw GEMV | convert form | FAIL: max_abs 0.18 ≈ 4× ref max — the packed-pair mechanism (fp8 unpack yields 256 packed f8; only the low bf16 per lane consumed) | The ALL_LANES convert needed | 8a54682 |
+| Q21-E06 | v3: interleaved-chunk-pair weight layout + UNPACK_EVEN/ODD split fixes E05 | weight layout | FAIL: max_abs 1.96 ≈ 40× ref max — worse; the unpack intrinsics do not behave as the header doc implies on this stack | Do not rely on the doc semantics; probe on-device | 0cc582d |
+| Q21-E07 | v5: `v_convert_f8_to_bf16_all_b` (bfloat256 pair) keeps all 256 values | convert width | Kernel correct at the convert level, but the gate error is BIT-IDENTICAL to v3's | The split logic is not the failing component; the failure is in the shared path | 92ad318 |
+| Q21-E08 | v6: removing the VLM staging (stateless direct x loads) fixes it | staging | Bit-identical error again | Staging is not the defect | d81ffed |
+| Q21-E09 | One-hot x probes localize the convert/scale/MAC per position | per-position math | errs 0.00441–0.00464, CONSTANT across h* ∈ {0,1,127,128,255} | Every sampled position decodes correctly; the error is not a mapping bug | d81ffed |
+| Q21-E10 | The scales-1.0 variant splits scale-path vs MAC-path errors | scales | With ones scales the error collapses to the O(1)/~2×-value class (1 ULP of the value at magnitude 24) | The residual distortion is multiplicative → suspected (later REFUTED) decode convention | (status: scales-ones verdict) |
+| Q21-E11 | The fp8 decode uses the fnuz exponent bias (bias 8) | decode convention | REFUTED by the corpus sweep (g2-opt-manual, measured on device): HPU fp8 = e4m3fn, bias 7, ceiling 240; runtime-selectable bias {3,7,11,15}, default 7 = the reference | Decode convention is NOT the defect. Do not re-test without new evidence | (corpus) |
+| Q21-E12 | The per-expert one-hot breakdown shows cross-expert contamination | expert indexing | raw[0,k,0] = 0.000000 EXACTLY for all 8 experts where the expected is −0.000546..0.001158 | Structured early-column defect: the col-0 output carries nothing | (per-expert probe) |
+| Q21-E13 | The displacement profile: which columns are wrong | write coverage | dropped=454 (88.7%), spurious=0, wrong=0; the ~58 non-dropped cols are CORRECT; the dropped pattern is scattered, non-modular (first 16: 0..8,10,11,12,14..17) | The kernel never writes wrong values — it mostly does not write | (displacement profile) |
+| Q21-E14 | Zeroing tokens 1–3 changes the one-hot result | cross-token state | BIT-IDENTICAL (dropped=454, same pattern) | The defect is entirely within-token; cross-token state eliminated | (zeroed-token verdict) |
+| Q21-E15 | The all-ones-x probe: drops vanish if zero products cause them | value-dependence | Token 0: the whole output block unwritten (mag 0.0); tokens 1–3: EVERY column = the constant 0.1875 | The store chain emitted a constant/stale value — the yv insert chain, not the compute | (ones-x verdict) |
+| Q21-E16 | The mxk8 store idiom (lane-packed + partial stores) fixes the write path | store idiom | v7 (pair-packing + partial stores) tested with the cache OFF: drops persist (454) | The store idiom is NOT the (sole) cause | (v7) |
+| Q21-E17 | Lane-id semantics differ (0..63 vs 0..127) | lane id | `read_lane_id_2b_b()` = identity 0..127 (clean); `read_lane_id_4b_b()` exists (mxk8 uses it) | Lane-id hypothesis eliminated | 4197db9 |
+| Q21-E18 | The MAC acc layout: the float128 lane mapping | MAC layout | First probe: acc ≠ a*b (101/128 lanes). Re-run with per-lane distinct inputs + a FIXED probe reference: acc == a*b exact, reduce == sum | The MAC and reduce are EXACT; the earlier mismatch was the probe's own wrong reference | 88227d7, (session-final) |
+| Q21-E19 | The v5/v6/v7 bit-identical errors are real | recipe cache | `PT_HPU_RECIPE_CACHE_CONFIG=0,false` reveals the Synapse cache served STALE graphs for identical shapes | The cache poisoned the v3–v7 comparisons; ALL runs must set it. Do not re-run any pre-E19 comparison without it | (session-final) |
+| Q21-E20 | The scalar partial store (mhc pattern) fixes the write path | store form | Also zeros — the defect is the in-context load/compute interaction, not the store form | Stop patching the store; isolate the loads | 3190efc, b3547e6 |
+| Q21-E21 | Minimal 20-line bf16 load/store roundtrip is exact | memory layer | CORRUPTED lanes 1–2 (vendor-stack-level, context-dependent) | Memory-layer investigation opened | 5e82b83 |
+| Q21-E22 | Device-created inputs cause the corruption | input materialization | CPU-create + H2D changed the behavior; remaining: col-0 zero + scattered mask | **H2D rule established: always CPU-create then transfer.** The minimal repro was never re-run clean after this | e0f0279 |
+| Q21-E23 | The partial-store count semantics differ | count arg | The count-3 test eliminates the count variable | Count = last index (stores n+1 values); mxk8 uses 1 for a pair | 0212612 |
+| Q21-E24 | The data-origin map inside the composed kernel | load addressing | In-context loads resolve to SCRAMBLED addresses (the map captured) | The composed kernel's loads misaddress — the sharpest live clue | e00de44 |
+| Q21-E25 | The variable dim1 loads (runtime t) are the defect | load indexing | Narrowed; but the x-dump micro-probe with a runtime-t load is EXACT | Contradiction unresolved: single variable-t load exact, composed multi-load kernel scrambled | eafda64 |
+| Q21-E26 | The dbg9 structure (one (t,col,k) per point) fixes it | point granularity | dbg9 probe kernel: EXACT (max err 0.0) as a pure load/store dump; the v11 full kernel: FAIL (dropped=446) | The probe validates; the composed v11 does not — but see Q21-E27/E28: the v11 result is confounded | 33c2002 |
+| Q21-E27 | (NEW) The committed v11 covers the full index space | glue/kernel consistency | MISMATCH: the kernel decodes `t = ip/(I2*8)`, `k = (ip/I2)%8` (needs 16384 pts) but the glue declares npts=1024 → only t=0, k∈{0,1} processed | The v11 gate numbers are a ~25%-coverage measurement, NOT a dbg9-structure verdict. Fix the glue or the decode before any v11 conclusions | this session |
+| Q21-E28 | (NEW) The dbgF 3-block diagnostic is valid evidence | diagnostic design | VOID: blocks A/B/C write overlapping output regions (A's p=0 spans B/C's columns); the store race decides what is read back | The "block B shows x values" finding was A's data. All dbgF conclusions void | this session |
+| Q21-E29 | (NEW) The late-session standalone results are valid | environment | VOID for the degraded window: after ~20 cycles the acc became deterministic-but-uncorrelated ("deterministic garbage"); pre-degradation results reproduced identically | Re-derive Layer A in fresh processes; treat degraded-window outputs as void | 33c2002 |
+
+## Open questions ranked (the live frontier)
+
+1. **Q21-E22/E29**: does the minimal `store_test` pass in a fresh process TODAY? (The gate for
+   every layer above; never verified clean after the H2D fix.)
+2. **Q21-E24/E25**: why do composed multi-load kernels misaddress while every single-load probe
+   is exact? Test via the load-progression ladder (one new load class per rung, disjoint stores).
+3. **Q21-E27**: fix the v11 glue/kernel index-space mismatch, then re-gate the dbg9 structure.
+4. The mxk8-exact structural port (agreed direction) once Layer A is green.
