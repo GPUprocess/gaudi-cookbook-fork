@@ -1757,3 +1757,10 @@ counting task enumerates ~250 ledger entries one-by-one in the reasoning; the
 hardness, not the serving); (2) the earlier 13.2 tok/s = the cold 4K-prefill
 graph compile; the warm run: 512 tok in 13.9s = 36.8 tok/s = the normal bs1.
 NOT a serving defect. The soak-4k print is informational (no pass/fail).
+
+## EXP-Q21 step 3v — THE FULL VALIDATION SUITE: TOTAL FAILURES 0 (2026-11-20 18:30)
+mtp_validate.py (all stages, the config-scoped reference): the smoke 2/2,
+the golden **12/12 token-identical**, the decode bs1 36.7 / bs8 37.7 tok/s,
+the soak-repeat/multiturn PASS, the soak-4k 37.2 tok/s (the warm; the empty
+content = the explained reasoning-budget case). **TOTAL FAILURES: 0** — the
+production serving verified end-to-end on every harness dimension.
