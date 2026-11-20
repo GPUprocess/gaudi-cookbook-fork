@@ -1743,3 +1743,9 @@ themselves exceed — structural).
 The smoke ("SMOKE OK") + the 16-stream bench re-run: 249.1 / 256.9 / 251.7
 tok/s across three reps — the record band holds, zero errors. The serving
 state is stable at the verified performance. The session: CLOSED.
+
+## EXP-Q21 step 3t — THE FULL GATE SUITE GREEN ON THE PRODUCTION BOOT (2026-11-20 18:18)
+gates.py golden tools images, GLM_GOLDEN_REF=golden_reference_mtp.json:
+**golden 12/12 (46s) | tools 8/8 (9s) | images 8/8 (2s)** — ALL PASS via the
+gates.py path itself with the config-scoped reference. The gate matrix on the
+production config: complete (the >32K cases structurally inapplicable).
