@@ -52,6 +52,7 @@ void main(
                 acc.v1 = 0; acc.v2 = 0;
                 for (int k = 0; k < MOE_W2_V5_TOPK; ++k) {
                     const int e = expert_ids[k];
+                    if (e < 0 || e >= get_dim_size(w2, 2)) continue;  // the non-local pair: no contribution
                     for (int p = 0; p < IP; ++p) {
                         int5 sc = {p * 2, row_global / 128, e, 0, 0};
                         const bfloat128 mult = (bfloat128)s_f32_ld_g(gen_addr(sc, w2_scales));

@@ -32,6 +32,17 @@ void main(tensor w13, tensor w13_scales, tensor x, tensor topk_ids, tensor raw, 
             const int k = (w / I2) % K;
             const int t = w / (I2 * K);
             const int e = s_i32_ld_g(gen_addr((int5){k, t, 0, 0, 0}, topk_ids));
+            // THE EP RULE: the ids arrive GLOBAL; the host pre-maps them to the LOCAL
+            // ids with -1 for the non-local pairs. A -1 pair stores 0 (no loads) —
+            // the between-math and the pass-2 accumulate then contribute 0, and the
+            // per-rank partial y sums to the full y through the existing TP all-reduce.
+            if (e < 0 || e >= get_dim_size(w13, 2)) {
+                float128 z; z.v1 = 0; z.v2 = 0;
+                const bfloat128 zb = v_convert_f32_to_bf16_all_b(z, SW_LINEAR);
+                int5 oc0 = {col, k, t, 0, 0};
+                v_bf16_st_tnsr_partial(oc0, raw, zb, 0, 0);
+                continue;
+            }
             float128 acc; acc.v1 = 0; acc.v2 = 0;
             for (int p = 0; p < HP; ++p) {
                 int5 sc = {p * 2, col / 128, e, 0, 0};
