@@ -1715,3 +1715,10 @@ all PASS. The long-context gates (the needles at the depth, the prefill at
 
 **The infra fixes**: gates.py's golden path GLM_GOLDEN_REF-overridable; the
 captured reference gained the "request" dict (the gates' schema).
+
+## EXP-Q21 step 3p — THE 16K NEEDLE VERIFIED ON THE PRODUCTION CONFIG (2026-11-20 17:45)
+The single-depth needle (16K, the only fitting depth): **3/3 codes retrieved**
+(Amber/Birch/Cobalt, 7s). The retrieval works at the adopted 32K config.
+REPLICATE.md §7 corrected: the config-scoped gate table + the GLM_GOLDEN_REF
+mechanism + the warm-rep rule (the fresh boots ramp 77→159→191→255 over ~4
+reps before the steady-state numbers).
