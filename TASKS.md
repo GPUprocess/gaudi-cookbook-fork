@@ -760,6 +760,21 @@ effort, risk, independence. Re-scan after EVERY experiment: did the bottleneck m
   The track needs a stack-level change: v0.30.0 upgrade, a plugin-rebuild, or
   an isolated image. The kernel + installer + runtime remain in the repo, inert
   without GLM_FP8_MXK=1.
+  Q21 STATUS UPDATE (2026-11-19, the recovery session — supersedes the collision
+  conclusion above): the op-loading blocker was already solved by the lazy-registration
+  pattern (the PT2 shim; AB-DEQ runs the dequant op in production). The 3-session
+  composed-kernel failure class is ROOT-CAUSED AND FIXED (Q21-E31, the CS1/CS2/CS3
+  proof ladder): (1) get_dim_size is TPC-ordered innermost-first — the v11 H/T swap
+  zeroed the compute; (2) tpcPoints caps the index space at maxAvailableTpc=24 — the
+  point-id-as-work-item kernels covered 24 of 16,384 items; the fix = the mxk8
+  work-slice loop + the npts scalar param. The Layer-A "load/store corruption" was the
+  TEST REFERENCES' own bf16 quantization (Q21-E30). The fixed w13 v12 + w2 v6 (+ the
+  EP -1-sentinel local-expert skip) PASS the full 12-stage HPU gate (pass_1 1.215e-4,
+  pass_2 3.62e-8). The serving wiring is applied (patches/q21_moe_wiring.py,
+  GLM_Q21_MOE=1 fail-closed decode-gated); the boot_q21.sh Layer-G/H measurement in
+  flight. Evidence: experiments/Q21-RECOVERY-001.md, experiments/Q21-EXPERIMENT-LEDGER.md
+  (E01..E31), EXPERIMENTS.md (the recovery entry). The gate's s14/s15 one-hot/ones-x
+  probe stages are VOID (the poisoned late-process state), the s11/s13 compare governs.
 
 ### EXTERNAL_RESEARCH_PROPOSALS (the research architect's handoff, 2026-11-07 rev 1)
 
