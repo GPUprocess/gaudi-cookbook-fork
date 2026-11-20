@@ -1890,3 +1890,8 @@ system: fully functional.
 The 8 simultaneous multimodal prompts (the doubled concurrency vs the earlier
 4-way test): **8/8 correct, zero errors** — the vision encoder scales to the
 heavier batching. The multimodal serving: verified at every concurrency.
+
+## EXP-Q21 step 8b — THE RESOLUTION INDEPENDENCE VERIFIED (2026-11-20 23:10)
+The half-resolution image (224x224 vs the 448x448 tested): **correct
+("orange")** — the vision path handles the varied input sizes (the fixed
+2048-token budget per image after the vision encoder).
