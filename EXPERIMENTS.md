@@ -1778,3 +1778,14 @@ REPLICATE.md §0-5 claims checked systematically: the venv torch 2.11.0a0+git009
 top-level files (the doc said 74 — CORRECTED to the actual count) ✓, the port
 install present ✓, the dsv41 disabled+inactive ✓. The replication doc is now
 verified accurate against the live server.
+
+## EXP-Q21 step 3y — THE CHURN STABILITY + THE DETERMINISM SCOPING (2026-11-20 19:35)
+The churn test (24 staggered concurrent requests, the mixed budgets, the MTP
+active): the engine SURVIVED, zero errors, no garbage — the stability PASS.
+Its determinism check is flawed (it groups the same prompt at the max_tokens
+8/32/96 — the reasoning parser cuts the content at the different points);
+the equal-budget re-test: 7/8 exact, 1 divergence. The diverging response has
+a top-2 gap 0.0 at a step — the EXACT tie: either token is equally likely;
+the batch-composition numerics pick between them (the same class as the
+golden pre-MTP divergence — by design, not a defect). The greedy determinism
+holds modulo the exact ties under the varying batch composition.
