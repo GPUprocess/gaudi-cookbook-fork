@@ -1484,3 +1484,41 @@ serving, GLM_Q21_MOE=0 (the wiring is fully inert).
 its own boot cycle: the missing os import → the expert_map quote mangling → the flat scales
 (the [E, 2I] per-row discovery) → the strided-view reshape → the mov_vb garbage lanes (the
 w13-store idiom) → the lazy-input materialization (the open item).
+
+## EXP-Q21 step 3f — THE SOLUTION ARCHITECTURE FOR THE FINAL BLOCKER (2026-11-20,
+## the GaudiGrimoire corpus evidence, tier B)
+
+**The blocker recap**: the PT2 custom-op shim (`registerUserCustomOp` — the torch-dispatcher
+execute) requires the materialized input buffers; the serving graph's inputs (the model's
+internal hidden states, the between-pass act) are LAZY tensors → `ValidateSyncInputTensors
+tensor_data is empty` → the fail-closed fallback (the serving correct at the stock parity,
+the Q21 path not engaged).
+
+**THE SOLUTION (the corpus-proven architecture)**: Habana's SECOND custom-op API — the
+lazy-native registration (`include/habanalabs/hpu_custom_op.h`,
+`REGISTER_CUSTOM_OP_ATTRIBUTES(schema, guid, inputs_desc, outputs_desc, param_func)`):
+- The op registers as a LAZY KERNEL (the habana::custom_op::registerKernel registry) — a
+  first-class lazy GRAPH NODE with the GUID + the input/output descriptors.
+- The inputs STAY LAZY — the graph compiler consumes them natively; NO materialization.
+- The invocation is the SAME `torch.ops.custom_op.<name>(...)` — the dispatcher routes to
+  the lazy kernel node.
+- The proven examples in the bridge: `tests/cpp/lazy_custom_kernel_kernel_test.cpp`
+  (custom_add/custom_gelu/custom_topk with the InputDesc/OutputDesc vectors and the
+  output-shape lambdas) and `tests/user_custom_op/test_hpu_legacy_custom_op.py`
+  ("only lazy" mode — EXACTLY our serving mode, PT_HPU_LAZY_MODE=1).
+
+**The implementation plan (turnkey)**:
+1. The op.cpp: ADD the `REGISTER_CUSTOM_OP_ATTRIBUTES` registrations for
+   `block_fp8_moe_w13_glm`/`block_fp8_moe_w2_glm` (the GUIDs = the kernel names already in
+   libmxk_tpc.so; the InputDesc: 4 × TENSOR; the OutputDesc: 1 × TENSOR with the shape
+   lambda: the w13 → [ids[T,0], K, 2I], the w2 → [ids[T,0], H]).
+2. The PT2 registrations may coexist or be dropped (the two registries are independent:
+   the torch dispatcher vs the lazy kernel registry — verify which the dispatcher prefers;
+   if the PT2 execute still intercepts, drop the PT2 registration and keep only the lazy).
+3. The wiring: UNCHANGED (the torch.ops calls and the H2D roundtrips for the
+   locally-created tensors can then be REMOVED — the lazy inputs flow natively).
+4. The gate + the boot verification as before.
+
+**The risk**: the E03-era registry collision (the weak-symbol dual registry) — the current
+op loading is proven clean (the production dequant op), so the legacy registration from the
+same .so follows the same proven load path.
