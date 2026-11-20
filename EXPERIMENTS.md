@@ -1770,3 +1770,11 @@ The Prometheus counters (the cumulative since the boot): the drafts 30,384,
 the accepted 26,093 (position 0, k=1) → the position-0 acceptance **85.9%**,
 the mean acceptance length **1.859** — inside the documented band (1.84-1.95).
 The production MTP performs exactly as the 11-01 validation window measured.
+
+## EXP-Q21 step 3x — THE REPLICATION DOC VERIFIED AGAINST THE SERVER (2026-11-20 18:55)
+REPLICATE.md §0-5 claims checked systematically: the venv torch 2.11.0a0+git009b5f6
+✓, the vLLM 568afb3a ✓, the vllm-gaudi base b059f9c (+ the Q21 parity commits
+2ef18805/51bdef9 on top — documented) ✓, the model 306G / 62 shards / 71
+top-level files (the doc said 74 — CORRECTED to the actual count) ✓, the port
+install present ✓, the dsv41 disabled+inactive ✓. The replication doc is now
+verified accurate against the live server.
