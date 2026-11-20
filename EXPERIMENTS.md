@@ -1895,3 +1895,14 @@ heavier batching. The multimodal serving: verified at every concurrency.
 The half-resolution image (224x224 vs the 448x448 tested): **correct
 ("orange")** — the vision path handles the varied input sizes (the fixed
 2048-token budget per image after the vision encoder).
+
+## EXP-Q21 step 8c — THE 4-SMALL-IMAGE PROMPT: EXECUTES BUT MIS-COUNTS (2026-11-20 23:15)
+The token-budget discovery: the smart_resize scales the canvas to the budget
+— the SMALLER image = the FEWER tokens. The 4x224x224 prompt: ~4x512=2048
+image tokens + the text ≈ 2200 total — WELL within the captured buckets.
+**The prompt EXECUTES (no crash!) but answers WRONG** ("green" for the third
+= blue). The multi-indexing of the small images: the model misidentifies the
+position at the low effort. NOT a serving defect — the accuracy limitation
+of the 4-image indexing at the reasoning_effort=low with the small images.
+The serving: healthy, no crash — the multi-image execution confirmed up to 4
+images when the token budget fits.
