@@ -26,7 +26,7 @@ constexpr const char* guid = "block_fp8_moe_w13_glm";
 
 void validate(const at::Tensor& w13, const at::Tensor& w13_scales,
               const at::Tensor& x, const at::Tensor& topk_ids) {
-    TORCH_CHECK((w13.scalar_type() == at::kFloat8_e4m3fnuz || w13.scalar_type() == at::kFloat8_e4m3fn) &&
+    TORCH_CHECK((w13.scalar_type() == at::kFloat8_e4m3fn || w13.scalar_type() == at::kFloat8_e4m3fnuz) &&
                 w13_scales.scalar_type() == at::kFloat &&
                 x.scalar_type() == at::kBFloat16 &&
                 topk_ids.scalar_type() == at::kInt &&

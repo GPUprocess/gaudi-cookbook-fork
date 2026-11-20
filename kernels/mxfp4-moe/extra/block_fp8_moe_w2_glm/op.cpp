@@ -24,7 +24,7 @@ constexpr const char* guid = "block_fp8_moe_w2_glm";
 
 void validate(const at::Tensor& w2, const at::Tensor& w2_scales,
               const at::Tensor& act, const at::Tensor& topk_ids) {
-    TORCH_CHECK((w2.scalar_type() == at::kFloat8_e4m3fnuz || w2.scalar_type() == at::kFloat8_e4m3fn) &&
+    TORCH_CHECK((w2.scalar_type() == at::kFloat8_e4m3fn || w2.scalar_type() == at::kFloat8_e4m3fnuz) &&
                 w2_scales.scalar_type() == at::kFloat &&
                 act.scalar_type() == at::kBFloat16 &&
                 topk_ids.scalar_type() == at::kInt &&
