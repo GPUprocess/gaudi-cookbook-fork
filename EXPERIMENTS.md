@@ -1722,3 +1722,11 @@ The single-depth needle (16K, the only fitting depth): **3/3 codes retrieved**
 REPLICATE.md §7 corrected: the config-scoped gate table + the GLM_GOLDEN_REF
 mechanism + the warm-rep rule (the fresh boots ramp 77→159→191→255 over ~4
 reps before the steady-state numbers).
+
+## EXP-Q21 step 3q — THE FITTING GATE CASES ALL PASS (2026-11-20 17:55)
+- decode@2K: **39.9 tok/s** (the floor 15) PASS — consistent with bs1 39.2-39.8
+- prefill@16K warm TTFT: **2.8 s** (the 256K-config reference 2.6 s) PASS
+The production config is now verified across EVERY runnable dimension: the
+golden 12/12, the images 8/8, the needle@16K 3/3, the decode@2K, the
+prefill@16K, the concurrent @16 (the warm 255/258 = the record). The only
+unrunnable checks: the >32K-context cases (the structural ceiling).
