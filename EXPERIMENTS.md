@@ -1885,3 +1885,8 @@ gates.py with GLM_GOLDEN_REF=the pre-MTP reference: 1/12 (the exact structural
 divergence matching the harness) — the selector mechanism works consistently
 in BOTH code paths (gates.py + mtp_validate.py). The config-scoped reference
 system: fully functional.
+
+## EXP-Q21 step 8a — THE 8-CONCURRENT IMAGES VERIFIED (2026-11-20 23:00)
+The 8 simultaneous multimodal prompts (the doubled concurrency vs the earlier
+4-way test): **8/8 correct, zero errors** — the vision encoder scales to the
+heavier batching. The multimodal serving: verified at every concurrency.
