@@ -1606,3 +1606,41 @@ the all-Q21 serving: /data/glm53/q21_long_sanity.log (the 512-token count-to-60)
 **The Layer H baseline (the Oct 31 bench_baseline.out)**: decode bs1 30.1 tok/s,
 8-streams 125.1 agg, 16-streams 213.2 agg; TTFT 3219tok 17.4s (185 t/s prefill),
 25619tok 14.2s (1807), 104867tok 21.3s (4928).
+
+## EXP-Q21 step 3l / LAYER H — THE FINAL VERDICT: THE Q21 PATH NOT DEPLOYABLE; THE STOCK SERVES
+## (2026-11-20 15:55)
+
+**The Layer H measurements (the same bench_baseline.py, the same day):**
+
+| shape | the stock (Oct 31) | the Q21 (all-adopt) | delta |
+|---|---|---|---|
+| decode bs1 | 30.1 tok/s | 19.6 | −35% |
+| decode @8 | 125.1 agg | 25.4 | −80% |
+| decode @16 | 213.2 agg | 165.1 | −23% |
+
+**The quality**: the 512-token generation on the all-Q21 serving COLLAPSES ("The user
+wants user user user...") — the parity residual (the fwd rel 0.015-0.058 = the FP8 requant
+noise: my kernel quantizes act*wt per-row; the stock quantizes act per-group then applies
+the weights in bf16) compounds across 48 layers. The 64-token sanity survives; the long
+generations do not.
+
+**The performance root cause**: the act CPU roundtrip (the H2D rule for the legacy
+custom-op: `act.cpu().to(bf16).to(x.device)` per layer per step) serializes the pipeline
+(the −80% @8), plus the per-element scalar walk in the TPC kernels (the −35% bs1 — the
+mxk8-comparison predicted exactly this: "likely a regression vs the stock step time
+UNLESS the node-count collapse dominates" — it does not).
+
+**The recipe-node accounting (the design target vs the reality)**: the design targeted
+the node collapse (the stock MoE region ~18,200 nodes → ~2,800, −86%) to buy the speed.
+The reality: the two-pass SPLIT re-adds the launch overhead (the two custom-op dispatches
++ the act roundtrip per layer) and the scalar walk costs more than the node saving buys.
+The measured step time regressed at every shape.
+
+**THE DECISION**: GLM_Q21_MOE=0 (the stock serving = the production state; the same-day
+stock bench re-run in flight for the honest same-day baseline). The Q21 archive: the
+kernels are CORRECT at the gate level (the 12-stage green, both contracts), the wiring is
+CORRECT (the parity-proven fwd order, the EP mapping correct), but the integration carries
+the compounding requant noise + the roundtrip serialization. The fix path for a future
+attempt: (1) the per-group act quantization inside the w2 kernel (match the stock
+granularity), (2) the on-device act handoff (drop the CPU roundtrip), (3) the mxk8-style
+column-pair walk for pass-1. All three are kernel-level changes (the TPC C work).
