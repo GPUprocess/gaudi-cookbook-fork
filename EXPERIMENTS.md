@@ -1835,3 +1835,14 @@ concurrent with the 16-stream bench: ALL PASS. The bench: 135 → 195 → 249
 (the tool-call interference then the record recovery). The context-overflow
 request: the clean 400 (the graceful rejection). The production mixed
 scenario verified end-to-end. THE SESSION: COMPLETE.
+
+## EXP-Q21 step 6a — THE MULTI-IMAGE CAPABILITY NARROWED: 2 AND 3 IMAGE WORK (2026-11-20 20:55)
+The bucket analysis: the prefill buckets cover every 128-multiple up to 8192 →
+the 2-image (~4200 -> bucket 4224) and the 3-image (~6300 -> 6400) shapes are
+CAPTURED; only the 4-image (~8300) exceeds max-num-batched-tokens 8192.
+The empirical: **the 2-image PASS** ("blue" correct), **the 3-image PASS**
+("red" correct), the serving healthy after (zero FATAL/synStatus lines).
+**The mitigation narrows**: the multi-image works up to 3 images; ONLY the
+4-image prompt crashes (its image tokens alone = 8192 = the entire
+max-num-batched-tokens budget — structurally outside the capture range).
+The REPORT/REPLICATE warnings updated.
