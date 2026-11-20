@@ -169,3 +169,28 @@ Both candidates are pre-staged and validated:
 - Branch: `glm53-flash`, tip `044f764` — pushed and verified on the remote.
 - All policy files, the knowledge base, the audit, the E015 A/B scripts, the dual-mode
   decode benchmark, and the research record are published on the remote.
+
+## Session update (2026-11-19 — the Q21 recovery + root cause; see EXPERIMENTS.md and
+## experiments/Q21-RECOVERY-001.md)
+
+- **The Q21 3-session failure class is RESOLVED** (Q21-E30/E31): the Layer-A "load/store
+  corruption" was the test references' own bf16 quantization; the composed-kernel zeros were
+  (1) the TPC-ordered `get_dim_size` semantics (the H/T swap → HP=0) and (2) the
+  `tpcPoints` maxAvailableTpc cap (24 points) misread as the work-item count. Both fixed;
+  the full 12-stage HPU correctness gate PASSES (pass_1 1.215e-4, pass_2 3.62e-8).
+- **The Q21 two-pass MoE kernels are serving-wired**: `patches/q21_moe_wiring.py` applied
+  (the fail-closed GLM_Q21_MOE=1 gate, the decode cap 32 tokens, the EP -1-sentinel local
+  remap, the two-pass branch at the moe_op site). The boot: `/data/glm53/boot_q21.sh`.
+  Layer G/H (the in-serving verification + the benchmarks vs the 41-43 / 246-258 baseline):
+  in flight.
+- **The anti-looping infrastructure**: `experiments/Q21-EXPERIMENT-LEDGER.md` (E01..E31)
+  — every prior experiment with its verdict and the re-run rules; the recovery report
+  `experiments/Q21-RECOVERY-001.md`.
+- **The ECF8 workstream opened** (separate from Q21): `experiments/ECF8-001-composition.md`
+  — the expert stack is e4m3+f32-scales; the lossless bound 1.44×; the practical
+  fixed-Huffman ≈1.35–1.40×; the TP8 saving ~10 GiB/card, the TP4 ~21 GiB/card; the decode
+  architecture = the TPC LUT fused into the weight-load path.
+- **Platform facts added**: `get_dim_size(t, d)` is TPC-ordered innermost-first 0-based;
+  `tpcPoints` returns ≤ maxAvailableTpc (=24 on this host) regardless of the units argument;
+  the gate's s14/s15 one-hot/ones-x probe stages measure a poisoned late-process state and
+  are void as kernel evidence (the s11/s13 compare governs).
