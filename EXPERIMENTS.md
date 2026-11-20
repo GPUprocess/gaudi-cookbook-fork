@@ -1764,3 +1764,9 @@ the golden **12/12 token-identical**, the decode bs1 36.7 / bs8 37.7 tok/s,
 the soak-repeat/multiturn PASS, the soak-4k 37.2 tok/s (the warm; the empty
 content = the explained reasoning-budget case). **TOTAL FAILURES: 0** — the
 production serving verified end-to-end on every harness dimension.
+
+## EXP-Q21 step 3w — THE LIVE MTP ACCEPTANCE MEASURED (2026-11-20 18:45)
+The Prometheus counters (the cumulative since the boot): the drafts 30,384,
+the accepted 26,093 (position 0, k=1) → the position-0 acceptance **85.9%**,
+the mean acceptance length **1.859** — inside the documented band (1.84-1.95).
+The production MTP performs exactly as the 11-01 validation window measured.
