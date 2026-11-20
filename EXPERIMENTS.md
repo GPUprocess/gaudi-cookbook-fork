@@ -1807,3 +1807,12 @@ the health ~20:15); the restoration verification scheduled.
 multi-image prompts to this serving — the 1-image path is fully verified (the
 image gate 8/8, the golden, the needles). The proper fix: a follow-up boot
 with the multi-image capture shapes (the recipe warning applies).
+
+## EXP-Q21 step 4a — THE DEVICE-CONTEXT LEAK AFTER THE FATAL CRASH (2026-11-20 19:50)
+The post-crash relaunch failed (synStatus=8 on all workers): the crashed
+workers LEAKED the device contexts at the driver level — two cards held full
+HBM with NO owning process (the fuser empty, the pids dead). The kill of the
+leaked holders (the fuser-detected pids) cleared the cards (768MiB idle) and
+the second boot came up clean. **The recovery playbook for the fatal crash**:
+kill the leaked holders via fuser, VERIFY the cards idle via sudo hl-smi,
+then boot. The host reboot is NOT required (the earlier docs suggested it).
