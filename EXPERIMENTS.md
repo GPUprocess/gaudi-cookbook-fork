@@ -1548,3 +1548,26 @@ on the layer. The verification: the serving sanity (391) + the accuracy spot-che
 **The state**: GLM_Q21_MOE=0 (the rollback — the pure stock serving, correct); the wiring
 inert (the env-gated); the kernels + the lazy-native registration PROVEN (the gate green);
 ONLY the expert-mapping source remains.
+
+## EXP-Q21 step 3j — THE MAPPING HYPOTHESIS RESOLVED + THE SERVING PARITY CHECK
+## (2026-11-20 15:06)
+
+**The mapping hypothesis is DEAD**: the serving env has NO GLM_MOE_TP/GLM_MOE_PLACEMENT
+(pure EP-8); the manager log: "[EP Rank 0/8] linear, 36/288" — the standard contiguous
+global->local map. layer.expert_map (the manager's property) is CORRECT.
+
+**The boot25/26 degeneration cause**: still open — the remaining candidates: the gate/up
+split order, the scale row alignment. The gate cannot discriminate (self-consistent).
+
+**THE FIX INSTRUMENT**: the one-shot serving parity check (the commit f551b487 on
+/opt/glm53/vllm-gaudi): at the first gated decode call, compute the stock output AND the
+Q21 output under BOTH gate/up conventions (fwd = silu(raw[:i2])*raw[i2:], swap = the
+reverse), compare the max-abs diffs vs the stock, ADOPT the convention with rel < 0.02
+(permanently cached in _Q21_PARITY), else REJECT -> the stock permanently (fail-closed).
+The diagnostics print: the stock max, the s13/s2 shapes, the emap sample, the per-mode
+maxdiff/rel.
+
+**The state**: the stock serving verified correct (391, zero Q21 lines); the Q21 parity
+boot in flight (GLM_Q21_MOE=1, pid 563721); the parity result lands in
+/data/glm53/parity_check.log. The Layer H tool: /data/glm53/bench_baseline.py
+(decode bs1/8/16 + the TTFT 4k/32k/128k; the decode shapes hit the Q21 gate).
