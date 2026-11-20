@@ -1522,3 +1522,29 @@ lazy-native registration (`include/habanalabs/hpu_custom_op.h`,
 **The risk**: the E03-era registry collision (the weak-symbol dual registry) — the current
 op loading is proven clean (the production dequant op), so the legacy registration from the
 same .so follows the same proven load path.
+
+## EXP-Q21 step 3i — THE DEGENERATION ROOT CAUSE (the hypothesis) + THE ROLLBACK
+## (2026-11-20 final)
+
+**The boot25/26 serving test**: the Q21 kernels ACTIVE (no fallback — the lazy-native
+registration works!) but the model output DEGENERATES ("17 * * * * *..." — the partial
+correctness then the cascade).
+
+**The root-cause hypothesis (the strong)**: the EXPERT MAPPING MISMATCH. The port uses the
+custom group expert layout (`glm5_next_hpu/moe_layout.py`, the `experts_by_slot(layer_name)`
+mapping — the GLM_MOE_TP group scheme), NOT the standard contiguous EP assignment. My
+wiring maps the global ids via `layer.expert_map` (the vllm-standard map) — if it disagrees
+with the loader's `experts_by_slot` assignment, the local_ids point to the WRONG experts →
+the structurally-plausible-but-wrong outputs → the degeneration ✓ matches the symptom.
+
+**Why the gate cannot catch it**: the gate's ids→weights consistency is internal (the ids
+index the same tensors the reference uses) — ANY mapping is self-consistent in the gate.
+
+**The fix (the next session's first task)**: dump BOTH mappings at the first Q21 call
+(`layer.expert_map` vs `moe_layout.experts_by_slot(layer_name)`); if they disagree, build
+the inverse map from `experts_by_slot` (the authoritative loader assignment) and cache it
+on the layer. The verification: the serving sanity (391) + the accuracy spot-check.
+
+**The state**: GLM_Q21_MOE=0 (the rollback — the pure stock serving, correct); the wiring
+inert (the env-gated); the kernels + the lazy-native registration PROVEN (the gate green);
+ONLY the expert-mapping source remains.
