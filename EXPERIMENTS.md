@@ -1874,3 +1874,8 @@ the >32K depths structurally inapplicable.
 The second 24K needle (the seed 987654, the placements 0.15/0.55/0.85 vs the
 first run 0.1/0.5/0.9): **3/3 again**. The retrieval robustness confirmed
 beyond a single instance at the deepest fitting depth.
+
+## EXP-Q21 step 7b — THE POST-CHURN STABILITY VERIFIED (2026-11-20 22:25)
+After the 24-request churn test: the images gate **8/8** and the golden gate
+**12/12 token-identical** re-run green — the correctness holds under the
+churn-and-recover state. The serving: fully stable.
