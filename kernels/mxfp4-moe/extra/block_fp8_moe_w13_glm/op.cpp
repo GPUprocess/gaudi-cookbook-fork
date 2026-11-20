@@ -1,99 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
-// block_fp8_moe_w13_glm - PT2 custom-op with LAZY registration (Q21 step 2, pass 1).
-// Same lazy-registration pattern as block_fp8_gemv_glm (the step 1): the
-// registration defers to the first call so it runs after the backend is fully
-// initialized inside the serving process (the B7 load-order recipe). The
-// output is allocated by the framework from the PartialOutputMetaData and
-// returned by descriptor.execute(inputs)[0] — no pre-allocated output arg.
-//
-//   raw[T, K, 2I] = W13[e_k, 2I, H] · x[T, H] / s13[e_k]
-//
-//   The pass 1 of the two-pass fused MoE: for each token and each of its K=8
-//   routed experts, the dequant (the FP8 → the BF16 with the block scales)
-//   + the GEMV over H. The output raw [T, K, 2I] is the PRE-ACTIVATION GEMV:
-//   the SiLU(gate) × up product and the routing pre-weighting happen in
-//   PyTorch between the passes (the TPC has no the scalar exp/div), then
-//   block_fp8_moe_w2_glm consumes the [T, K, I] pre-weighted activations.
+// block_fp8_moe_w13_glm — THE LAZY-NATIVE REGISTRATION
+// (REGISTER_CUSTOM_OP_ATTRIBUTES, hpu_custom_op.h): the op is a LAZY GRAPH NODE —
+// the inputs stay lazy (the serving graph's internal activations flow natively).
+// The invocation: torch.ops.custom_op.block_fp8_moe_w13_glm(...) — the schema only.
+// The corpus pattern: gaudi-pytorch-bridge tests/cpp/lazy_custom_op_kernel_test.cpp.
 #include <ATen/ATen.h>
 #include <ATen/core/stack.h>
 #include <torch/library.h>
-#include "hpu_custom_op_pt2.h"
+#include "hpu_custom_op.h"
 
-namespace {
+using habana::custom_op::InputDesc;
+using habana::custom_op::input_type;
+using habana::custom_op::OutputDesc;
 
-constexpr const char* schema = "custom_op::block_fp8_moe_w13_glm";
-constexpr const char* guid = "block_fp8_moe_w13_glm";
-
-void validate(const at::Tensor& w13, const at::Tensor& w13_scales,
-              const at::Tensor& x, const at::Tensor& topk_ids) {
-    TORCH_CHECK((w13.scalar_type() == at::kFloat8_e4m3fn || w13.scalar_type() == at::kFloat8_e4m3fnuz) &&
-                w13_scales.scalar_type() == at::kFloat &&
-                x.scalar_type() == at::kBFloat16 &&
-                topk_ids.scalar_type() == at::kInt &&
-                w13.dim() == 3 && w13_scales.dim() == 2 && x.dim() == 2 && topk_ids.dim() == 2 &&
-                w13.size(1) % 128 == 0 && w13.size(2) % 256 == 0 &&
-                w13_scales.size(0) == w13.size(0) &&
-                w13_scales.size(1) == w13.size(1) &&
-                x.size(1) == w13.size(2) &&
-                topk_ids.size(0) == x.size(0) &&
-                w13.is_contiguous() && w13_scales.is_contiguous() &&
-                x.is_contiguous() && topk_ids.is_contiguous() &&
-                w13.device() == w13_scales.device() && w13.device() == x.device(),
-                "block_fp8_moe_w13_glm requires contiguous E4M3 [E,2I,H], F32 [E,2I] per-row scales, BF16 [T,H] x, int32 [T,K] topk_ids");
+// the w13 output: [T, K, 2I]
+std::vector<int64_t> raw_shape(const at::Stack& st) {
+    auto x = st.at(2).toTensor();
+    auto ids = st.at(3).toTensor();
+    auto w = st.at(0).toTensor();
+    return {x.size(0), ids.size(1), w.size(1)};
 }
 
-std::once_flag reg_flag;
-bool reg_ok = false;
-
-void lazy_register() {
-    std::call_once(reg_flag, []() {
-        habana::custom_op::registerUserCustomOp(
-            schema, guid,
-            [](const at::Stack& stack) {
-                auto x = stack.at(2).toTensor();
-                auto topk_ids = stack.at(3).toTensor();
-                auto w13 = stack.at(0).toTensor();
-                habana::PartialOutputMetaData output;
-                output.dtype = at::kBFloat16;
-                output.shape = {x.size(0), topk_ids.size(1), w13.size(1)};
-                return habana::PartialOutputMetaDataVector{output};
-            },
-            nullptr);
-        reg_ok = true;
-    });
+habana::custom_op::HabanaCustomOpDescriptor make_desc() {
+    std::vector<InputDesc> inputs{
+        InputDesc{input_type::TENSOR, 0}, InputDesc{input_type::TENSOR, 1},
+        InputDesc{input_type::TENSOR, 2}, InputDesc{input_type::TENSOR, 3}};
+    std::vector<OutputDesc> outputs{
+        OutputDesc{0, c10::ScalarType::BFloat16, raw_shape}};
+    habana::custom_op::NodeDesc node_desc{"block_fp8_moe_w13_glm", "custom_op::block_fp8_moe_w13_glm", nullptr};
+    return habana::custom_op::HabanaCustomOpDescriptor{node_desc, inputs, outputs};
 }
+static habana::custom_op::HabanaCustomOpDescriptor g_desc = make_desc();
 
-at::Tensor run(const at::Tensor& w13, const at::Tensor& w13_scales,
-               const at::Tensor& x, const at::Tensor& topk_ids) {
-    validate(w13, w13_scales, x, topk_ids);
-    lazy_register();
-    TORCH_CHECK(reg_ok, "block_fp8_moe_w13_glm registration failed");
-    TORCH_CHECK(w13.device().type() == at::kHPU);
-    auto descriptor =
-        habana::custom_op::UserCustomOpDescriptor::getUserCustomOpDescriptor(schema);
-    std::vector<c10::IValue> inputs{w13, w13_scales, x, topk_ids};
-    return descriptor.execute(inputs)[0];
-}
-
-} // namespace
+struct LazyReg {
+    LazyReg() {
+        habana::custom_op::registerKernel(g_desc);
+    }
+};
+static LazyReg _lazy_reg;
 
 TORCH_LIBRARY_FRAGMENT(custom_op, m) {
     m.def("block_fp8_moe_w13_glm(Tensor w13, Tensor w13_scales, Tensor x, Tensor topk_ids) -> Tensor");
 }
 
-TORCH_LIBRARY_IMPL(custom_op, CPU, m) {
-    m.impl("block_fp8_moe_w13_glm",
-           [](const at::Tensor& w13, const at::Tensor& w13_scales, const at::Tensor& x,
-              const at::Tensor& topk_ids) -> at::Tensor {
-               TORCH_CHECK(false, "block_fp8_moe_w13_glm requires HPU tensors");
-               return at::Tensor();
-           });
-}
-
 TORCH_LIBRARY_IMPL(custom_op, HPU, m) {
     m.impl("block_fp8_moe_w13_glm",
-           [](const at::Tensor& w13, const at::Tensor& w13_scales, const at::Tensor& x,
-              const at::Tensor& topk_ids) -> at::Tensor {
-               return run(w13, w13_scales, x, topk_ids);
+           [](const at::Tensor& w13, const at::Tensor& w13_scales,
+              const at::Tensor& x, const at::Tensor& topk_ids) -> at::Tensor {
+               // THE LAZY-NODE ENQUEUE: the lazy-registered op's descriptor execute
+               // handles the lazy inputs natively (no materialization).
+               auto d = g_desc;
+               std::vector<c10::IValue> inputs{w13, w13_scales, x, topk_ids};
+               return d.execute(inputs)[0];
            });
 }

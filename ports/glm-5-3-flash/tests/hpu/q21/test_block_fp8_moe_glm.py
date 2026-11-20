@@ -115,7 +115,15 @@ def run_gate():
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "between-pass math failed", "stages": sorted(acc)}
     act_pre = acc["s9_between_math"]
-    ok = _stage("s10_pass2_op", lambda: torch.ops.custom_op.block_fp8_moe_w2_glm(w2_q, s2, act_pre, ids), acc)
+    def _s10():
+        print(f"[Q21-GATE] s10 inputs: w2={tuple(w2_q.shape)},{w2_q.dtype},c={w2_q.is_contiguous()} "
+              f"s2={tuple(s2.shape)},{s2.dtype},c={s2.is_contiguous()} "
+              f"act={tuple(act_pre.shape)},{act_pre.dtype},c={act_pre.is_contiguous()} "
+              f"ids={tuple(ids.shape)},{ids.dtype}", flush=True)
+        out = torch.ops.custom_op.block_fp8_moe_w2_glm(w2_q, s2, act_pre, ids)
+        print(f"[Q21-GATE] s10 out: {tuple(out.shape)},{out.dtype} y[:4]={out.flatten()[:4].cpu().tolist()}", flush=True)
+        return out
+    ok = _stage("s10_pass2_op", _s10, acc)
     if not ok:
         return {"gate": "q21_block_fp8_moe_glm", "pass": False,
                 "error": "pass-2 op failed", "stages": sorted(acc)}
