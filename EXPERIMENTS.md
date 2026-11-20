@@ -1906,3 +1906,10 @@ position at the low effort. NOT a serving defect — the accuracy limitation
 of the 4-image indexing at the reasoning_effort=low with the small images.
 The serving: healthy, no crash — the multi-image execution confirmed up to 4
 images when the token budget fits.
+
+## EXP-Q21 step 8d — THE 4-IMAGE INDEXING MAPPED (2026-11-20 23:25)
+The per-position tests: the FIRST red ✓, the SECOND green ✓, the FOURTH
+yellow ✓, the THIRD misidentified once (said green = the second). The order
+preserved (the 1/2/4 correct); the position-3 indexing quirk at the low
+effort — the model accuracy, NOT the serving. The 4-small-image execution:
+no crash, the correct multi-image handling with the one-off indexing error.
