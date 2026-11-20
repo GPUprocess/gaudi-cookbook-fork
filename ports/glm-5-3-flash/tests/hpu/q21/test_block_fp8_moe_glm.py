@@ -143,7 +143,9 @@ def run_gate():
         return out_p.cpu().flatten()
 
     probe_verdict = None
-    if _stage("s12_probe_op", _probe, acc):
+    if os.environ.get("GLM_GATE_SKIP_PROBE", "0") == "1":
+        print("[Q21-GATE] s12 skipped by GLM_GATE_SKIP_PROBE", flush=True)
+    elif _stage("s12_probe_op", _probe, acc):
         po = acc["s12_probe_op"].float()
         inp = torch.arange(256).float().to(torch.float8_e4m3fn).float()
         ev_ok = bool(torch.all(po[:128] == inp[0::2]).item())
@@ -165,12 +167,15 @@ def run_gate():
     raw_q_c, y_q_c = acc["s13c_sync"][0].float(), acc["s13c_sync"][1].float()
     # THE DE-INTERLEAVE: the kernel: the MAC acc layout: the even products in the
     # first 64 of each 128-block, the odd in the second 64. The de-interleave:
-    fixed = torch.zeros_like(raw_q_c)
-    for nb in range(raw_q_c.shape[2] // 128):
-        base = nb * 128
-        fixed[:, :, base:base+128:2] = raw_q_c[:, :, base:base+64]
-        fixed[:, :, base+1:base+128:2] = raw_q_c[:, :, base+64:base+128]
-    raw_q_c = fixed
+    # THE DE-INTERLEAVE: obsolete with the v12 fix (the scalar per-column reduce
+    # stores in the natural order). Kept behind the env for the historical kernels.
+    if os.environ.get("GLM_GATE_DEINT", "0") == "1":
+        fixed = torch.zeros_like(raw_q_c)
+        for nb in range(raw_q_c.shape[2] // 128):
+            base = nb * 128
+            fixed[:, :, base:base+128:2] = raw_q_c[:, :, base:base+64]
+            fixed[:, :, base+1:base+128:2] = raw_q_c[:, :, base+64:base+128]
+        raw_q_c = fixed
 
     # The ONE-HOT x probes: the convert's per-position mapping, determined
     # exactly. With x[0] = the unit vector at h*, raw[0,k,col] must equal
