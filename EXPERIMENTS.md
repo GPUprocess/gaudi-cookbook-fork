@@ -1828,3 +1828,10 @@ The hl-smi sampling during the 16-stream bench (the throughput 256.4-257.2 —
 the record band): **69.0-69.2 GiB / 96 GiB per card**, 34-40C, 64-180W/card.
 The 11-01 window: 64.1 GiB — the +5 GiB = the additions since. ~28 GiB
 headroom. The MTP_BENCHMARK.md updated.
+
+## EXP-Q21 step 5b — THE MIXED WORKLOAD VERIFIED (2026-11-20 20:45)
+The tool calls (all 7 runnable cases incl. the streaming + the multi-turn)
+concurrent with the 16-stream bench: ALL PASS. The bench: 135 → 195 → 249
+(the tool-call interference then the record recovery). The context-overflow
+request: the clean 400 (the graceful rejection). The production mixed
+scenario verified end-to-end. THE SESSION: COMPLETE.
