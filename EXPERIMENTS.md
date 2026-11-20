@@ -1738,3 +1738,8 @@ vs the 32768 limit). The fix: cap that case generation at 512 (the test intent
 gate: **8/8 PASS in 10s** on the production config. The remaining inapplicable
 gates: the decode/prefill >32K cases and the needles >32K depths (the prompts
 themselves exceed — structural).
+
+## EXP-Q21 step 3s — THE POST-VERIFICATION STABILITY CONFIRMED (2026-11-20 18:00)
+The smoke ("SMOKE OK") + the 16-stream bench re-run: 249.1 / 256.9 / 251.7
+tok/s across three reps — the record band holds, zero errors. The serving
+state is stable at the verified performance. The session: CLOSED.
