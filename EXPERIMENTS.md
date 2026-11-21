@@ -2373,3 +2373,17 @@ path); the bs1: the host post-work now overlaps the device.
 The targets: the bs1 46.5-48.6 vs the 200 (the gap ~4.2x); the @16 ~250 vs
 the 800 (the gap ~3.2x) — the RA-011 alone: NOT sufficient; the next:
 the RA-013 (the expert placement) and the RA-038-A (the node collapse).
+
+## EXP-RA011-CLOSED — RA-011 MARKED DONE (2026-11-21 14:45)
+The RA-011 (the async replay): **TESTED AND CLOSED**:
+- The implementation: the env vars in boot_f4ts.sh (the GLM_HPU_GRAPH_ASYNC=1
+  + PT_HPU_ENABLE_HPUGRAPH_THREAD=1 + PT_HPU_QUEUE_SYNLAUNCHES=1).
+- The parity: the golden 12/12 token-identical (ZERO drift — stronger than
+  the 0.5% threshold the owner asked about).
+- The performance: the bs1 46.5-48.6 (+7-11% vs the record 43.6-43.9);
+  the @16 parity (~248-252 vs 253.4). The +70-85% estimate: NOT materialized.
+- The stability: the churn (0 errors, 0 garbage, the drift unchanged 7/8) +
+  the 5-rep soak (steady ~252).
+- **The verdict: KEEP** (the production config henceforth).
+The next: the RA-013 (the histogram capture in flight), then the RA-012,
+the RA-038-A/B, the RA-014, the RA-016/017.
