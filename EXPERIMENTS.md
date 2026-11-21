@@ -2348,3 +2348,15 @@ the call order maps to the layers). The capture run: after the RA-011 A/B
 (the dedicated boot: the env on + the bench prompts -> the histograms).
 The Step 2: the interleaved map (the load-time permutation). The Step 3:
 the A/B (the slowest/mean rank ratio).
+
+## EXP-RA011-RESULTS — THE ASYNC REPLAY A/B: THE PARITY GATE CLEAN, THE MIXED PERF (2026-11-21 13:00)
+Arm 0 (synchronous): @16 33.9 cold -> 200.3 -> 253.4 (the settled).
+Arm 2 (async + the thread pool):
+- @16: 248.1/248.8/237.0/247.6/250.2 — the median ~248 vs arm 0 253.4:
+  PARITY (-2%). The +70-85% estimate did NOT materialize (the host/device
+  at @16: already overlapped, or the pool enqueue is on the same critical
+  path).
+- bs1: 46.5-48.6 (the median 46.8) vs the record 43.6-43.9: **+7-11%**
+  (the first bs1 win over the record band).
+- Parity: golden 12/12 token-identical (37 s) — CLEAN.
+The verdict pending the soak: the bs1 win is real; the @16 is neutral.
