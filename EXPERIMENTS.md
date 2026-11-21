@@ -2200,3 +2200,12 @@ the final production boot (both the reasoning and the content paths).
 The SSE streaming with tools: 20 chunks, finish_reason=tool_calls, the
 get_weather tool with {"city": "Paris"} assembled incrementally. The
 glm47 streaming tool-call parsing: VERIFIED on the final production boot.
+
+## EXP-PARITY — THE CONTENT PARITY VERIFIED 12/12 WITH THE CORRECT REFERENCE (2026-11-21 09:10)
+The check_content_parity.py defaults to golden_reference.json (the pre-MTP
+stock capture) -> the 1/12 mismatch (the stale-reference artifact, the same
+class as the golden's earlier run). Re-run against
+/data/glm53/golden_reference_mtp.json: **12/12 exact-content match**.
+The robustness checks on the current boot: the disconnect (the engine
+alive, the clean post-disconnect outputs), the block boundary (the correct
+answers at the boundaries). All verified.
