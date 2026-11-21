@@ -2340,3 +2340,11 @@ The A/B protocol: the parity (the golden bit-identity) + the @16/bs1 bench
 + the 16-stream soak. The success: the bs1 >= +30% AND the @16 >= +40%,
 the parity clean, the soak stable. The estimated: the bs1 +50-100%, the
 @16 +70-85% (the overlap of the 24-61 ms host post-work under the device).
+
+## EXP-RA013-PREP — THE ROUTER DUMP HOOK ADDED (2026-11-21 14:20)
+The RA-013 Step 1: the dump hook in decode_lean.py's grouped_topk_all_groups
+(env-gated GLM_ROUTER_DUMP=1; the scores -> /data/glm53/router_dump/*.npy;
+the call order maps to the layers). The capture run: after the RA-011 A/B
+(the dedicated boot: the env on + the bench prompts -> the histograms).
+The Step 2: the interleaved map (the load-time permutation). The Step 3:
+the A/B (the slowest/mean rank ratio).
