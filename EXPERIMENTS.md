@@ -2458,3 +2458,15 @@ the RA-016/017/036 blocked/low, the RA-037-L4 analyzed, the RA-014
 deferred, the RA-038-A characterization attempted (the GCFG rabbit hole,
 the deferred to the next session with the vendor research task). The
 production config: the k=1 + the RA-011 — the best verified.
+
+## EXP-K2SYNC-DEAD — THE K=2+SYNC BOOT DIED SILENTLY (2026-11-21 23:05)
+The k=2 + the sync replay boot (the async=0): the engine core init failed at
+22:35:08 (~10 min in, the load 8%) with no visible worker error (the
+WorkerProc init failed; the background-process exception with the
+truncated stack). The serving: DOWN for ~30 min while polling a stale
+buffered log (the lesson: check the process liveness and the mtime BEFORE
+polling; the block-buffered redirect hides the progress).
+The production: restored (the k=1 + the async, the pid 1712308).
+The k=2 on the current stack: the sync variant UNVERIFIED (the boot
+failure); the k=2+async: refuted (-31%). The deep-MTP program: gated on
+D1 (the graphed draft chain) as documented.
