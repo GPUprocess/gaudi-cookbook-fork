@@ -2437,3 +2437,14 @@ GCFG_DUMP_TPC_NODES_DATA_TO_JSON (the per-node data). The env: the
 GCFG_ keys are env-direct. The characterization boot: the
 GCFG_DUMP_PRE_GRAPHS=1 + the serving -> the recipe JSONs -> the
 graph_editor node census -> the T2 ablation arms.
+
+## EXP-GCFG — THE GCFG_DUMP_PRE_GRAPHS RABBIT HOLE (2026-11-21 21:10)
+The GCFG_DUMP_PRE_GRAPHS env: tested (the bool + the path values): the
+.graph_dumps dir created but EMPTY (the dump did not fire; the semantics
+need the vendor research — the GaudiGrimoire withheld the 17-19 candidate
+results outside the accepted scope). The env: removed from the boot
+script; the production: restoring (the clean config).
+The RA-038-A characterization: DEFERRED to the next session (the vendor
+research: the GCFG semantics; the T2 ablation: the arms). The session's
+RA-038-A contribution: the env discovery + the attempt + the honest
+deferral.
