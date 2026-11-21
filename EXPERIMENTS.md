@@ -2405,3 +2405,15 @@ The post-256K/post-k=2 revert: the boot (the pid 1548374), the health UP
 band 46.5-48.6 needs more settle reps; the boot variance documented).
 The production config: the k=1 + the RA-011 (the async replay) — the
 best verified configuration.
+
+## EXP-HISTO-FAIL — THE LAZY-MODE HISTOGRAM HOOK: GRAPH-BREAK CORRUPTION (2026-11-21 18:05)
+The fp8-path histogram hook (the select_experts_from_routed call site):
+the bench 500s, the engine dead — the TypeError Tensor+NoneType at
+hpu_fused_moe.py:1011. The mechanism: the hook's CPU sync (the bincount
+.detach().cpu()) inside the lazy graph capture breaks the capture; the
+downstream state corrupts (the None). The hook: REVERTED (the compile ✓);
+the production: restoring. The lesson: the lazy-mode capture tolerates NO
+host sync inside the captured region — the instrumentation must be
+outside (the graph_editor recipe level: the RA-038-A's instrument) or
+the eager mode. The RA-013 histogram: BLOCKED on this class (the same
+conclusion as the vllm-path attempt).
