@@ -2037,3 +2037,16 @@ The swapped arrangement (blue/yellow/red/green) at the default effort with
 the request budget: **4/4 correct** (the first blue, the second yellow, the
 third red, the fourth green). The indexing generalizes across the
 arrangements — the capability is robust, not arrangement-specific.
+
+## EXP-RA022 — THE CAPTURE-SITE TENSOR-CACHE CONTROL IMPLEMENTED (2026-11-21 04:00)
+The research proposal RA-022 (DO FIRST) IMPLEMENTED (the commit 3cb749a0):
+1. The signal fix: _is_prompt_step = total > 2048 (the corrected row-count
+   signal: the decode class <= 64 rows; the 2048-row captures pass cache-ON,
+   the 2944 OOM cache-ON per ABCONFIG-WIN).
+2. The warmup_graphs: the env per bucket (the prompt > 2048 rows cache-free;
+   the decode and the <= 2048 cached).
+3. The profile_run: the cache-free capture (the max-size prompt class).
+The graphs.py revert: N/A (the graphs.py has no patch — the env is the
+mechanism). The boot: the clean start (the zero device failures). The
+verification family after the health: the capture-mode behavior (the 24K
+needle = the >2048 prompt class), the benches, the suite.
