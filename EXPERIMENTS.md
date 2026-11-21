@@ -2087,3 +2087,16 @@ PASS (the version, the lib loads, the ops registered, no cross-variant).
 The dist: /data/glm53/q21_dist_v8. The test staged: the boot (the v8 dist +
 the Q21 + the no-roundtrip) -> the parity -> the long-generation (the OOD
 fix verdict) -> the bench (the speed verdict) -> the 200/800 gap.
+
+## EXP-Q21 step 10g — THE FIX-2 VERDICT: THE COHERENCE FIXED, THE 20% SLOWER (2026-11-21 06:30 UTC)
+The v8 kernel test (the boot 06:23, the sanity 391 ✓, the parity ✓):
+- **The long-generation coherence: FIXED** — the 512-token generation:
+  394 coherent reasoning words, triple-reps 0, a complete story arc.
+  The bf16-act fix-1 produced the garbage; the fp8-act v8 produces the
+  coherent prose. The OOD hypothesis CONFIRMED and the fix WORKS.
+- **The speed: -20%**: @16 193.7 tok/s (the stock 249-258), bs1 35.7-36.4
+  (the stock 43.6-43.9). The in-kernel dequant + the per-group scales cost.
+**The verdict: the stock remains the production** (the fast, the short-gen
+sane, the targets closer); the fix-2 = the correctness alternative
+(the dist q21_dist_v8, the one-env-var switch) for the coherence-critical
+workloads. The Q21 program: CLOSED with the two-way outcome documented.
