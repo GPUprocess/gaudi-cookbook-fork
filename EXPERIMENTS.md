@@ -2128,3 +2128,10 @@ on the final production boot (pid 1108115): **PASS 12/12 token-identical**
 golden 12/12 + the coherence + the concurrency). Note: the env var is
 GLM_GOLDEN_REF (not GLM53_...); the wrong-var run falls back to the stock
 reference and shows the expected MTP-vs-stock numeric divergence (1/12).
+
+## EXP-GATES2 — THE CURRENT BOOT'S FULL RUNNABLE GATE MATRIX (2026-11-21 07:58)
+On the final production boot (pid 1108115): golden 12/12 token-identical,
+tools 8/8 PASS, images 8/8 PASS. The decode/prefill/needles suites open with
+the >32K-context cases → HTTP 400 (the adopted 32K ceiling, config-scoped,
+documented; the runnable subsets passed on the earlier boots: decode@2K
+39.9 tok/s, prefill@16K warm TTFT 2.8s, needle@16K 3/3).
