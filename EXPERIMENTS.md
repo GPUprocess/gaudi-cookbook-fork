@@ -2024,3 +2024,10 @@ materializes the act ON DEVICE without the host data roundtrip (no D2H/H2D
 copies; the sync wait remains). The next boot window: the fix-1b test.
 **The production**: restored (boot_f4ts.sh, pid 918167) — the stock config
 while the Q21 is re-engineered.
+
+## EXP-Q21 step 10d — THE MULTIMODAL MULTI-TURN VERIFIED (2026-11-21 03:30)
+The image in turn 1 (the two-quadrant image), the question in turn 2 about
+the DIFFERENT quadrant: turn1 "Red" (the top-left correct), turn2 "Green"
+(the bottom-right correct — the image recalled from the conversation
+context). The cross-turn multimodal state: works. The multimodal serving:
+verified across EVERY usage pattern.
