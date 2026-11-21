@@ -2303,3 +2303,8 @@ a boot anomaly. The engine alive, 0 errors, 0 garbage throughout.
 The 4 concurrent tool-call requests (Paris/Tokyo/Berlin/Lima): 4/4 fired
 get_weather with the correct city arguments. The tools under concurrency:
 VERIFIED on the final production boot (the tools gate: 8/8 sequential).
+
+## EXP-SMT — THE STREAMING MULTI-TURN VERIFIED (2026-11-21 13:04)
+The 2-turn conversation with the SSE streaming on both turns: 36/34
+chunks streamed, the codename ZEBRA-7 recalled correctly in the streamed
+turn 2. The streaming + the multi-turn composition: VERIFIED.
