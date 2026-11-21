@@ -46,8 +46,26 @@ def _h2d(t, dev):
 # GLM_ROUTER_FAST
 
 
+_ROUTER_DUMP_STATE = {"n": 0}
+
+def _maybe_dump_scores(scores):
+    """RA-013 Step 1: dump router scores for the routing histogram (GLM_ROUTER_DUMP=1).
+    Dumps to /data/glm53/router_dump/call_<n>.npy; the call order maps to layers
+    (call_index % num_layers) when the loop is deterministic."""
+    import os as _os
+    if _os.environ.get("GLM_ROUTER_DUMP") != "1":
+        return
+    import numpy as _np
+    d = "/data/glm53/router_dump"
+    _os.makedirs(d, exist_ok=True)
+    n = _ROUTER_DUMP_STATE["n"]
+    _ROUTER_DUMP_STATE["n"] = n + 1
+    _np.save(f"{d}/call_{n:05d}.npy", scores.detach().float().cpu().numpy())
+
+
 def grouped_topk_all_groups(scores, topk, renormalize, routed_scaling_factor, e_score_correction_bias):
     """vLLM's grouped top-k when every group is selected: the same code with the identity group mask removed."""
+    _maybe_dump_scores(scores)
     if e_score_correction_bias is not None:
         original_scores = scores
         scores = scores + e_score_correction_bias.unsqueeze(0)
