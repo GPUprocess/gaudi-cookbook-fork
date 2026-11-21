@@ -1953,3 +1953,9 @@ multi-image positional questions.
 The sinkhorn parity in the boot window: the kernel equals the stock loop
 BIT FOR BIT at 1 to 1,024 rows (post, comb, layer_input). The last
 unchecked gate: GREEN. The full gate matrix on the deployment: complete.
+
+## EXP-Q21 step 9f — THE FULL CYCLE VERIFIED (2026-11-20 00:49)
+The complete boot-window cycle: the stop (the graceful) -> the sinkhorn gate
+PASS (bit-for-bit) -> the restart -> the health 00:48 + the smoke
+"FINAL OK". The restart procedure: verified end-to-end AGAIN (the third
+successful cycle). The serving: fully operational.
