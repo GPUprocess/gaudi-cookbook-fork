@@ -2195,3 +2195,8 @@ The reasoning path: 26 chunks streamed in the reasoning field (the
 incremental ✓). The content path (the reasoning_effort low): 2 content
 chunks, "HELLO STREAM" assembled correctly. The streaming: VERIFIED on
 the final production boot (both the reasoning and the content paths).
+
+## EXP-TSTREAM — THE STREAMING TOOL CALL VERIFIED (2026-11-21 08:40)
+The SSE streaming with tools: 20 chunks, finish_reason=tool_calls, the
+get_weather tool with {"city": "Paris"} assembled incrementally. The
+glm47 streaming tool-call parsing: VERIFIED on the final production boot.
