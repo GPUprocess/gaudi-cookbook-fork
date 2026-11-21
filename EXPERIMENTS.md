@@ -2470,3 +2470,11 @@ The production: restored (the k=1 + the async, the pid 1712308).
 The k=2 on the current stack: the sync variant UNVERIFIED (the boot
 failure); the k=2+async: refuted (-31%). The deep-MTP program: gated on
 D1 (the graphed draft chain) as documented.
+
+## EXP-PROD-RESTORED3 — THE PRODUCTION RESTORED AFTER THE K=2SYNC FAILURE (2026-11-21 23:24)
+The boot (the pid 1712308, the clean config: the k=1 + the async=1), the
+health UP 23:23:38, the sanity 391 correct. The session's k=2 experiments:
+the k=2+async refuted (-31%), the k=2+sync boot died silently (the engine
+init failure at the 22:35). The k=2 on the current stack: UNVERIFIED for
+the sync variant (the boot failure). The production: the k=1 + the async
+— the best verified configuration.
