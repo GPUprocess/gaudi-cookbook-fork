@@ -2262,3 +2262,10 @@ here; the 3-4-image verified on the earlier boots).
 The 3-image request (the red/green/blue, the positional question): the
 correct answer "1=red, 2=green, 3=blue". The multi-image ladder on the
 final boot: 1-image (the gate 8/8), 2-image (EXP-MM2), 3-image (this).
+
+## EXP-MM4 — THE 4-IMAGE REQUEST VERIFIED ON THE FINAL BOOT (2026-11-21 11:15)
+The 4-image request (the recipe's per-prompt maximum): all four colours
+correctly identified (the red/green/blue/yellow at the positions 1-4).
+The multi-image ladder on the final boot: COMPLETE — 1-image (the gate
+8/8), 2-image (EXP-MM2), 3-image (EXP-MM3), 4-image (this). The recipe's
+multimodal capability: fully verified on the final production boot.
