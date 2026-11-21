@@ -2269,3 +2269,8 @@ correctly identified (the red/green/blue/yellow at the positions 1-4).
 The multi-image ladder on the final boot: COMPLETE — 1-image (the gate
 8/8), 2-image (EXP-MM2), 3-image (EXP-MM3), 4-image (this). The recipe's
 multimodal capability: fully verified on the final production boot.
+
+## EXP-MIXED — THE MIXED MULTIMODAL+TEXT SOAK VERIFIED (2026-11-21 11:33)
+The 8 staggered mixed requests (4 image+text, 4 text-only interleaved):
+8/8 correct in 6.9 s. The mixed multimodal+text soak: VERIFIED on the
+final production boot (the earlier boots: 8/8 too).
