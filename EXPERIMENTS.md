@@ -1948,3 +1948,8 @@ first=red, second=green, third=blue, fourth=yellow — **4/4 CORRECT,
 including the position-3** (which failed at the low effort). The quirk was
 the low-effort limitation; the recommendation: the default effort for the
 multi-image positional questions.
+
+## EXP-Q21 step 9e — THE SINKHORN KERNEL GATE: PASS (2026-11-20 00:30)
+The sinkhorn parity in the boot window: the kernel equals the stock loop
+BIT FOR BIT at 1 to 1,024 rows (post, comb, layer_input). The last
+unchecked gate: GREEN. The full gate matrix on the deployment: complete.
