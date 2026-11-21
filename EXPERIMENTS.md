@@ -2282,3 +2282,13 @@ kernel gate requires stopping the server first. The sinkhorn kernel was
 verified bit-for-bit on the earlier boots (the kernel unchanged since);
 the current-boot re-run would cost ~30 min of downtime for an unchanged
 kernel. Deferred to the next planned maintenance window.
+
+## EXP-G256KG — THE 256K GOLDEN GATE: PASS 12/12 (2026-11-21 12:17)
+The 256K-config golden with the MTP reference: **PASS 12/12 token-identical**
+(61 s) — the numerics at the 256K config match the MTP reference exactly
+(the short-prompt decode buckets are the same; the max-model-len affects
+the KV allocation, not the decode numerics for short prompts).
+THE 256K CONFIG IS NOW FULLY VERIFIED: the golden 12/12 + the needles to
+239K 3/3 + the decode@128K 43.3 + the prefill@128K 27.7 s — ALL PASS.
+The open item from EXP-256K is CLOSED. The production reverted to the
+adopted 32K config (the boot pid 1307892).
