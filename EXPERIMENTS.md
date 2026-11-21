@@ -2171,3 +2171,11 @@ The verdict: the structural MTP-k=1 property on this stack — the serving is
 correct and coherent but temperature-0 outputs are batch-composition
 dependent under concurrency. Boot-dependent in degree (the earlier boots
 passed the same test). Root cause beyond reach without the Habana internals.
+
+## EXP-DIFFPT — THE DRIFT DIVERGENCE POINTS MEASURED (2026-11-21 08:28)
+The ANCHOR variants: the first-diff at chars 115-168 (~tokens 25-40) —
+the divergence: NOT token-1: the shared prefix then the near-tie branch
+points mid-reasoning ("This is a text-bas... vs This is a straight...",
+"This is a... vs There's no..."). The measured: the divergence at the
+semantic branch points (~the 15-25% into the response), consistent with
+the near-tie logit flips cascading from the batch-composition numerics.
