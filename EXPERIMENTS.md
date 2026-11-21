@@ -2209,3 +2209,13 @@ class as the golden's earlier run). Re-run against
 The robustness checks on the current boot: the disconnect (the engine
 alive, the clean post-disconnect outputs), the block boundary (the correct
 answers at the boundaries). All verified.
+
+## EXP-VAL — THE FULL VALIDATION SUITE ON THE CURRENT BOOT: ALL PASS (2026-11-21 09:20)
+mtp_validate.py with GLM_GOLDEN_REF=/data/glm53/golden_reference_mtp.json
+(the env-var support patched into mtp_validate.py): the golden stages
+token-identical, the decode bs1 38.4 / bs8 36.8 tok/s PASS, the
+soak-repeat PASS (5 identical greedy, no drift), the soak-multiturn PASS.
+The earlier "TOTAL FAILURES 6" was the stale-stock-reference artifact
+(the same class as the golden/content-parity earlier runs).
+The replicator gotcha is now fixed at the source: mtp_validate.py honors
+GLM_GOLDEN_REF.
