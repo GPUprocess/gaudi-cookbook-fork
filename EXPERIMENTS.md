@@ -1941,3 +1941,10 @@ All four positions with mm_processor_kwargs 512/image: first=red, second=green,
 third=blue (x3 cumulative), fourth=yellow — **4/4 correct**. The budget kwarg
 preserves the positional accuracy completely. The 4-image capability: fully
 restored and verified.
+
+## EXP-Q21 step 9d — THE 4-IMAGE INDEXING AT THE DEFAULT EFFORT: 4/4 (2026-11-20 00:10)
+The positional sweep without the reasoning_effort kwarg (the default):
+first=red, second=green, third=blue, fourth=yellow — **4/4 CORRECT,
+including the position-3** (which failed at the low effort). The quirk was
+the low-effort limitation; the recommendation: the default effort for the
+multi-image positional questions.
