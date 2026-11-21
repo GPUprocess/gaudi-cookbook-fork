@@ -510,7 +510,21 @@ sampler's output tensor + the host parse.
   is exact only if K covers the support the thresholds can reach — the fix's K-choice
   logic handles this; verify with the I004/I005 study on the suite's sampled prompts).
   Stability: the pre-enqueue adds one step of in-flight state (the D3-class HBM term —
-  check the capture's HBM delta, the rev-8 OOM lesson).
+  check the capture's HBM delta, the rev-8 OOM lesson). **The project's own async
+  prior is unfavorable and must be weighed (EXP-RA011 / F1-ASYNC, server git record):**
+  EXP-RA011 (`b838cd9`) implemented the vendor async-replay thread pool exactly per
+  RA-011 — measured **+29% bs=1 (54.2 median)** with @16 parity, but **R003 flipped
+  deterministically 5/5 → REJECTED** per the accuracy policy; the follow-up F1-ASYNC
+  (`e5beed8`, the async-D2H output-path redesign — the RA-018/T6 shape) was executed
+  and dropped (decode −5%, suite still 97.5%): the recorded verdict is "the async
+  replay flip is **device-side launch ordering**, outside the runner". RA-039(b)'s
+  pre-enqueue changes the launch/execute sequence in the same reordering class — the
+  differences are (i) it is in-order on the existing stream (no replay thread, no
+  `asynchronous=True`, no output staging change), (ii) the D14 audit first establishes
+  whether the vendor scheduler path is the same reordering as the replay-thread path,
+  and (iii) the suite gate is unchanged. If the suite flips under (b), the item moves
+  to "T7-gated" (the RA-018/T7 tie-aware policy is the unlock) — it is not silently
+  re-tried.
 
 **8. Dependencies.** D14 (the audit) gates everything. (b) depends on the draft's
   collectivity check (trace, no HPU time) and is sequenced after RA-040's chain graph
@@ -545,11 +559,19 @@ sampler's output tensor + the host parse.
   note "the async-scheduling parity" — the parity finding was about the *device*
   behavior of async vs sync, and RA-032's lazy-collectives NO-OP is related but
   different) but never *audited on our MTP boot* — D14 is new. The pre-enqueued-draft
-  pattern is new to the project (GaudiInfer Tier D; the "async HPU-graph replay"
-  rejection RJ-01 is a different mechanism — the vendor replay thread, measured
-  regression; this is in-order enqueue on the existing stream). The topk-subset-sampler
-  port is new (the fix exists upstream; it is not in our fork's fixes/ — V-5). No
-  overlap with RA-038-B D3 (the payload piggyback) — complementary.
+  pattern is new to the project (GaudiInfer Tier D). It differs from the two prior
+  async experiments: RJ-01 (the abotsis reference's naive `VLLM_HPU_GRAPH_ASYNC_REPLAY`
+  flag — a measured regression *in their* stack, a different mechanism) and, more
+  importantly, our own **EXP-RA011 / F1-ASYNC** (the vendor replay-thread pool per
+  RA-011: +29% bs=1 measured, R003 5/5 flips, REJECTED; then the async-D2H redesign
+  executed and dropped at −5% with the flip persisting — "the async replay flip is
+  device-side launch ordering, outside the runner"). RA-039(b) is the same *reordering
+  class* but a different mechanism: in-order enqueue on the existing stream via the
+  vendor's async *scheduler* (no replay thread, no `asynchronous=True`, no staging
+  change) — the §7 prior and the D14 audit exist precisely because the class is known
+  to flip R003. The topk-subset-sampler port (c) is new (the fix exists upstream; it is
+  not in our fork's fixes/ — V-5) and touches no reordering at all. No overlap with
+  RA-038-B D3 (the payload piggyback) — complementary.
 
 ---
 

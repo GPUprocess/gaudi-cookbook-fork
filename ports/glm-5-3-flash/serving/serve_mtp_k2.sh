@@ -9,6 +9,7 @@
 # plugin mtp module (part of this port).
 set -euo pipefail
 : "${COOKBOOK:?set COOKBOOK to the repository checkout}"
+. /opt/glm53/venv/bin/activate
 : "${GLM53_MODEL_PATH:?set GLM53_MODEL_PATH to the checkpoint directory}"
 
 export PT_HPU_LAZY_MODE=1
@@ -39,7 +40,7 @@ export GLM_SPEC_DEVICE_REJECT=1
 export GLM_EARLY_DRAFT=1
 
 
-python3 "$COOKBOOK/fixes/apply_all.py" --profile v0.26.0 glm47-streaming-text-markers || exit 1
+# fixes already applied in the image (the boot_f4ts pattern): python3 "$COOKBOOK/fixes/apply_all.py" --root /opt/glm53/vllm-gaudi --profile v0.26.0 glm47-streaming-text-markers || exit 1
 
 exec vllm serve "$GLM53_MODEL_PATH" \
   --served-model-name zai-org/GLM-5.3-Flash \

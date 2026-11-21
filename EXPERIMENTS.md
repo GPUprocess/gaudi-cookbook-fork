@@ -2387,3 +2387,13 @@ The RA-011 (the async replay): **TESTED AND CLOSED**:
 - **The verdict: KEEP** (the production config henceforth).
 The next: the RA-013 (the histogram capture in flight), then the RA-012,
 the RA-038-A/B, the RA-014, the RA-016/017.
+
+## EXP-RA038B-K2-ASYNC — THE K=2 + ASYNC INTERACTION: NEGATIVE (2026-11-21 16:12)
+The k=2 + the RA-011 combined: the bs1 31.8-32.4 settled — a **-31% regression**
+vs the k=1+async (46.8) AND vs the k=2-sync probe (46.9, 7aaeaa5). The async
+replay and the eager k=2 draft interact negatively (the draft eager dispatch
+enqueues on the stream while the async replay pool runs the verify chain —
+ordering/contention). The k=2 A/B: REVERTED; the production: the k=1 +
+the async (the best measured: the bs1 46.8).
+The deep-MTP program's D1 prerequisite (the graphed draft chain) remains
+the correct path for the k>1; the eager k=2 + the async: refuted.
