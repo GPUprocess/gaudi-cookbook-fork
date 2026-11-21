@@ -2078,3 +2078,12 @@ code-heavy acceptance hypothesis did not materialize on these prompts. The
 ngram: the zero-cost fallback documented (the config swap), not the
 displacement. The research proposal: IMPLEMENTED AND MEASURED (the probe
 complete).
+
+## EXP-Q21 step 10f — THE FIX-2 BUILT AND GATE-VERIFIED (2026-11-21 23:30)
+The w2 v8 kernel (the pre-quantized fp8 act + the per-group dequant scales):
+the build CLEAN after the TPC type fixes (the minifloat256 256-lane loads,
+the float64 reduce/scalar semantics, the glue 5-input); the op-gates ALL
+PASS (the version, the lib loads, the ops registered, no cross-variant).
+The dist: /data/glm53/q21_dist_v8. The test staged: the boot (the v8 dist +
+the Q21 + the no-roundtrip) -> the parity -> the long-generation (the OOD
+fix verdict) -> the bench (the speed verdict) -> the 200/800 gap.

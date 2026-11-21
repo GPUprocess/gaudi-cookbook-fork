@@ -7,7 +7,7 @@
 //   in0: w2        E4M3 [E_LOCAL, H, I]     TPC dims {I, H, E}
 //   in1: w2_scales F32  [E_LOCAL, H]        TPC dims {H, E}   (ONE scale per row)
 //   in2: act_q     E4M3 [T, K, I]           TPC dims {I, K, T} (the per-token-group-128 quantized)
-//   in3: act_s     F32  [T, K, I/128]       TPC dims {I/128, K, T} (the dequant scales: amax/448)
+//   in3: act_s     F32  [T*K, I/128]       TPC dims {I/128, T*K} (the dequant scales: amax/448; the flattened rows)
 //   in4: topk_ids  I32  [T, K]              TPC dims {K, T}   (the LOCAL ids, -1 = the non-local)
 //   out0: y        BF16 [T, H]              TPC dims {H, T}
 void main(
@@ -59,12 +59,12 @@ void main(
                         float128 acc2; acc2.v1 = 0; acc2.v2 = 0;
                         acc1 = v_bf16_mac_acc32_b(wall.v1, qab.v1, acc1);
                         acc2 = v_bf16_mac_acc32_b(wall.v2, qab.v2, acc2);
-                        const float dot1 = v_f32_reduce_add(acc1.v1 + acc1.v2);
-                        const float dot2 = v_f32_reduce_add(acc2.v1 + acc2.v2);
+                        const float64 dot1 = v_f32_reduce_add(acc1.v1 + acc1.v2);
+                        const float64 dot2 = v_f32_reduce_add(acc2.v1 + acc2.v2);
                         // THE PER-GROUP ACT SCALES: the groups p*2, p*2+1.
-                        const float as1 = s_f32_ld_g(gen_addr((int5){p * 2, k, t, 0, 0}, act_s));
-                        const float as2 = s_f32_ld_g(gen_addr((int5){p * 2 + 1, k, t, 0, 0}, act_s));
-                        row_acc_k = row_acc_k + dot1 * (as1 * s) + dot2 * (as2 * s);
+                        const float64 as1 = s_f32_ld_g(gen_addr((int5){p * 2, k + t * 8, 0, 0, 0}, act_s));
+                        const float64 as2 = s_f32_ld_g(gen_addr((int5){p * 2 + 1, k + t * 8, 0, 0, 0}, act_s));
+                        row_acc_k = row_acc_k + dot1 * as1 * (s * 1.0f) + dot2 * as2 * (s * 1.0f);
                     }
                     row_acc = row_acc + row_acc_k;
                 }
