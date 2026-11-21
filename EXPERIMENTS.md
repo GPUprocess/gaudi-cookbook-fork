@@ -2417,3 +2417,15 @@ host sync inside the captured region — the instrumentation must be
 outside (the graph_editor recipe level: the RA-038-A's instrument) or
 the eager mode. The RA-013 histogram: BLOCKED on this class (the same
 conclusion as the vllm-path attempt).
+
+## EXP-PROD-RESTORED2 — THE PRODUCTION RESTORED AFTER THE HISTOGRAM REVERT (2026-11-21 18:26)
+The boot (the pid 1637889, the reverted hpu_fp8.py), the health UP 18:25:26,
+the sanity 391 correct. The production config: the k=1 + the RA-011 (the
+best verified: the bs1 46.5-48.6, the @16 251-258.8). The proposal work
+under the owner directive: the RA-011 KEEP; the k=2 refuted (-31% with the
+async); the RA-013 blocked (the lazy-mode instrumentation class, both
+paths); the RA-016/017 blocked/low; the RA-037-L4 analyzed (the k=1 @16
+parity); the RA-014 deferred (the prefill); the remaining: the RA-038-A
+(the node collapse — the master lever), the RA-012 (the fused kernels),
+the RA-038-B deep-k (gated on D1). The 200/800 gate: NOT met; the path
+documented.
