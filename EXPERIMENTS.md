@@ -2219,3 +2219,13 @@ The earlier "TOTAL FAILURES 6" was the stale-stock-reference artifact
 (the same class as the golden/content-parity earlier runs).
 The replicator gotcha is now fixed at the source: mtp_validate.py honors
 GLM_GOLDEN_REF.
+
+## EXP-WD — THE HEALTH WATCHDOG: INSTALLED AND PROVEN LIVE (2026-11-21 09:44)
+The cron watchdog (*/5 * * * * /data/glm53/health_watchdog.sh): the health
+check, the boot-in-flight lock (40-min stale), the auto-recovery via
+boot_f4ts.sh. **Proven live**: the unexplained serving shutdown at ~09:15
+(the validation-load crash suspected; the log truncated; no OOM) was
+auto-recovered by the watchdog's 09:25 run — the recovery boot completed
+at 09:44:34 (HEALTH-UP, the smoke 391 correct). The boot script now
+touches the lock at the start (the manual boots are protected).
+The production: self-healing.
