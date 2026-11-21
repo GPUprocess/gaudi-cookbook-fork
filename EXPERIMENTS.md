@@ -2120,3 +2120,11 @@ production: fully fit for users. The Q21 program: the speed experiment
 The production (the stock config): 4 parallel 512-token generations: 384-418
 coherent words each, ZERO triple-reps, distinct stories, coherent endings.
 The concurrent long-form generation: CORRECT on the production config.
+
+## EXP-GOLDEN — THE CURRENT PRODUCTION BOOT'S GOLDEN RE-VERIFIED (2026-11-21 07:50)
+gates.py golden with GLM_GOLDEN_REF=/data/glm53/golden_reference_mtp.json
+on the final production boot (pid 1108115): **PASS 12/12 token-identical**
+(47 s). The current serving: the full correctness chain verified (the
+golden 12/12 + the coherence + the concurrency). Note: the env var is
+GLM_GOLDEN_REF (not GLM53_...); the wrong-var run falls back to the stock
+reference and shows the expected MTP-vs-stock numeric divergence (1/12).
