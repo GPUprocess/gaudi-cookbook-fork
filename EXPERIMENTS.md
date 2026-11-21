@@ -2050,3 +2050,11 @@ The graphs.py revert: N/A (the graphs.py has no patch — the env is the
 mechanism). The boot: the clean start (the zero device failures). The
 verification family after the health: the capture-mode behavior (the 24K
 needle = the >2048 prompt class), the benches, the suite.
+
+## EXP-RA010 — THE NGRAM PROBE PREPARED (2026-11-21 04:05)
+The research proposal RA-010 (the config-only, the zero draft cost): the
+ngram speculative decoding (the method ngram, k=4, the lookup 4/2). The
+NgramProposer: verified present in the vLLM tree (the ngram_proposer_gpu.py).
+The scripts staged: serve_ngram.sh + boot_ngram.sh. The boot: after the
+RA-022 verification family. The decision rule: the acceptance >= 2.5 = keep
+(the zero-cost alternative); 1.5-2.5 = record; < 1.5 = negative.
