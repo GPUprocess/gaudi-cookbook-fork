@@ -2229,3 +2229,18 @@ auto-recovered by the watchdog's 09:25 run — the recovery boot completed
 at 09:44:34 (HEALTH-UP, the smoke 391 correct). The boot script now
 touches the lock at the start (the manual boots are protected).
 The production: self-healing.
+
+## EXP-256K — THE RECIPE'S 256K-CONTEXT SERVING VERIFIED ON THIS NODE (2026-11-21 10:30)
+The one-flag change (--max-model-len 32768 -> 262144; the KV pool already
+819,200 tokens), the dedicated boot, the full >32K gate run:
+- needles: 16K 3/3, 63K 3/3, 127K 3/3, 239K 3/3 (217 s) — the retrieval
+  verified at ALL depths up to 239K
+- decode: 2K 42.0 tok/s (floor 15), 128K 43.3 tok/s (floor 10)
+- prefill warm TTFT: 16K 2.5 s, 64K 11.4 s, 128K 27.7 s (the limit 120 s)
+ALL PASS. The recipe's headline claim (the 256K context served on 8x
+Gaudi 2) is CONFIRMED on this node. The production reverted to the adopted
+32K config after the test (the deliberate KV/stability choice; the 256K
+serving is available via the same one-flag change).
+The replicator note: the 256K boot takes longer to warm (the extra graph
+buckets for the longer decode lengths); the watchdog's 40-min stale lock
+covers the extended warmup.
