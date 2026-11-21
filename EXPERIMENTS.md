@@ -1976,3 +1976,11 @@ The gates on the boot at 00:48: the tools 8/8 (48s), the images 8/8 (2s),
 the golden 12/12 (43s). The full validation: TOTAL FAILURES 0 with the
 decode bs1 43.6 / bs8 43.9 tok/s — the TOP of the claimed 40-43 band.
 The deployment: fully verified on the current production boot.
+
+## EXP-Q21 step 9j — THE PERFORMANCE TARGETS CONFIRMED ON THE CURRENT BOOT (2026-11-21 01:50)
+The concurrent bench on the boot at 00:48: the cold reps 48/203, the warm
+**253.1 tok/s @16** — the record band. The bs1 43.6/43.9 (the validation).
+**The performance targets: MET.** The research review: the adopted levers in
+production; the Q21 retired (the regression); the k=2 refuted twice; the
+draft graphs refuted (the Q19); the remaining levers weeks-class — no
+unimplemented uplifts. The webpage (8090) updated with the full status.
