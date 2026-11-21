@@ -1935,3 +1935,9 @@ the caller-side kwarg** — the callers needing 4 images pass
 mm_processor_kwargs: {max_image_tokens: 512}; the callers wanting the full
 2048/image resolution stay at 3 images max. The REPORT + the REPLICATE
 updated.
+
+## EXP-Q21 step 9c — THE 4-IMAGE POSITIONAL SWEEP WITH THE BUDGET KWARG (2026-11-20 23:55)
+All four positions with mm_processor_kwargs 512/image: first=red, second=green,
+third=blue (x3 cumulative), fourth=yellow — **4/4 correct**. The budget kwarg
+preserves the positional accuracy completely. The 4-image capability: fully
+restored and verified.
