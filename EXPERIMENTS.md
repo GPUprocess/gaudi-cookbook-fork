@@ -2141,3 +2141,11 @@ The needle retrieval at 16K depth on the final production boot: 3/3 codes
 retrieved (PASS). The current boot's runnable verification is now complete:
 the golden 12/12, the tools 8/8, the images 8/8, the needle@16K 3/3, the
 coherence single+concurrent, the smoke, the sanity, the record-band bench.
+
+## EXP-DECODE — THE CURRENT BOOT'S DECODE@2K + PREFILL@16K VERIFIED (2026-11-21 08:10)
+decode@2K: 41.5 tok/s warm mean over 3 (the floor 15 — PASS).
+prefill@16K: 2.9 s warm TTFT (the earlier reference 2.8 s — consistent).
+THE CURRENT PRODUCTION BOOT: EVERY RUNNABLE GATE PASSES — the golden 12/12,
+the tools 8/8, the images 8/8, the needle@16K 3/3, the decode@2K, the
+prefill@16K, the coherence single+concurrent, the sanity/smoke, the MTP k=1
+live at the record-band @16. The >32K cases: the config-scoped ceiling.
