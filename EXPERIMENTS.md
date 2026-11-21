@@ -1994,3 +1994,21 @@ act; the per-layer-per-step host serialization removed. The test chain: the
 health -> the validation (the parity fires) -> the @16 bench x3 -> the bs1
 x2. The results: /data/glm53/q21_nr_test.txt (~01:00). The decision: the
 uplift -> keep; else -> revert to the stock.
+
+## EXP-Q21 step 10b — THE FIX-1 VERDICT: THE STEP UNCHANGED, THE COLLAPSE CONFIRMED (2026-11-21 02:45)
+The Q21 + the no-roundtrip boot (the PARITY ADOPTED mode=fwd):
+- **The step 72.6 ms — UNCHANGED from the stock 72.7** (the node-collapse
+  premise FAILED at bs1: the launch is per-graph not per-node, and the bs1
+  device is idle — the host-dispatch-bound; the node reduction moves neither).
+- **The long generation COLLAPSES** (the 512 tokens, 337 triple-repeats,
+  "wants wants wants") — the bf16 act is out-of-distribution for the
+  calibrated model (the stock quantizes the act to fp8 per-token-group;
+  the v7 kernel uses the bf16 act directly — the HIGHER precision is the OOD).
+- The @16 bench: pending in the chain.
+
+**The verdict**: the fix-1 (the no-roundtrip) is speed-neutral at bs1 AND the
+correctness is broken by the OOD act. **The fix-2 is THE critical fix**: the
+act must be quantized to fp8 per-token-group matching the stock semantics.
+The v8 kernel is written (the pre-quantized fp8 act + the per-group dequant
+scales); the wiring change: the torch-level per-token-group quant before the
+w2 call. The build + the boot + the test: the next window.
