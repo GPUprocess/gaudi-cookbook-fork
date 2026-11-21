@@ -2031,3 +2031,9 @@ the DIFFERENT quadrant: turn1 "Red" (the top-left correct), turn2 "Green"
 (the bottom-right correct — the image recalled from the conversation
 context). The cross-turn multimodal state: works. The multimodal serving:
 verified across EVERY usage pattern.
+
+## EXP-Q21 step 10e — THE 4-IMAGE SWAPPED ARRANGEMENT: 4/4 (2026-11-21 03:35)
+The swapped arrangement (blue/yellow/red/green) at the default effort with
+the request budget: **4/4 correct** (the first blue, the second yellow, the
+third red, the fourth green). The indexing generalizes across the
+arrangements — the capability is robust, not arrangement-specific.
