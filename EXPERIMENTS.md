@@ -2360,3 +2360,16 @@ Arm 2 (async + the thread pool):
   (the first bs1 win over the record band).
 - Parity: golden 12/12 token-identical (37 s) — CLEAN.
 The verdict pending the soak: the bs1 win is real; the @16 is neutral.
+
+## EXP-RA011-VERDICT — THE ASYNC REPLAY: KEEP (2026-11-21 13:55)
+The stability: the churn (the 7/8 drift unchanged, 0 errors, 0 garbage,
+the engine alive) + the 5-rep @16 soak (210 cold -> 251.5/253.7/252.2/
+250.6, 0 errors, steady). The verdict: **KEEP** — the parity clean, the
+bs1 +7-11% (the first win over the record band), the @16 parity, the
+stability clean. The env vars: in boot_f4ts.sh (the production: the
+RA-011 enabled henceforth). The estimated +70-85% @16: NOT materialized
+(the overlap already exists at @16, or the pool enqueue is on the critical
+path); the bs1: the host post-work now overlaps the device.
+The targets: the bs1 46.5-48.6 vs the 200 (the gap ~4.2x); the @16 ~250 vs
+the 800 (the gap ~3.2x) — the RA-011 alone: NOT sufficient; the next:
+the RA-013 (the expert placement) and the RA-038-A (the node collapse).
