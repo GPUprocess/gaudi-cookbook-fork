@@ -2308,3 +2308,8 @@ VERIFIED on the final production boot (the tools gate: 8/8 sequential).
 The 2-turn conversation with the SSE streaming on both turns: 36/34
 chunks streamed, the codename ZEBRA-7 recalled correctly in the streamed
 turn 2. The streaming + the multi-turn composition: VERIFIED.
+
+## EXP-TMS — THE TOOLS+MULTI-TURN+STREAMING COMPOSITION VERIFIED (2026-11-21 13:09)
+Turn 1: the streamed get_weather tool call (21 chunks, Oslo correct).
+Turn 2: the streamed recall (25 chunks, Oslo correct). The three-feature
+composition: VERIFIED on the final production boot.
