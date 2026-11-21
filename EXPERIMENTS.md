@@ -1964,3 +1964,9 @@ successful cycle). The serving: fully operational.
 The complete suite after the sinkhorn-window restart: the smoke 2/2, the
 golden 12/12, the decode, the soak — **TOTAL FAILURES: 0**. The restart
 cycle fully verified at every level (the smoke + the full suite).
+
+## EXP-Q21 step 9h — THE CONCURRENT MIXED MULTIMODAL + TEXT VERIFIED (2026-11-20 01:15)
+8 simultaneous requests: 4 image prompts (the colour ID) + 4 text prompts
+(the math, the geography) — **8/8 correct, zero errors**. The scheduler mixes
+the multimodal and the text in the same batches correctly. The true
+production mixed scenario: verified.
