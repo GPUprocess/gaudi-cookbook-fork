@@ -2292,3 +2292,9 @@ THE 256K CONFIG IS NOW FULLY VERIFIED: the golden 12/12 + the needles to
 239K 3/3 + the decode@128K 43.3 + the prefill@128K 27.7 s — ALL PASS.
 The open item from EXP-256K is CLOSED. The production reverted to the
 adopted 32K config (the boot pid 1307892).
+
+## EXP-CHURN2 — THE DRIFT IS CONSISTENT ACROSS BOOTS (2026-11-21 12:45)
+The churn on the final production boot (pid 1307892): 7/8 groups drifted
+(the same as the prior boot's 7/8). The drift: CONSISTENT across the boots
+— the structural MTP verify property (the batch-composition numerics), not
+a boot anomaly. The engine alive, 0 errors, 0 garbage throughout.
