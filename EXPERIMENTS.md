@@ -2156,3 +2156,18 @@ The AGENTS.md pre-serving requirement satisfied on the final production boot:
 Replicator gotcha: the runner invokes bare `python3` — run it with the venv
 on PATH (env PATH=/opt/glm53/venv/bin:$PATH bash run_gates.sh ...) or the
 images gate fails on the missing PIL (the system python has no PIL).
+
+## EXP-DRIFT — THE CHURN DETERMINISM DRIFT ON THE CURRENT BOOT (2026-11-21 08:35)
+The churn soak (24 staggered requests, 8 prompt groups): 7/8 groups DRIFT
+(2-3 distinct temperature-0 outputs per prompt). The earlier boots: PASS.
+The diagnosis: the variants share the token-1 prefix and diverge at the
+near-tie branch points; the divergence tracks the CONCURRENT BATCH
+COMPOSITION (the same prompt+max_tokens: 1 distinct when run alone; 2-3
+distinct under the staggered concurrency). The MTP verify's 2-row batched
+forward: the numerics vary with the concurrent batch mix — the near-ties
+flip and cascade. Not thermal (no dmesg events), not garbage (0
+replacement-chars), the engine alive, the acceptance healthy (83.6%).
+The verdict: the structural MTP-k=1 property on this stack — the serving is
+correct and coherent but temperature-0 outputs are batch-composition
+dependent under concurrency. Boot-dependent in degree (the earlier boots
+passed the same test). Root cause beyond reach without the Habana internals.
