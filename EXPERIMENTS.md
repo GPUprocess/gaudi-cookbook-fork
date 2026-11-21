@@ -2298,3 +2298,8 @@ The churn on the final production boot (pid 1307892): 7/8 groups drifted
 (the same as the prior boot's 7/8). The drift: CONSISTENT across the boots
 — the structural MTP verify property (the batch-composition numerics), not
 a boot anomaly. The engine alive, 0 errors, 0 garbage throughout.
+
+## EXP-TOOLSC — THE CONCURRENT TOOL CALLS VERIFIED (2026-11-21 13:01)
+The 4 concurrent tool-call requests (Paris/Tokyo/Berlin/Lima): 4/4 fired
+get_weather with the correct city arguments. The tools under concurrency:
+VERIFIED on the final production boot (the tools gate: 8/8 sequential).
