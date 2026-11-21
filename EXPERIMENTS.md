@@ -1970,3 +1970,9 @@ cycle fully verified at every level (the smoke + the full suite).
 (the math, the geography) — **8/8 correct, zero errors**. The scheduler mixes
 the multimodal and the text in the same batches correctly. The true
 production mixed scenario: verified.
+
+## EXP-Q21 step 9i — THE COMPLETE GATE MATRIX ON THE CURRENT BOOT: ALL GREEN (2026-11-21 01:20)
+The gates on the boot at 00:48: the tools 8/8 (48s), the images 8/8 (2s),
+the golden 12/12 (43s). The full validation: TOTAL FAILURES 0 with the
+decode bs1 43.6 / bs8 43.9 tok/s — the TOP of the claimed 40-43 band.
+The deployment: fully verified on the current production boot.
