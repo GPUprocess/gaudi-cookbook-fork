@@ -2184,3 +2184,8 @@ the near-tie logit flips cascading from the batch-composition numerics.
 4 concurrent image+text requests (the 2 solid-colour, the shape quiz, the
 repeat): 4/4 correct in 1.9s (the red/green/circle/red answers). The
 concurrent multimodal: CORRECT on the final production boot.
+
+## EXP-TURN — THE MULTI-TURN RECALL VERIFIED ON THE CURRENT BOOT (2026-11-21 08:36)
+The 2-turn recall (the codename turn 1, the recall turn 2): VELVET-9
+recalled exactly. The multi-turn conversation: CORRECT on the final
+production boot.
