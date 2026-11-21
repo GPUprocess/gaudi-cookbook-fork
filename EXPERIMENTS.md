@@ -2149,3 +2149,10 @@ THE CURRENT PRODUCTION BOOT: EVERY RUNNABLE GATE PASSES — the golden 12/12,
 the tools 8/8, the images 8/8, the needle@16K 3/3, the decode@2K, the
 prefill@16K, the coherence single+concurrent, the sanity/smoke, the MTP k=1
 live at the record-band @16. The >32K cases: the config-scoped ceiling.
+
+## EXP-RUNNER — THE OFFICIAL RUN_GATES.SH: ALL PASS ON THE CURRENT BOOT (2026-11-21 08:20)
+The AGENTS.md pre-serving requirement satisfied on the final production boot:
+`run_gates.sh golden tools images` -> PASS 12/12, PASS 8/8, PASS 8/8.
+Replicator gotcha: the runner invokes bare `python3` — run it with the venv
+on PATH (env PATH=/opt/glm53/venv/bin:$PATH bash run_gates.sh ...) or the
+images gate fails on the missing PIL (the system python has no PIL).
