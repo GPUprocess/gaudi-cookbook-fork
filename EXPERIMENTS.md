@@ -1959,3 +1959,8 @@ The complete boot-window cycle: the stop (the graceful) -> the sinkhorn gate
 PASS (bit-for-bit) -> the restart -> the health 00:48 + the smoke
 "FINAL OK". The restart procedure: verified end-to-end AGAIN (the third
 successful cycle). The serving: fully operational.
+
+## EXP-Q21 step 9g — THE FULL VALIDATION ON THE RESTARTED BOOT: TOTAL FAILURES 0 (2026-11-20 01:01)
+The complete suite after the sinkhorn-window restart: the smoke 2/2, the
+golden 12/12, the decode, the soak — **TOTAL FAILURES: 0**. The restart
+cycle fully verified at every level (the smoke + the full suite).
