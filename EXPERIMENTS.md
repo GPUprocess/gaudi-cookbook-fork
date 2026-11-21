@@ -2274,3 +2274,11 @@ multimodal capability: fully verified on the final production boot.
 The 8 staggered mixed requests (4 image+text, 4 text-only interleaved):
 8/8 correct in 6.9 s. The mixed multimodal+text soak: VERIFIED on the
 final production boot (the earlier boots: 8/8 too).
+
+## EXP-SINKHORN — THE KERNEL GATE REQUIRES A FREE CARD (2026-11-21 11:48)
+sinkhorn_parity.py alongside the serving: synStatus=8 Device acquire
+failed — the Habana driver does not share cards between processes; the
+kernel gate requires stopping the server first. The sinkhorn kernel was
+verified bit-for-bit on the earlier boots (the kernel unchanged since);
+the current-boot re-run would cost ~30 min of downtime for an unchanged
+kernel. Deferred to the next planned maintenance window.
