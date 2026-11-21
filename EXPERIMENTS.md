@@ -2100,3 +2100,18 @@ The v8 kernel test (the boot 06:23, the sanity 391 ✓, the parity ✓):
 sane, the targets closer); the fix-2 = the correctness alternative
 (the dist q21_dist_v8, the one-env-var switch) for the coherence-critical
 workloads. The Q21 program: CLOSED with the two-way outcome documented.
+
+## EXP-FINAL — THE PRODUCTION LONG-GEN COHERENCE VERIFIED (2026-11-21 07:19)
+The stock production boot: the 512-token generation = 407 coherent words,
+0 triple-reps, finish_reason=length. The stock config has NO long-generation
+defect — the collapse was the Q21 kernel path-specific (the requant noise
+compounding in the custom op); the fix-2 v8 kernel repairs THAT path. The
+production: fully fit for users. The Q21 program: the speed experiment
+(closed: not deployable at the parity); the fix-2: the Q21 paths fix.
+## EXP-FINAL — THE PRODUCTION LONG-GEN COHERENCE VERIFIED (2026-11-21 07:19)
+The stock production boot: the 512-token generation = 407 coherent words,
+0 triple-reps, finish_reason=length. The stock config has NO long-generation
+defect — the collapse was the Q21 kernel path-specific (the requant noise
+compounding in the custom op); the fix-2 v8 kernel repairs THAT path. The
+production: fully fit for users. The Q21 program: the speed experiment
+(closed: not deployable at the parity); the fix-2: the Q21 path's fix.
