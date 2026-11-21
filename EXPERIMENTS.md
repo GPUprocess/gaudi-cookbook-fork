@@ -2429,3 +2429,11 @@ parity); the RA-014 deferred (the prefill); the remaining: the RA-038-A
 (the node collapse — the master lever), the RA-012 (the fused kernels),
 the RA-038-B deep-k (gated on D1). The 200/800 gate: NOT met; the path
 documented.
+
+## EXP-RA038A-T2-PREP — THE SYNAPSE JSON DUMP ENV FOUND (2026-11-21 19:35)
+The libSynapse.so strings: **GCFG_DUMP_PRE_GRAPHS** (the Synapse config key:
+the pre-graph JSON dump — the graph_editor's -j input) +
+GCFG_DUMP_TPC_NODES_DATA_TO_JSON (the per-node data). The env: the
+GCFG_ keys are env-direct. The characterization boot: the
+GCFG_DUMP_PRE_GRAPHS=1 + the serving -> the recipe JSONs -> the
+graph_editor node census -> the T2 ablation arms.
