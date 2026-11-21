@@ -2313,3 +2313,9 @@ turn 2. The streaming + the multi-turn composition: VERIFIED.
 Turn 1: the streamed get_weather tool call (21 chunks, Oslo correct).
 Turn 2: the streamed recall (25 chunks, Oslo correct). The three-feature
 composition: VERIFIED on the final production boot.
+
+## EXP-MIS — THE MULTI-TURN+IMAGES+STREAMING COMPOSITION VERIFIED (2026-11-21 13:16)
+Turn 1: the purple image, the streamed answer (20 chunks). Turn 2: the
+recall, the streamed answer (38 chunks, purple correct). The
+multimodal+multi-turn+streaming composition: VERIFIED on the final
+production boot.
