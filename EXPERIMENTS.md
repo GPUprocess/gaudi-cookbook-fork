@@ -2179,3 +2179,8 @@ points mid-reasoning ("This is a text-bas... vs This is a straight...",
 "This is a... vs There's no..."). The measured: the divergence at the
 semantic branch points (~the 15-25% into the response), consistent with
 the near-tie logit flips cascading from the batch-composition numerics.
+
+## EXP-MM — THE CONCURRENT MULTIMODAL VERIFIED ON THE CURRENT BOOT (2026-11-21 08:32)
+4 concurrent image+text requests (the 2 solid-colour, the shape quiz, the
+repeat): 4/4 correct in 1.9s (the red/green/circle/red answers). The
+concurrent multimodal: CORRECT on the final production boot.
