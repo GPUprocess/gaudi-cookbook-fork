@@ -2115,3 +2115,8 @@ defect — the collapse was the Q21 kernel path-specific (the requant noise
 compounding in the custom op); the fix-2 v8 kernel repairs THAT path. The
 production: fully fit for users. The Q21 program: the speed experiment
 (closed: not deployable at the parity); the fix-2: the Q21 path's fix.
+
+## EXP-CONC — THE CONCURRENT LONG-GEN COHERENCE VERIFIED (2026-11-21 07:33)
+The production (the stock config): 4 parallel 512-token generations: 384-418
+coherent words each, ZERO triple-reps, distinct stories, coherent endings.
+The concurrent long-form generation: CORRECT on the production config.
