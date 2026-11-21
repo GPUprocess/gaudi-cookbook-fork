@@ -2397,3 +2397,11 @@ ordering/contention). The k=2 A/B: REVERTED; the production: the k=1 +
 the async (the best measured: the bs1 46.8).
 The deep-MTP program's D1 prerequisite (the graphed draft chain) remains
 the correct path for the k>1; the eager k=2 + the async: refuted.
+
+## EXP-PROD-FINAL — THE PRODUCTION (K=1 + RA-011) RESTORED AND CONFIRMED (2026-11-21 14:33)
+The post-256K/post-k=2 revert: the boot (the pid 1548374), the health UP
+14:30:50, the smoke 391 (bg_141). The bench: the @16 33.3 (cold) -> 192.5
+-> 251.2 (the settled, the record band); the bs1 43.2/45.4 (the RA-011's
+band 46.5-48.6 needs more settle reps; the boot variance documented).
+The production config: the k=1 + the RA-011 (the async replay) — the
+best verified configuration.
