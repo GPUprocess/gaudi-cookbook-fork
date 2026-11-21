@@ -2189,3 +2189,9 @@ concurrent multimodal: CORRECT on the final production boot.
 The 2-turn recall (the codename turn 1, the recall turn 2): VELVET-9
 recalled exactly. The multi-turn conversation: CORRECT on the final
 production boot.
+
+## EXP-STREAM — THE SSE STREAMING VERIFIED ON THE CURRENT BOOT (2026-11-21 08:38)
+The reasoning path: 26 chunks streamed in the reasoning field (the
+incremental ✓). The content path (the reasoning_effort low): 2 content
+chunks, "HELLO STREAM" assembled correctly. The streaming: VERIFIED on
+the final production boot (both the reasoning and the content paths).
