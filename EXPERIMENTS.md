@@ -2066,3 +2066,15 @@ VERIFIED), the @16 warm 254.6 (the record band), the tools 8/8, the images
 8/8, the golden 12/12 (the config-scoped reference). The capture-mode
 verbose: enabled for the future boots (the per-bucket stats). **RA-022:
 IMPLEMENTED AND VERIFIED.**
+
+## EXP-RA010 RESULT — THE NGRAM PROBE: REJECTED (2026-11-21 05:20)
+The ngram speculation (the method ngram, k=4, the lookup 4/2) on the
+production config: the acceptance **0.30 per position** (the drafts 2352,
+the accepted 714 — the effective ~1.3 of 5), the decode bs1 32.1-33.0 (vs
+the MTP 43.6-43.9), the @16 warm 74.7 (vs the MTP 253.1). **REJECTED per
+RA-010 decision rule (< 1.5)**: the MTP k=1 remains the production drafter.
+The mechanism: the test prompts lack the repetitive n-gram structure; the
+code-heavy acceptance hypothesis did not materialize on these prompts. The
+ngram: the zero-cost fallback documented (the config swap), not the
+displacement. The research proposal: IMPLEMENTED AND MEASURED (the probe
+complete).
