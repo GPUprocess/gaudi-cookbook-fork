@@ -2135,3 +2135,9 @@ tools 8/8 PASS, images 8/8 PASS. The decode/prefill/needles suites open with
 the >32K-context cases → HTTP 400 (the adopted 32K ceiling, config-scoped,
 documented; the runnable subsets passed on the earlier boots: decode@2K
 39.9 tok/s, prefill@16K warm TTFT 2.8s, needle@16K 3/3).
+
+## EXP-NEEDLE — THE CURRENT BOOT'S NEEDLE@16K VERIFIED (2026-11-21 08:05)
+The needle retrieval at 16K depth on the final production boot: 3/3 codes
+retrieved (PASS). The current boot's runnable verification is now complete:
+the golden 12/12, the tools 8/8, the images 8/8, the needle@16K 3/3, the
+coherence single+concurrent, the smoke, the sanity, the record-band bench.
