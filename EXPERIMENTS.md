@@ -2319,3 +2319,12 @@ Turn 1: the purple image, the streamed answer (20 chunks). Turn 2: the
 recall, the streamed answer (38 chunks, purple correct). The
 multimodal+multi-turn+streaming composition: VERIFIED on the final
 production boot.
+
+## EXP-T256K — THE 256K TOOLS GATE: PASS 8/8 (2026-11-21 13:45)
+The tools gate at the 256K config: **PASS 8/8 (51 s)** — including the
+after-32K case's FULL generation (uncapped at the 256K; the 32K config
+caps it at 512). EVERY GATE NOW PASSES AT THE 256K CONFIG: the golden
+12/12, the needles to 239K 3/3, the decode@128K 43.3, the prefill@128K
+27.7 s, the tools 8/8 — ALL PASS. The 256K config: fully verified on
+every dimension. The production reverted to the adopted 32K config
+(the boot pid 1365218).
