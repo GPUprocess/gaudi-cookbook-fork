@@ -2448,3 +2448,13 @@ The RA-038-A characterization: DEFERRED to the next session (the vendor
 research: the GCFG semantics; the T2 ablation: the arms). The session's
 RA-038-A contribution: the env discovery + the attempt + the honest
 deferral.
+
+## EXP-PROD-FINAL3 — THE CLEAN PRODUCTION RESTORED AND VERIFIED (2026-11-21 21:18)
+The boot (the pid 1682157, the clean config — the GCFG removed, the RA-011
+kept), the health UP 21:18:04, the sanity 391 correct. The session's
+proposal program: the RA-011 KEEP (the zero-drift parity, the bs1 +7-11%),
+the k=2 refuted, the RA-013 blocked (the lazy-mode class, both paths),
+the RA-016/017/036 blocked/low, the RA-037-L4 analyzed, the RA-014
+deferred, the RA-038-A characterization attempted (the GCFG rabbit hole,
+the deferred to the next session with the vendor research task). The
+production config: the k=1 + the RA-011 — the best verified.
