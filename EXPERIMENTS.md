@@ -2244,3 +2244,10 @@ serving is available via the same one-flag change).
 The replicator note: the 256K boot takes longer to warm (the extra graph
 buckets for the longer decode lengths); the watchdog's 40-min stale lock
 covers the extended warmup.
+
+## EXP-FINAL-BENCH — THE FINAL PRODUCTION BOOT'S RECORD BENCHMARK (2026-11-21 10:57)
+The final production boot (pid 1240082, the 32K adopted config): the @16
+settles 37.9 (cold) -> 170.0 -> 243.1 -> **258.8 tok/s** (the new session
+record); the bs1 36.2-36.7 (the boot-dependent variance, consistent with
+the prior boot; the record 43.6-43.9 stands). The production serving is at
+the verified record performance after the 256K test's revert.
