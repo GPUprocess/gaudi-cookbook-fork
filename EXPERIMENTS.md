@@ -1984,3 +1984,13 @@ The concurrent bench on the boot at 00:48: the cold reps 48/203, the warm
 production; the Q21 retired (the regression); the k=2 refuted twice; the
 draft graphs refuted (the Q19); the remaining levers weeks-class — no
 unimplemented uplifts. The webpage (8090) updated with the full status.
+
+## EXP-Q21 step 10a — THE RE-OPENED PROGRAM: THE FIX-1 TEST ARMED (2026-11-21 00:20)
+The user directive: the targets 200/800 confirmed; the Q21 re-opened (the
+implementation flaws are fixable; the concept path to ~768-800 @16 stands).
+**The fix-1 test armed**: GLM_Q21_MOE=1 + GLM_Q21_NO_ROUNDTRIP=1 (the env
+gate committed 2b87ff15) — the descriptor-path enqueue accepts the device
+act; the per-layer-per-step host serialization removed. The test chain: the
+health -> the validation (the parity fires) -> the @16 bench x3 -> the bs1
+x2. The results: /data/glm53/q21_nr_test.txt (~01:00). The decision: the
+uplift -> keep; else -> revert to the stock.
