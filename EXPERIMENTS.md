@@ -2328,3 +2328,15 @@ caps it at 512). EVERY GATE NOW PASSES AT THE 256K CONFIG: the golden
 27.7 s, the tools 8/8 — ALL PASS. The 256K config: fully verified on
 every dimension. The production reverted to the adopted 32K config
 (the boot pid 1365218).
+
+## EXP-RA011 — THE ASYNC REPLAY A/B STARTED (2026-11-21 14:15)
+The RA-011 implementation (the one-line wrapper change already in the
+deployed runner, env-gated) + the env vars added to boot_f4ts.sh
+(GLM_HPU_GRAPH_ASYNC=1, PT_HPU_ENABLE_HPUGRAPH_THREAD=1,
+PT_HPU_QUEUE_SYNLAUNCHES=1).
+- Arm 0 (synchronous, the baseline): 33.9 cold -> 200.3 -> 253.4 tok/s @16.
+- Arm 2 (async replay + the thread pool): booting (pid 1404964).
+The A/B protocol: the parity (the golden bit-identity) + the @16/bs1 bench
++ the 16-stream soak. The success: the bs1 >= +30% AND the @16 >= +40%,
+the parity clean, the soak stable. The estimated: the bs1 +50-100%, the
+@16 +70-85% (the overlap of the 24-61 ms host post-work under the device).
