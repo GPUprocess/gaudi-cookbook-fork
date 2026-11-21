@@ -1,7 +1,7 @@
 static GlueCodeReturn inst_block_fp8_moe_w2_glm(HabanaKernelParams* in, HabanaKernelInstantiation* out) {
-    if (in->inputTensorNr != 4) { in->inputTensorNr = 4; return GLUE_INCOMPATIBLE_INPUT_COUNT; }
+    if (in->inputTensorNr != 5) { in->inputTensorNr = 5; return GLUE_INCOMPATIBLE_INPUT_COUNT; }
     if (in->outputTensorNr != 1) { in->outputTensorNr = 1; return GLUE_INCOMPATIBLE_OUTPUT_COUNT; }
-    static const TensorDataType ti[4] = {DATA_F8_143, DATA_F32, DATA_BF16, DATA_I32};
+    static const TensorDataType ti[5] = {DATA_F8_143, DATA_F32, DATA_F8_143, DATA_F32, DATA_I32};
     static const TensorDataType to[1] = {DATA_BF16};
     if (!checkTypes(in, ti, to)) return GLUE_INCOMPATIBLE_DATA_TYPE;
     const uint64_t* ws = in->inputTensors[0].geometry.maxSizes;
@@ -20,6 +20,8 @@ static GlueCodeReturn inst_block_fp8_moe_w2_glm(HabanaKernelParams* in, HabanaKe
     // THE PER-ROW SCALES: [E_LOCAL, H] -> the TPC dims {H, E}
     if (ss[0] != H || ss[1] != E_LOCAL) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     if (as[0] != I || as[1] != K) return GLUE_INCOMPATIBLE_INPUT_SIZE;
+    // the act scales [I/128, K, T]
+    if (ass[0] != I / 128 || ass[1] != K || ass[2] != T) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     if (os[0] != H || os[1] != T) return GLUE_INCOMPATIBLE_INPUT_SIZE;
     const uint32_t npts = tpcPoints(in, T * (H / 128));
     setIndexSpace(in, out, npts);
