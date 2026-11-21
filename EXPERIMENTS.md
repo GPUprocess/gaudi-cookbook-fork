@@ -2257,3 +2257,8 @@ The 2-image request (the red + the blue, the positional question): the
 correct answer "first=red, second=blue". The multi-image: VERIFIED on the
 final production boot (the 1-image via the images gate 8/8; the 2-image
 here; the 3-4-image verified on the earlier boots).
+
+## EXP-MM3 — THE 3-IMAGE REQUEST VERIFIED ON THE FINAL BOOT (2026-11-21 11:12)
+The 3-image request (the red/green/blue, the positional question): the
+correct answer "1=red, 2=green, 3=blue". The multi-image ladder on the
+final boot: 1-image (the gate 8/8), 2-image (EXP-MM2), 3-image (this).
