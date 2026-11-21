@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// block_fp8_moe_w2_glm v8 — THE PRE-QUANTIZED FP8 ACT (the stock-semantics match).
+// block_fp8_moe_w2_glm v8b — THE PRE-QUANTIZED FP8 ACT (the stock-semantics match).
 //
 //   y[t, row] = sum_k s2[e_k, row] * sum_g as[t, k, g] * sum_{i in g} actq[t, k, i] * W2[e_k, row, i]
 //
@@ -44,27 +44,29 @@ void main(
                 for (int k = 0; k < 8; ++k) {
                     const int e = expert_ids[k];
                     if (e < 0 || e >= get_dim_size(w2, 2)) continue;
-                    float128 acc1; acc1.v1 = 0; acc1.v2 = 0;
-                    float128 acc2; acc2.v1 = 0; acc2.v2 = 0;
+                    // THE W2 SCALE: the scales [E, H] -> the TPC dims {H, E}: {row_global, e}.
+                    const float s = s_f32_ld_g(gen_addr((int5){row_global, e, 0, 0, 0}, w2_scales));
+                    float64 row_acc_k; row_acc_k = 0.0f;
                     for (int p = 0; p < IP; ++p) {
                         int5 ac1 = {p * 256, k, t, 0, 0};
-                        int5 ac2 = {p * 256 + 128, k, t, 0, 0};
-                        const minifloat128 qa1raw = v_f8_ld_tnsr_b(ac1, act_q, SW_UNPACK | SW_UNPCK_8_TO_16);
-                        const bfloat128 a1 = v_convert_f8_to_bf16_all_b(qa1raw);
-                        const minifloat128 qa2raw = v_f8_ld_tnsr_b(ac2, act_q, SW_UNPACK | SW_UNPCK_8_TO_16);
-                        const bfloat128 a2 = v_convert_f8_to_bf16_all_b(qa2raw);
+                        // THE F8 ACT: the 256-lane load + the convert (the weight idiom).
+                        const minifloat256 qa = v_f8_ld_tnsr_b(ac1, act_q, SW_UNPACK | SW_UNPCK_8_TO_16);
+                        const bfloat256 qab = v_convert_f8_to_bf16_all_b(qa);
                         int5 coord = {p * 256, row_global, e, 0, 0};
                         const minifloat256 pk = v_f8_ld_tnsr_b(coord, w2, SW_UNPACK | SW_UNPCK_8_TO_16);
                         const bfloat256 wall = v_convert_f8_to_bf16_all_b(pk);
-                        acc1 = v_bf16_mac_acc32_b(wall.v1, a1, acc1);
-                        acc2 = v_bf16_mac_acc32_b(wall.v2, a2, acc2);
+                        float128 acc1; acc1.v1 = 0; acc1.v2 = 0;
+                        float128 acc2; acc2.v1 = 0; acc2.v2 = 0;
+                        acc1 = v_bf16_mac_acc32_b(wall.v1, qab.v1, acc1);
+                        acc2 = v_bf16_mac_acc32_b(wall.v2, qab.v2, acc2);
+                        const float dot1 = v_f32_reduce_add(acc1.v1 + acc1.v2);
+                        const float dot2 = v_f32_reduce_add(acc2.v1 + acc2.v2);
+                        // THE PER-GROUP ACT SCALES: the groups p*2, p*2+1.
+                        const float as1 = s_f32_ld_g(gen_addr((int5){p * 2, k, t, 0, 0}, act_s));
+                        const float as2 = s_f32_ld_g(gen_addr((int5){p * 2 + 1, k, t, 0, 0}, act_s));
+                        row_acc_k = row_acc_k + dot1 * (as1 * s) + dot2 * (as2 * s);
                     }
-                    const float dot1 = v_f32_reduce_add(acc1.v1 + acc1.v2);
-                    const float dot2 = v_f32_reduce_add(acc2.v1 + acc2.v2);
-                    const float s = s_f32_ld_g(gen_addr((int5){row_global, e, 0, 0, 0}, w2_scales));
-                    const float as1 = s_f32_ld_g(gen_addr((int5){p * 2, k, t, 0, 0}, act_s));
-                    const float as2 = s_f32_ld_g(gen_addr((int5){p * 2 + 1, k, t, 0, 0}, act_s));
-                    row_acc = row_acc + dot1 * (as1 * s) + dot2 * (as2 * s);
+                    row_acc = row_acc + row_acc_k;
                 }
                 float128 s128; s128.v1 = row_acc; s128.v2 = 0;
                 int5 yc = {row_global, t, 0, 0, 0};

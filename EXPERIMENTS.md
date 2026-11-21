@@ -2012,3 +2012,15 @@ act must be quantized to fp8 per-token-group matching the stock semantics.
 The v8 kernel is written (the pre-quantized fp8 act + the per-group dequant
 scales); the wiring change: the torch-level per-token-group quant before the
 w2 call. The build + the boot + the test: the next window.
+
+## EXP-Q21 step 10c — THE NO-ROUNDTRIP FAILURE + THE FIX-1B (2026-11-21 01:55)
+The fix-1 (the no-roundtrip lazy enqueue): **BROKEN** — the on-device act is
+an UNMATERIALIZED lazy tensor; the custom-op enqueue reads empty data (the
+golden 10/12 fail at token 1 with the huge gaps; the decode halved; the @16
+5-8x worse). The act CPU roundtrip was FUNCTIONALLY NECESSARY (the E0f0279
+mechanism confirmed: the custom-op requires the materialized inputs).
+**The fix-1b implemented**: GLM_Q21_SYNC_MATERIAL=1 — torch.hpu.synchronize()
+materializes the act ON DEVICE without the host data roundtrip (no D2H/H2D
+copies; the sync wait remains). The next boot window: the fix-1b test.
+**The production**: restored (boot_f4ts.sh, pid 918167) — the stock config
+while the Q21 is re-engineered.
