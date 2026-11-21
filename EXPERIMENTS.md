@@ -2251,3 +2251,9 @@ settles 37.9 (cold) -> 170.0 -> 243.1 -> **258.8 tok/s** (the new session
 record); the bs1 36.2-36.7 (the boot-dependent variance, consistent with
 the prior boot; the record 43.6-43.9 stands). The production serving is at
 the verified record performance after the 256K test's revert.
+
+## EXP-MM2 — THE MULTI-IMAGE REQUEST VERIFIED ON THE FINAL BOOT (2026-11-21 11:08)
+The 2-image request (the red + the blue, the positional question): the
+correct answer "first=red, second=blue". The multi-image: VERIFIED on the
+final production boot (the 1-image via the images gate 8/8; the 2-image
+here; the 3-4-image verified on the earlier boots).
