@@ -12,6 +12,9 @@ set -euo pipefail
 : "${GLM53_MODEL_PATH:?set GLM53_MODEL_PATH to the checkpoint directory}"
 
 export PT_HPU_LAZY_MODE=1
+export GLM_HPU_GRAPH_ASYNC=1
+export PT_HPU_ENABLE_HPUGRAPH_THREAD=1
+export PT_HPU_QUEUE_SYNLAUNCHES=1
 # Habana runtime recipe pins (see experiments/RESEARCH-001 addendum 8):
 # ACC_PAR_MODE=1 matches the bridge default but is pinned explicitly for a
 # deterministic recipe; MEMORY_POOL=none is the reference validated value.
