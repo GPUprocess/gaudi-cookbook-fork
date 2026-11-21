@@ -460,7 +460,12 @@ class Glm5NextMTPModel(nn.Module):
         # first-execution hazard each time. It stays on the eager path.
         _split_ready = (self.pre_attention_graph_core is not None and
                         self.post_attention_graph_core is not None)
-        if (_DRAFT_GRAPH and (self.attn_graph_core is not None or _split_ready)
+        # [RA-023] the batch-conditional draft graph: the graphed draft at the
+        # small batches (+20% at bs=1 measured), the eager at the larger (the
+        # -7% @16 measured). The gate: GLM_MTP_DRAFT_GRAPH_MAX_BS (0 = no gate).
+        _bs_gate = int(os.environ.get("GLM_MTP_DRAFT_GRAPH_MAX_BS", "0") or 0)
+        _bs_ok = (_bs_gate <= 0 or hidden_states.shape[0] <= _bs_gate)
+        if (_DRAFT_GRAPH and _bs_ok and (self.attn_graph_core is not None or _split_ready)
                 and hidden_states.ndim == 3 and inputs_embeds is None
                 and (hidden_states.shape[1] == 1
                      or (_DRAFT_PREFILL_GRAPH and _split_ready
