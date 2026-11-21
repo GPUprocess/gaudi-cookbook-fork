@@ -2058,3 +2058,11 @@ NgramProposer: verified present in the vLLM tree (the ngram_proposer_gpu.py).
 The scripts staged: serve_ngram.sh + boot_ngram.sh. The boot: after the
 RA-022 verification family. The decision rule: the acceptance >= 2.5 = keep
 (the zero-cost alternative); 1.5-2.5 = record; < 1.5 = negative.
+
+## EXP-RA022 VERIFY — THE FULL VERIFICATION FAMILY: ALL GREEN (2026-11-21 04:30)
+The RA-022 boot (the patched runner): the 24K needles 3/3 + 3/3 (the
+cache-free >2048 prompt path EXECUTES — the prefill robustness claim
+VERIFIED), the @16 warm 254.6 (the record band), the tools 8/8, the images
+8/8, the golden 12/12 (the config-scoped reference). The capture-mode
+verbose: enabled for the future boots (the per-bucket stats). **RA-022:
+IMPLEMENTED AND VERIFIED.**
