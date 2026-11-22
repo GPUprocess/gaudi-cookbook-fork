@@ -2728,3 +2728,18 @@ A/B boot: the fix + DUMP_POST_GRAPHS re-dump proves the philox delta
 (the census 40% TPC -> expected near-vanished), the gates prove the
 distribution equivalence, the bench proves the band. Any gate failure
 reverts to the identical adopted config.
+
+## TOPK-SUBSET-SAMPLER A/B VERDICT - INERT FOR THIS MODEL (2026-11-22 06:00)
+The A/B boot (the fix applied + the fresh census): the census delta ZERO
+(TPC 4960, philox 1992, DMA 2504 - identical to the pre-fix baseline).
+Root cause: generation_config.json has NO top_k (temperature 1.0, top_p
+0.95 only); the fix requires k non-None, so the HPU subset path never
+engages and the philox block comes from the top_p full-vocab path the fix
+does not address. Gates on the A/B boot: PASS golden 12/12 identical
+(55 s), PASS tools 8/8 (51 s) - the fix is harmless (inert).
+Decision: KEEP the fix applied (no risk; it engages for any future
+top_k-bearing request profile) and KEEP this boot as production (the
+config is otherwise identical to the adopted one).
+The real philox lever remains open: a top_p-only subset sampler (the
+p-nucleus bounded to a topk bucket) would need a new fix - the design is
+recorded here as the candidate for the next round.
