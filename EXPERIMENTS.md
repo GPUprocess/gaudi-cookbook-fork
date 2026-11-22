@@ -3266,3 +3266,18 @@ idle during the failed boots). The RA-047 closes as BLOCKED-WITH-EVIDENCE:
 the 4 failing recipes are recorded, the ceiling is characterized
 (max_model_len, not blocks), and the unblock path is the upstream
 compiler 1M-graph support.
+
+## PRODUCTION RESTORED AFTER DEVICE-ACQUIRE FAILURE - RESET + BOOT VERIFIED (2026-11-22 20:54)
+The RA-047 window-boot attempts left the Gaudi devices in a state where
+worker init failed with synStatus 8 (Device not found / Device acquire
+failed) on 5 workers - two production restore boots failed identically
+(20:21, 20:52 UTC) at WorkerProc initialization (the shm_broadcast
+cancelled was the downstream symptom). The /dev/shm was clean (63G, 0%
+used, 0 segments); the hl-smi showed 768 MiB residual per card - the
+driver baseline, not leaked contexts. The fix: per-device AIP reset
+(hl-smi -r -i <pci-addr> for all 8 cards, 173 s total). The production
+boot after the reset: HEALTH-UP at 20:53:58 UTC, the smoke 391 correct
+at 20:54:27 UTC. The lesson banked: the failed engine-init boots leave
+the devices un-acquirable until the per-device AIP reset; the restore
+procedure for a wedged node is: (1) stop_and_boot, (2) if synStatus 8
+on worker init, hl-smi -r -i <pci> all cards, (3) boot again.
