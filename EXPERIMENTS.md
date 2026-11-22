@@ -3013,3 +3013,18 @@ the knife-edge class (the suite v2: 80+ items). The risk: a real
 regression hiding in the near-tie class - mitigated by rule 2s
 attribution requirement. This is an owner decision item: adopting the
 policy changes the projects regression contract. Recorded, not enacted.
+
+## T3 CLOSED-FORM CONV-CHAIN REFUTED AT @16 (2026-11-22 14:05)
+The closed-form rewrite (the W slice-MACs over the concatenated stream,
+the CPU parity fp32 exact / bf16 <=1 ULP) booted and validated numerically
+on-device (the smoke 391, the R003 5/5, the parity 1/8), but the warm
+bench REGRESSED at @16: 272.3 vs the loop 346.7 (-21%). The mechanism: the
+closed form reads the stream through strided slices ([bs, L, C] windows at
+4 offsets), while the loop builds contiguous [bs, W, C] windows per token
+- the same op count but a much worse memory-access pattern at the batched
+shapes; Synapse evidently fuses the loop form well. The bs1 was flat
+(49.1-50.0 vs 51.8-52.2, within noise). REVERTED (923e08f); the loop
+restored. The T3 remaining option: the TPC kernel (option 2) or the
+vendor multi-token GDN decode (option 3) - both days-class, queued behind
+the node-collapse program. The CPU parity test remains valid as the
+reference for any future kernel work.
