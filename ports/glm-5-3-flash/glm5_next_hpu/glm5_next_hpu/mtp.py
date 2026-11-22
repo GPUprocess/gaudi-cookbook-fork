@@ -349,6 +349,8 @@ class Glm5NextMTPModel(nn.Module):
         self.pre_attention_graph_core = None
         self.post_attention_graph_core = None
         self.attn_graph_core = None
+        self.chain_graph_core = None
+        self.k_chain = int(os.environ.get("VLLM_GLM_MTP_CHAIN_K", "4"))
         if _DRAFT_GRAPH and _DRAFT_GRAPH_MODE == "attn":
             import habana_frameworks.torch as htorch
 
@@ -363,6 +365,23 @@ class Glm5NextMTPModel(nn.Module):
                 # chain is exactly that: each replay consumes the previous
                 # replay's output. Measured upstream: with dry run, the first
                 # true replay after a capture returned deterministic garbage.
+            )
+        elif _DRAFT_GRAPH and _DRAFT_GRAPH_MODE == "chain":
+            import habana_frameworks.torch as htorch
+
+            # The chain core wraps an attn-mode core (the whole-step captured
+            # unit) k times into ONE captured region. dry_run=False is load
+            # bearing for the same reason as the attn core: pass j+1 consumes
+            # pass j outputs inside the capture.
+            self.attn_graph_core = htorch.hpu.wrap_in_hpu_graph(
+                _DraftAttnGraphCore(mtp, self.embed_tokens),
+                disable_tensor_cache=True,
+                dry_run=False,
+            )
+            self.chain_graph_core = htorch.hpu.wrap_in_hpu_graph(
+                _DraftChainGraphCore(self.attn_graph_core, self.k_chain),
+                disable_tensor_cache=True,
+                dry_run=False,
             )
         elif _DRAFT_GRAPH and _DRAFT_GRAPH_MODE == "split":
             import habana_frameworks.torch as htorch
@@ -415,6 +434,28 @@ class Glm5NextMTPModel(nn.Module):
         out = core(input_ids.reshape(-1)[:batch], positions.reshape(-1)[:batch], hidden_states, *md_tensors)
         self._graph_output_seam()
         return out.reshape(hidden_states.shape)
+
+    def _forward_chain(self, input_ids, positions, hidden_states, md) -> torch.Tensor:
+        """One call runs the whole k-step chain core (RA-038-B D1)."""
+        batch = hidden_states.shape[0]
+        if input_ids.numel() != batch or positions.numel() != batch:
+            raise ValueError("MTP chain graph requires one input id and position per request")
+        core = self.chain_graph_core
+        names = _md_tensor_fields(md)
+        self.attn_graph_core._md_fields = names
+        self.attn_graph_core._md_base = md
+        md_tensors = [getattr(md, n) for n in names]
+        self._graph_replay_seam()
+        hiddens, token_ids = core(input_ids.reshape(-1)[:batch],
+                                  positions.reshape(-1)[:batch],
+                                  hidden_states.reshape(-1, hidden_states.shape[-1]),
+                                  *md_tensors)
+        self._graph_output_seam()
+        return hiddens, token_ids
+
+    def propose_chain(self, input_ids, positions, hidden_states, md):
+        """Proposer-facing entry: one call for the whole k-step chain."""
+        return self._forward_chain(input_ids, positions, hidden_states, md)
 
     def _forward_split(self, input_ids, positions, hidden_states) -> torch.Tensor:
         lead = hidden_states.shape[:-1]
@@ -488,6 +529,8 @@ class Glm5NextMTPModel(nn.Module):
                 from vllm.forward_context import set_forward_context
 
                 with set_forward_context(md, vllm_config):
+                    if self.chain_graph_core is not None:
+                        return self._forward_chain(input_ids, positions, hidden_states, md)
                     if self.attn_graph_core is not None:
                         return self._forward_attn_graph(input_ids, positions, hidden_states, md)
                     return self._forward_split(input_ids, positions, hidden_states)
@@ -603,6 +646,7 @@ class _DraftChainGraphCore(nn.Module):
         ids = input_ids
         hidden = hidden_states
         hiddens = []
+        token_ids = []
         for j in range(self.k):
             cur_pos = out_pos if j > 0 else positions.reshape(-1)[:bs]
             # build the advanced md tensor tuple: field-specific
@@ -629,5 +673,6 @@ class _DraftChainGraphCore(nn.Module):
 
             logits = core.logits_processor(core.lm_head, h, None)
             ids = logits.argmax(dim=-1).reshape(-1)
+            token_ids.append(ids)
             hidden = h
-        return hiddens
+        return hiddens, token_ids

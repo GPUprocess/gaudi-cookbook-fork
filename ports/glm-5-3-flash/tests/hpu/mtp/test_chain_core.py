@@ -81,8 +81,8 @@ def main():
     pos0 = torch.tensor([100, 100, 100, 100])
     hid0 = torch.zeros(4, 4)
     md = (pos0.clone(), torch.tensor([50, 60, 70, 80]), torch.tensor([500, 600, 700, 800]), torch.zeros(4, 2))
-    outs = core(ids0, pos0, hid0, *md)
-    assert len(outs) == k, f"expected {k} outputs, got {len(outs)}"
+    outs, toks = core(ids0, pos0, hid0, *md)
+    assert len(outs) == k and len(toks) == k, f"expected {k}+{k}, got {len(outs)}+{len(toks)}"
     assert len(stub.calls) == k, f"expected {k} attn-core calls, got {len(stub.calls)}"
     # pass 0 consumed the base ids; each later pass consumed the previous argmax
     assert torch.equal(stub.calls[0][0], ids0), "pass 0 must consume the base ids"
@@ -91,7 +91,8 @@ def main():
         this_pos = stub.calls[j][1]
         assert this_pos == 100 + j, (
             f"pass {j} positions must advance by {j} from base (got {this_pos}, base {prev_pos})")
-    print(f"CHAIN-CORE-CONTRACT-PASS: {k} passes, ids chained, positions advanced, {len(outs)} outputs")
+    assert toks[0].shape == ids0.shape
+    print(f"CHAIN-CORE-CONTRACT-PASS: {k} passes, ids chained, positions advanced, {len(outs)} outputs, {len(toks)} token tensors")
 
 
 if __name__ == "__main__":
