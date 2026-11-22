@@ -2813,3 +2813,14 @@ trade: the deterministic parity + the R003 fix + the bs1 gain vs the @8/
 @16 aggregate dip under the pinned bucket. The D1 prerequisite (the
 Q01v2 numerics) is now SATISFIED under T1: the chain-graph program (T2)
 is unblocked.
+
+## RA-010 NGRAM PROBE REFUTED (2026-11-22 09:38)
+The ngram speculation (k=4, prompt_lookup 4-12) boot: the bench bs1 31.5,
+@8 71.6, @16 117.5 vs the MTP+T1+Q01v2 baseline (bs1 51.4, @8 255.5,
+@16 181.3) - SLOWER everywhere (-39% / -72% / -35%). The mechanism: the
+suffix-match drafter cannot sustain acceptance on natural non-repetitive
+prompts (the matches are rare), while the k=4 verify-row and step costs
+are paid in full. The MTP head (the learned drafter, the AL 1.65-1.95 at
+k=1) dominates the ngram on this workload exactly as the settled physics
+predicted. RA-010 CLOSED as refuted; the config-only probe cost: one boot.
+Reverting to the MTP+T1+Q01v2 production configuration now.
