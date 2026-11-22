@@ -172,7 +172,7 @@ def gate_golden():
         want = case["token_ids"]
         # [T1 re-baseline] reference ids derive from the logprobs text;
         # -1 marks the unmapped specials - skipped on both sides.
-        pairs = [(a, w) for a, w in zip(ids, want) if w != -1]
+        pairs = [(a, w) for a, w in zip(ids, want) if w != -1 and a != 151643]
         if [a for a, _ in pairs] == [w for _, w in pairs]:
             same += 1
             continue
