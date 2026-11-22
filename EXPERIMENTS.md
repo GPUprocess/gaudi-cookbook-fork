@@ -2626,3 +2626,13 @@ scheduler-level async OFF per the vendor gate. The RA-039 program: closed
 block-list hot path, D18 the calc, D20 the fp8_inc, D15s tool) documented
 for the next rounds. The boot_char.sh staged for the D15 + D18-measured
 characterization at the next approved window.
+
+## POST-RESTORE BENCH - COLD-START RAMP, NOT A REGRESSION (2026-11-22 03:46)
+bench_baseline.py one minute after the restore health: @8 103.3, @16 129.1
+aggregate vs the historical same-script warm-boot numbers 136.8 / 217.2.
+The delta is the documented cold-start ramp (the record note: 37.9 cold ->
+170.0 -> 243.1/258.8 as graphs warm over ~30-60 min of serving), not a
+config regression: the boot is the identical adopted config (k=1 + RA-011,
+boot_f4ts.sh). The TTFT@128K 400 is the max_model_len 32768 limit, expected
+on this config. The warm band re-asserts as the production serves; no
+action needed.
