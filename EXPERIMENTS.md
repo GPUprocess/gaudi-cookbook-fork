@@ -2891,3 +2891,19 @@ The remaining 14: all deep items (the D1 wiring, the T2 chain capture,
 the D2 kernel, the D3 sampler, the D5 policy, the RA-038-A ablation, the
 RA-041/043/044/047 kernels and designs, the RA-007 research). The D1
 chain core class is staged (ebfe7f6); the runner wiring is next.
+
+## D1 CHAIN CORE GAP IDENTIFIED - THE METADATA ADVANCE (2026-11-22 10:55)
+The chain core class and its CPU contract test are committed and passing
+(ebfe7f6, 785ee3e: 4 passes, ids chained, positions advanced). The
+identified gap before any boot: the per-pass attention-metadata advance.
+Positions advance as base+j (in-graph add, modeled in the contract test),
+but the attn core consumes the full md tensor field set
+(_md_tensor_fields: seq_lens, slot_mapping, block tables, biases), and
+those need FIELD-SPECIFIC semantics: seq_lens and slot_mapping advance +1
+per pass, block tables and biases do not. A blind +j on all fields would
+corrupt the block tables. The proposer kernel
+eagle_step_update_slot_mapping_and_metadata does exactly this per step
+eagerly; the chain-graph version needs the same field-specific math
+traced in-graph. That is the precise next-session first task, followed by
+the proposer-loop integration (the k passes as ONE call replacing the
+llm_base_proposer loop) and the k=4 boot.
