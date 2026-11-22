@@ -2743,3 +2743,16 @@ config is otherwise identical to the adopted one).
 The real philox lever remains open: a top_p-only subset sampler (the
 p-nucleus bounded to a topk bucket) would need a new fix - the design is
 recorded here as the candidate for the next round.
+
+## A/B BOOT CRASH + WATCHDOG AUTO-RECOVERY (2026-11-22 06:25)
+The A/B boot (the topk fix, inert) crashed silently at ~06:20 during the
+first benchs 16-stream first-use graph-capture window (the cause not
+recoverable: the watchdogs recovery boot overwrote the serve log; the
+most likely candidate is capture-time memory pressure with the dump
+overhead). The 5-minute health watchdog caught the down at 06:20:01,
+cleared the cards, and fired the adopted-config recovery boot at 06:20:21
+- the documented self-healing worked as designed on an unattended failure.
+The A/B verdict stands on the pre-crash evidence: the census identical
+(the fix inert, no top_k in the model config), the gates green (the golden
+12/12 identical, the tools 8/8). The recovery boot: the adopted config
+with the inert fix still applied; the health expected ~06:45.
