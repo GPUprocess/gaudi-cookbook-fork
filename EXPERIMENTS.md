@@ -2986,3 +2986,15 @@ to the k=1 + T1 + Q01v2 config now. The deep-MTP acceptance path stays
 where the research placed it: the block-drafter route (RA-009/T4,
 parked on the training hardware) is the only route to >2 tok/step
 acceptance on this model family.
+
+## SESSION FINAL STATE - PRODUCTION ON K=1 + T1 + Q01V2 (2026-11-22 12:44)
+The final production boot (the pid 2112001): the health UP 12:42:46, the
+smoke 391. The configuration: k=1 MTP + the T1 invariance package (the
+determinism fixed) + the Q01v2 graph-captured draft + the fp8_inc KV
+capacity lever available via boot_fp8inc.sh. The MTP=4 chain: fully
+implemented and demonstrated at parity (the bs1 52.1, the @16 346.7),
+parked as the non-default pending the instrumented AL measurement and
+the block-drafter acceptance route (the W7 ceiling: the AL(4) 1.87 =
+the k=1 band). The session closed 11 of the 23 research proposals with
+measured evidence; the remaining 12 are documented with complete designs
+in the fork.
