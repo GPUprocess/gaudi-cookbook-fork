@@ -2535,3 +2535,16 @@ head_dim 128, short_conv_kernel_size 4).
 Status: the arithmetic is source-derived; the measured single-request
 allocation read lands at the next characterization boot (with DUMP_POST_
 GRAPHS, one boot serves D15 + D18).
+
+## D16 ANSWERED - THE PYTHON-LOOP BLOCK-LIST HOT PATH CONFIRMED (2026-11-22 02:28)
+Source: hpu_model_runner.py get_habana_paged_attn_buffers (l.2495-2545).
+Per decode step, in pure Python: last_block_usage list-comp per slot (l.2499),
+block_groups [[i]*len(bt) for i, bt ...] per block-table (l.2500), block_usage
+same shape (l.2501), then an enumerate loop building the gather indices
+(l.2510-2512), then three torch.tensor(list) CPU constructions (l.2530-32).
+Cost is O(total_blocks) Python per step: at 128K context / 640-token blocks
+that is ~200 blocks/seq x 32 seqs x 3 lists - the ms-class host work the
+rimb05 fastmeta block-list removes (their claim: up to ~8 ms/step).
+The fastmeta-style numpy block list is a concrete, source-verified lever for
+the bs=1 long-context host term. RA-046-adjacent; candidate for the next
+optimization round after RA-039 async.
