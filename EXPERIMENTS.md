@@ -3104,3 +3104,15 @@ measured performance. The staged fp8 scripts (serve_fp8inc.sh,
 boot_fp8inc.sh) are removed; the KV cache stays bf16 (the 723,155-token
 pool) in every configuration, production and experimental. The RA-042
 A/B evidence remains in the record as the reference data only.
+
+## D16 NUMPY BLOCK-LIST REWRITE APPLIED (2026-11-22 16:20)
+The vectorized block-list construction is applied to
+hpu_model_runner.py get_habana_paged_attn_buffers (the live tree): the
+numpy repeat/full/roll/mask replaces the O(total_blocks) Python
+comprehensions (the rimb05 fastmeta mechanism: up to ~8 ms/step at the
+long-context @16). The CPU parity: the exact integer equality on the
+plain/swa/ragged/single cases (test_d16_numpy.py). The on-device
+validation: the next boot (the block-list outputs feed the paged-attn
+buffers on every decode step; the R003 probe + the bench on the boot).
+Note: the file lives in the deployed vllm-gaudi tree (/opt/glm53), not
+the fork repo - the change rides the deployed tree.
