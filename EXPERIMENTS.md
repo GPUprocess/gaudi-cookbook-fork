@@ -2636,3 +2636,14 @@ config regression: the boot is the identical adopted config (k=1 + RA-011,
 boot_f4ts.sh). The TTFT@128K 400 is the max_model_len 32768 limit, expected
 on this config. The warm band re-asserts as the production serves; no
 action needed.
+
+## WARM-RAMP CONFIRMED - THE BAND IS BACK (2026-11-22 03:50)
+bench_baseline 8 minutes after restore (03:48-03:49): bs1 51.4/52.5,
+@8 280.8 (median 35.35/stream), @16 169.9 aggregate (median 14.91,
+max 22.53), TTFT@4K 1.34 s (prefill 2400.9 tok/s), TTFT@32K 5.61 s
+(prefill 4565.4 tok/s). Versus the 03:41 cold run: @8 103.3 -> 280.8
+(2.7x), @16 129.1 -> 169.9, TTFT@4K 21.6 -> 1.34 s. The cold-start ramp
+is real and fast; the warm band exceeds the historical bench_tp8_restore
+warm numbers (bs1 30.3, @8 136.8, @16 217.2) at bs1 and @8 - the 51.4 bs1
+and 280.8 @8 are new session records for this script. The production is
+fully warm and serving at the top of the verified band.
