@@ -2710,3 +2710,11 @@ the batch buckets) - full coverage of the serving shape space. D15 CLOSED
 (the measured KV geometry). Reverting to the adopted production config now
 (k=1 + RA-011, the graphs env unchanged); the warm band re-establishes in
 ~20-30 min of serving.
+
+## PRODUCTION RESTORED AFTER THE D15 CHARACTERIZATION WINDOW (2026-11-22 05:12)
+The adopted config boot (the pid 1828028): the health UP 05:11:46, the
+smoke 391 correct. The production: k=1 + RA-011, the census banked, the
+philox lever documented. The session bank for the next rounds: the
+topk-subset-sampler cherry-pick (the philox 40% TPC finding), the D16
+block-list numpy rewrite, the RA-041/RA-042 lattice on the measured KV
+geometry. The warm band re-establishes in ~20-30 min of serving.
