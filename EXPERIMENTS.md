@@ -2672,3 +2672,19 @@ LOG_LEVEL_ALL=2): the census lands in the per-graph JSONs (the per-node
 engine field: TPC/MME/DMA), serving the RA-038-A node-collapse
 characterization and D18s measured allocation read in one window.
 The production reverts to the identical adopted config afterward.
+
+## D15 GRAPH CENSUS COMPLETE - THE PHILOX SAMPLER IS 40% OF TPC (2026-11-22 04:50)
+DUMP_POST_GRAPHS landed 2008 post-graph JSONs (259 graph names, 18 MB) in
+.graph_dumps (the dot-dir gotcha confirmed). Aggregate: TPC 4960, DMA 2504,
+unlabeled 4336, MME 0 (the MoE GEMMs are inside HabanaFusedOpLazy sub-graphs
+the post-dump does not decompose). The decisive finding: TPC guid
+philox_random_uniform_bf16 = 1992 nodes = 40% of all TPC - the SAMPLERs
+full-vocab random dominates the decode recipe. Constants are another 2152
+(compile-time, not per-step work).
+Consequence: the topk-subset-sampler fix (upstream vllm-gaudi, cookbook
+fixes/topk-subset-sampler; our fork carries seeded-sampling but not this
+one - V-5) replaces the full-vocab random with torch.topk(K) + per-row
+threshold + exponential race: a concrete candidate to remove the philox
+block from the recipe. This is the RA-038-A-class lever the census was
+hunting: cherry-pick + gate + bench next round.
+D18 measured read also available in this window (the allocation probe).
