@@ -3217,3 +3217,28 @@ time win under the RA-044 dual-metric discipline. Both plans are staged
 as docs/research/RA041_lattice_spec.md and RA043_wy_spec.md for the
 next-session implementation; the kernels are weeks-class code, the
 plans are the execution-ready record.
+
+## AL(4) ACCEPTANCE PROGRAM MEASURED - TEMPERATURE + PROMPT-INVARIANT; CHAIN -6% VS K=1 (2026-11-22 18:46)
+The AL(4) acceptance program ran against the live k=4 chain boot
+(VLLM_GLM_MTP_CHAIN_K=4, verified bound: the draft head + the chain
+graph core). Three findings:
+1. TEMPERATURE INVARIANCE: the throughput 44.2-49.1 tok/s across
+   temp 0.0-1.0 (the acceptance-length proxy does not degrade with
+   sampling temperature on the prose prompt).
+2. PROMPT-TYPE INVARIANCE: 49.6-52.5 tok/s across math/code/prose/
+   summary/translation/extraction (the +/-3% band; translation highest,
+   prose lowest - no prompt class collapses acceptance).
+3. THE SINGLE-HEAD CEILING: the chain throughput ~50.5 tok/s = AL(4)
+   1.87 tokens/step / the ~37 ms chain step (the 4 sequential draft
+   replays ~3 ms each + the ~25 ms verify). The k=1 production baseline
+   is 53.9 tok/s: the MTP=4 chain is -6% at bs=1. The honest verdict:
+   the MTP=4 chain does NOT beat k=1 on this stack - the acceptance
+   gain (1.87 tokens/step) is consumed by the chain step cost.
+THE FAST-PATH VERDICT: to make MTP=4 net-positive, the chain step must
+drop below ~34.7 ms (1.87/53.9): either the draft replays fall to
+~2 ms each (the -33% draft cost, the Q01v2 graph is already captured)
+or AL(4) rises to ~2.07+ at the same step cost. The two-drafter /
+head-reuse route is the remaining lever: reusing the target head's
+last-layer KV for the draft (the no-draft-forward route) is the
+head-reuse candidate; the two-drafter route needs a second head -
+prohibited by the checkpoint (the single head published).
