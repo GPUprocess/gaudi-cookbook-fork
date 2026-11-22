@@ -3059,3 +3059,39 @@ reframed as the node-count lever under RA-038-A), RA-007 (the prefill
 ladders: the research requires the D11/D12 measurement windows).
 Production: k=1 + T1 + Q01v2, the health UP, the smoke 391, the records:
 bs1 53.9, @16 346.7 (the fp8_inc lever available via boot_fp8inc.sh).
+
+## RA-044 DESIGN ADDENDUM - THE Q21 KERNEL AS THE NODE-COUNT LEVER (2026-11-22 15:20)
+The Q21 kernel (the 1Cat block_fp8_dequant core, compiled and gated in our
+variant, closed as a traffic lever by BG-1) is REFRAMED per RA-038-A as
+the node-count lever: the grouped-MoE GEMM region (1,496 batch_gemm MME
+nodes + 1,002 multiplexer TPC nodes -> ~42-150) with the per-node
+execution and the recipe-count host term as the value, not the bytes.
+The design addendum, per the g2-opt-manual dead-ends list and the corpus
+verification this session:
+1. THE INSTRUMENT IS THE 1CAT FX PASS, NOT THE SYNAPSE FUSER KNOBS. The
+   corpus confirms the 1Cat fork ships a production-proven FX-level
+   fusion pass on this model class (flashinfer_projection_fusion.py
+   fuse_projection_graph: the graph-node matching, the native-op
+   replacement, the meta-preserving getitem rewiring, the DCE of the
+   obsolete storage update, the graph.lint + recompile). The same
+   pattern applies to the MoE region: the FX pass matches the
+   dequant+multiplexer+batch_gemm cluster, replaces it with the native
+   grouped op, and lets the Synapse fuser collapse the remainder.
+2. THE SYNAPSE FUSER KNOBS ARE GCFG-INTERNAL (the dead-ends list:
+   the node-count census is not a cost model; rank by engine x count x
+   mean duration). The config-only sweep is NOT the entry; the FX pass
+   is. The DUMP_POST_GRAPHS census (banked, 2008 graphs) is the input:
+   the node classes ranked by engine x count x mean duration select
+   the first FX target.
+3. THE R003 NUMERICS REGIME APPLIES to every structural change of the
+   decode residual stream (the Q21 requant noise compounding: the
+   documented EXP-FINDING). The pass must be bit-exact or the T1
+   tie-aware gate (the recorded policy) is the acceptance instrument.
+4. THE SEQUENCE: (a) the census rank (the banked JSONs); (b) the FX
+   pass skeleton per the 1Cat pattern (the match, the native op, the
+   meta-preserving rewire); (c) the CPU contract test (the graph
+   targets before/after); (d) the boot + the R003 + the bench.
+The effort: the FX pass skeleton ~1 day, the native grouped op the
+open feasibility question (the vendor grouped form vs the custom TPC
+kernel - the corpus has both precedents). Queued behind the T2
+ablation which selects the corner.
