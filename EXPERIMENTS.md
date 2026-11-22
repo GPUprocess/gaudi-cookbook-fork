@@ -2519,3 +2519,19 @@ else the compiler treats the path as a file and concurrent writers race with
 synStatus 26); dumps land in a dot-directory (glob with dotglob).
 Next boot for the characterization: mkdir -p /data/glm53/graphs &&
 DUMP_POST_GRAPHS=/data/glm53/graphs in the boot env.
+
+## D18 CALC PASS (2026-11-22 02:26) - SOURCE-VERIFIED SHAPES, MEASURED READ PENDING
+Source: the fork KDA layer inherits the state shape/dtype from vLLMs Kimi GDN
+layer (kda_layer.py l.5; kimi_gdn_linear_attn.py l.112-118: num_heads 64,
+head_dim 128, short_conv_kernel_size 4).
+- ssm_state (KDA recurrence): 64x128x128 bf16 = 2 MiB per layer FULL; TP8
+  sharded: 8 heads x 128 x 128 x 2 B = 256 KiB per card per layer. x34 KDA
+  layers: 68 MiB full / 8.5 MiB per card per request.
+- conv_state: dim 4096 x kernel 4 bf16 = 32 KiB per layer; x34 = 1.1 MiB.
+- DSA layers KV: kv_lora_rank 512, qk_rope_head_dim 0 (config V-4) -> 512
+  latent per token per layer bf16 = 1 KiB; x11 layers = 11 KiB per token.
+  Indexer: 32 heads x 128 dim, top-2048, index_kpool 4 - block geometry from
+  the KV spec read pending.
+Status: the arithmetic is source-derived; the measured single-request
+allocation read lands at the next characterization boot (with DUMP_POST_
+GRAPHS, one boot serves D15 + D18).
