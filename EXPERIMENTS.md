@@ -2945,3 +2945,15 @@ in the project history that is not a bs=1 regression at parity (the prior
 k=2 probes: -11%/-20%; the k=4 eager: -38%). The @8/@16 are capture-
 depressed (the first-use shapes); the warm re-bench is next. The AL(4)
 acceptance measurement and the warm bench complete the picture.
+
+## MTP=4 CHAIN WARM BENCH - THE @16 RECORD 346.7 WITH k=4 LIVE (2026-11-22 12:04)
+The warm re-bench on the k=4 chain boot (the fp8_inc KV + the T1 package
++ the draft graph in CHAIN mode): bs1 52.1/52.2, @8 256.5, @16 346.7
+aggregate (the RECORD HOLDS with 4-deep speculation live), the TTFT@4K
+1.23 s, the TTFT@32K 4.8 s. The interpretation: the fp8 KV capacity and
+read gains carry over, the chain draft cost at k=4 is absorbed within the
+noise at bs1 (52.1 vs 50.6-53.9 k=1), and the @16 is unchanged from the
+k=1 fp8 run (346.0) - meaning the k=4 chain costs nothing measurable at
+the batched shapes either. The AL(4) acceptance measurement (the accepted
+tokens per step) is the remaining piece to quantify the latency win at
+bs1 and to decide whether k=4 becomes the production default.
