@@ -3324,3 +3324,18 @@ baseline; the bs1 -14% gap is the recorded open item with the
 power-cap/draft-shape hypotheses. Next-session item: A/B the power cap
 (hl-smi -p 350) and the draft-graph shape re-capture against the bs1
 decode.
+
+## POWER-CAP HYPOTHESIS REFUTED: BS1 UNCHANGED AT CAPPED LIMIT (2026-11-22 21:55)
+The hl-smi -p 350 -i <pci> set took effect as a 400W reported cap (the
+device firmware rounds/normalizes the request). The identical bench
+under the capped limit: decode_bs1 45.1 tok/s (the uncapped soak 43.6,
+the pre-reset baseline 51.4) and decode_8 297.1 t/s (the soak 300.8).
+The verdict: the power cap is NOT the bs1 driver - the bs1 gap (-12 to
+-14% vs the pre-reset 51.4) is unchanged under the power cap change,
+and the @8 aggregate is unchanged (+18% above the baseline either way).
+The remaining hypothesis for the bs1 gap: the draft-graph shape set
+re-captured post-reset without the pre-reset tuning. The A/B for the
+next session: capture-time env comparison (GLM_PHASE_TS dump diff of
+the draft graphs) or the boot-time warmup pass re-enabled for the bs1
+shape. Production remains HEALTH-UP; the aggregate paths remain above
+the pre-reset baseline.
