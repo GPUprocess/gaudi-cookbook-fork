@@ -2556,3 +2556,17 @@ Matmul/B2BMatmul/VLLMKVCache for fp8 variants. So the OOT MLA backend takes
 non-bf16 KV via fp8_inc today (code-verified). RA-042 (the INT8 latent KV)
 has a first-class alternative: --kv-cache-dtype fp8_inc (the Habana
 documented option, V-2) before any custom LatentInt8Cache port.
+
+## DEBUG BOOT RESULT (2026-11-22 02:40) - THE FLIP IS SILENT EVEN AT DEBUG LEVEL
+The DEBUG boot (VLLM_LOGGING_LEVEL=DEBUG): the APIServer: enabled 02:16:58;
+the EngineCore: disabled 02:35:58 (the post-KV re-resolution at the
+handshake-exit __post_init__ re-run, core.py l.1207) - and NO branch message
+logged even at DEBUG (all elif branches log warning_once except the pooling
+debug branch, which also did not appear). The warning_once lru_cache is
+per-process so a fresh EngineCore should log; it did not -> the flip path is
+not going through the logged branches, or the logger scope suppresses it.
+Decision: do not chase the branch further. The explicit --async-scheduling
+flag takes the vllm.py l.1028 branch (hard-fail checks only: mtp in
+EagleModelTypes PASS, MultiprocExecutor.supports_async_scheduling=True PASS,
+disable_padded_drafter_batch=False PASS) and bypasses the elif chain
+entirely. Booting async-on with the explicit flag now.
