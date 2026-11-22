@@ -2478,3 +2478,27 @@ the k=2+async refuted (-31%), the k=2+sync boot died silently (the engine
 init failure at the 22:35). The k=2 on the current stack: UNVERIFIED for
 the sync variant (the boot failure). The production: the k=1 + the async
 — the best verified configuration.
+
+## D14 - ASYNC-SCHEDULER AUDIT COMPLETE (2026-11-22 02:20) - ASYNC IS OFF IN PRODUCTION
+Method: the vllm.py resolution chain read (server-verified) + the py-spy record
+(25 s @ 50 Hz, the EngineCore 1712708, under load) + the boot log.
+Findings:
+1. APIServer: "Asynchronous scheduling is enabled" (vllm.py:1109, 23:04:25).
+2. EngineCore: "Asynchronous scheduling is disabled" (vllm.py:1109, 23:22:28) -
+   the re-resolution after the KV-cache init flipped it OFF with no warning
+   logged (INFO level hides the debug branch; no elif warning in the log).
+3. The scheduler class: the py-spy aggregate: sched/scheduler.py (9 hits),
+   async_scheduler.py (0) -> the BASE vLLM Scheduler is in the path.
+4. HPUAsyncScheduler: present in our tree + the rebind verified working
+   (the post-plugin import: HPUAsyncScheduler) - the class: NOT selected.
+5. mtp IS in EagleModelTypes (server-verified); MultiprocExecutor supports
+   async; disable_padded_drafter_batch default False. The flip branch:
+   not identified (needs a DEBUG-level boot or the source trace).
+Consequence: the RA-039 step-loop overlap lever (the async output processing +
+the pre-enqueued draft) is UNREALIZED in production. The 15.6 ms post-term
+.cpu() sync at rejection_sampler.py:273 sits on the base-scheduler sync path.
+The enablement + the HPUAsyncScheduler selection is the RA-039 program entry.
+Risk: the async + our MTP port: the interaction unverified (the k2 sync boot
+died at 22:35 with the base scheduler; the async changes the scheduling).
+Next: the DEBUG-level boot (the one flag) to identify the flip branch, then
+the async-on boot against the gates + the bench.
