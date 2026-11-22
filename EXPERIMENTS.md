@@ -2570,3 +2570,20 @@ flag takes the vllm.py l.1028 branch (hard-fail checks only: mtp in
 EagleModelTypes PASS, MultiprocExecutor.supports_async_scheduling=True PASS,
 disable_padded_drafter_batch=False PASS) and bypasses the elif chain
 entirely. Booting async-on with the explicit flag now.
+
+## D14 FINAL - THE FLIP BRANCH FOUND: THE HPU PLATFORM VENDOR GATE (2026-11-22 03:10)
+The async-on boot (the explicit --async-scheduling): the APIServer resolved
+True (vllm.py:1109 enabled 02:41:10; the non-default args: async_scheduling:
+True) - but the EngineCore STILL resolved disabled (03:02:10). The flip:
+vllm_gaudi/platform.py l.276-278:
+  async_scheduling = async_scheduling and (speculative_config is None)
+with the vendor note: "for HPU, speculative decoding is not supported with
+async scheduling". Our MTP boot: the spec is not None -> the AND yields
+False regardless of the CLI flag. The silent flip in every boot: the
+vLLM elif chain never ran; the platform AND did it.
+Consequence: the RA-039 step-loop overlap lever is REFUTED for the MTP
+path by vendor policy - async scheduling and MTP cannot coexist on HPU
+without patching the vendor gate, whose warning indicates a known
+incompatibility. The bypass boot is UP now and UNVERIFIED: the full gate
+suite is running (bg_192) before any user traffic; if any gate fails the
+boot reverts to the adopted config.
