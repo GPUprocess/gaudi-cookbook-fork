@@ -2587,3 +2587,16 @@ without patching the vendor gate, whose warning indicates a known
 incompatibility. The bypass boot is UP now and UNVERIFIED: the full gate
 suite is running (bg_192) before any user traffic; if any gate fails the
 boot reverts to the adopted config.
+
+## ASYNC-ON GATES + VERDICT (2026-11-22 03:20) - REVERTING TO ADOPTED CONFIG
+Gates on the vendor-gate-bypassed boot: PASS golden 12/12 identical (46 s);
+PASS tools 8/8 (21 s); FAIL needles/decode@128K/prefill@64K+ with HTTP 400 -
+all the >32K targets exceed this boots max_model_len 32768 (config limit,
+not an async correctness failure); images: PIL missing in the test env.
+With the EngineCore resolving async disabled anyway (the platform AND),
+this boot is behaviorally identical to production and carries only risk.
+VERDICT: the RA-039 async lever is REFUTED for the MTP path - the vendor
+gate (platform.py l.277: async AND spec-is-None) makes async scheduling and
+MTP mutually exclusive on HPU; patching it contradicts a documented vendor
+incompatibility. Reverting to the adopted config (k=1 + RA-011, async-off
+at the scheduler level) now; the production band is unchanged.
