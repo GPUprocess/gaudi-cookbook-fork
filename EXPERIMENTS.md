@@ -3203,3 +3203,17 @@ scale*max|w| <= 240 plus saturation at 240 is the enforced invariant);
 (c) the dual-metric template (the node count AND the device time per
 arm) staged for the D4 tile sweep integration. The next session
 executes the A/B on the block_fp8_gemv_glm kernel build.
+
+## RA-041 + RA-043 IMPLEMENTATION PLANS WRITTEN (2026-11-22 18:36)
+RA-041 (the KDA prefix-cache lattice): the design is complete - the
+block-state lattice keyed on the (layer, block-start, state-hash) chain,
+the hit path copies the bounded states in bf16 (the owner directive),
+the invalidation is LRU at the block-state level, and the acceptance is
+the T1 parity + the TTFT win at the 4K+ shared prefixes. RA-043 (the
+WY-form KDA kernel): the GaudiInfer reference algorithm is transcribed
+to the Gaudi mapping (4 MME + 2 TPC nodes per layer per chunk vs the
+recurrence loop), the acceptance is the bf16 bit-parity + the device
+time win under the RA-044 dual-metric discipline. Both plans are staged
+as docs/research/RA041_lattice_spec.md and RA043_wy_spec.md for the
+next-session implementation; the kernels are weeks-class code, the
+plans are the execution-ready record.
