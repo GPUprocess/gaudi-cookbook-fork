@@ -3191,3 +3191,15 @@ structured-only site) and the T2 census together confirm: the graph
 overhead is dominated by the sampler randomness materialization and the
 logical node plumbing - neither is addressable by node-collapse without
 touching the sampler's graph integration.
+
+## RA-044 Q21 BUILD ADDENDUM SKELETON STAGED (2026-11-22 18:33)
+The skeleton is staged at /data/glm53/q21_ab: (a) the llvutd A/B arms
+(default vs --mllvm --preRA-schedule=llvutd) written as the build-arm
+stubs; (b) the poison-byte contract MEASURED on-device-adjacent (the
+e4m3fn decode of the poison codes 0x78-0x7E/0xF8-0xFE yields
+256/320/384/448/-256/-448 on the CPU convention - the device e4m3fn
+convention clamps max finite at 240, so the load-time assert
+scale*max|w| <= 240 plus saturation at 240 is the enforced invariant);
+(c) the dual-metric template (the node count AND the device time per
+arm) staged for the D4 tile sweep integration. The next session
+executes the A/B on the block_fp8_gemv_glm kernel build.
