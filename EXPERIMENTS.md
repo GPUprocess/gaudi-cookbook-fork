@@ -2502,3 +2502,9 @@ Risk: the async + our MTP port: the interaction unverified (the k2 sync boot
 died at 22:35 with the base scheduler; the async changes the scheduling).
 Next: the DEBUG-level boot (the one flag) to identify the flip branch, then
 the async-on boot against the gates + the bench.
+
+## OWNER DECISIONS RECORDED (2026-11-22 02:30)
+- RA-048: **(b) In-tree only** — no Wright spike; the 4-HPU production path
+  stays on the vLLM port; the lever stack RA-038/039/040/043/044 continues.
+- D14 follow-up: **approved — DEBUG boot first, then async-on** with the full
+  gate + bench pass. The production reboot authorized for this program.
