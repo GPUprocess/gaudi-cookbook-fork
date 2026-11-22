@@ -2647,3 +2647,10 @@ is real and fast; the warm band exceeds the historical bench_tp8_restore
 warm numbers (bs1 30.3, @8 136.8, @16 217.2) at bs1 and @8 - the 51.4 bs1
 and 280.8 @8 are new session records for this script. The production is
 fully warm and serving at the top of the verified band.
+
+## POST-RESTORE GATES VERIFIED (2026-11-22 03:55)
+The restored production boot (the adopted config, warm): PASS golden 12/12
+identical (38 s); PASS tools 8/8 (17 s); the decode 400 is the known
+max_model_len 32768 limit on the 128K target. The current boot is
+correctness-verified end-to-end: the production is fit for users at the
+record band (bs1 51.4, @8 280.8, TTFT@4K 1.34 s).
