@@ -2718,3 +2718,13 @@ philox lever documented. The session bank for the next rounds: the
 topk-subset-sampler cherry-pick (the philox 40% TPC finding), the D16
 block-list numpy rewrite, the RA-041/RA-042 lattice on the measured KV
 geometry. The warm band re-establishes in ~20-30 min of serving.
+
+## TOPK-SUBSET-SAMPLER APPLIED + A/B APPROVED (2026-11-22 05:25)
+The census lever staged: fixes/topk-subset-sampler applied to both trees
+via a combined symlink root (apply.py patched vllm/v1/sample/ops/
+topk_topp_sampler.py and vllm_gaudi/v1/worker/hpu_input_batch.py; the
+--check passes; the CPU test skips as HPU-only). The owner approved the
+A/B boot: the fix + DUMP_POST_GRAPHS re-dump proves the philox delta
+(the census 40% TPC -> expected near-vanished), the gates prove the
+distribution equivalence, the bench proves the band. Any gate failure
+reverts to the identical adopted config.
