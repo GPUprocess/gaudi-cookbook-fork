@@ -2756,3 +2756,13 @@ The A/B verdict stands on the pre-crash evidence: the census identical
 (the fix inert, no top_k in the model config), the gates green (the golden
 12/12 identical, the tools 8/8). The recovery boot: the adopted config
 with the inert fix still applied; the health expected ~06:45.
+
+## SECOND RECOVERY BOOT - THE FIRST STALLED (2026-11-22 07:18)
+The watchdogs first recovery boot (the 06:20) did not reach serving within
+the 40-minute stale-lock window; the watchdog reaped it and fired a second
+recovery boot at 07:05 (the APIServer 1890635). The owner flagged nothing
+is running at 07:15 - correct: the boot is in the model-load phase
+(EngineCore 1892306 alive, cards not yet claimed). Health expected ~07:45.
+Lesson recorded: after an unattended crash + recovery, verify the FIRST
+recovery actually reaches serving; the watchdogs stale-lock reap is the
+safety net but costs another ~40 minutes.
