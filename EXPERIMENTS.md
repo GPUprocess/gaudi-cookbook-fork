@@ -3152,3 +3152,16 @@ this config). The D11 promotion decision: the warm 16K is 2857 tok/s,
 within 5% of the 3,000 tok/s objective floor - the objective is met at
 all measurable depths in this config. RA-007 closes for this config; the
 64K-1M ladder is the 256K-boot-family item in the RA-047 D17 window.
+
+## D3 SAMPLER D2H TAIL IMPLEMENTED - SITE IS STRUCTURED-OUTPUT-ONLY; NO PRODUCTION IMPACT (2026-11-22)
+The D3 proposal (the pinned double-buffer copy+event for the sampler D2H
+tail) was implemented and evaluated. The D2H site (the
+hpu_model_runner.py grammar-bitmask path: logits.cpu() to fp32, the CPU
+xgrammar bitmask apply, the H2D copy-back) is reachable ONLY through the
+structured-output grammar path. The production and chain configs run
+without structured output (no grammar bitmask in the boot config), so
+the D3 site is never taken in production. The pinned double-buffer
+implementation is in place for the structured path; the production
+latency is unaffected by this site (the D3 closure: the site is
+dead for the unstructured serving; the proposal closes as
+implemented-but-inert for our configs).
