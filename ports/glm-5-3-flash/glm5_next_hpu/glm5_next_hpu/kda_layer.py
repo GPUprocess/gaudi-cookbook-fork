@@ -273,24 +273,25 @@ class Glm5NextHPUKDAAttention(KimiGatedDeltaNetAttention):
             # out[b, j, c] = silu(sum_t win_or_x[b, j+t, c] * w[c, t] + b[c]) — an explicit per-token chain:
             # Tensor.unfold hits a CPU fallback under HPU graph capture and Synapse rejects broadcast forms
             # here, so every op is same-shape elementwise over [bs, W, C].
-            # [T3 closed form] stream = win ++ x_cat; full[j] = stream[:, j:j+W, :].
-            # o = sum_t stream[:, t:t+L, :] * w_t[t]  -- W slice-MACs, no loop over
-            # L, no sequential window dependency (CPU parity: fp32 exact, bf16
-            # <=1 ULP; tests/hpu/mtp/test_t3_closed_form.py). new_wins via one
-            # index_select on the same stream.
-            stream = torch.cat([win.contiguous(), x_cat], dim=1)  # [bs, W-1+L, C]
-            o = torch.zeros_like(x_cat)
-            for t in range(width):  # constant W=4 unrolled slice-MACs
-                o = o + stream[:, t:t + spec_len, :] * w_t[t].view(1, 1, -1)
-            if bias_c is not None:
-                o = o + bias_c.view(1, -1)
-            outs = torch.nn.functional.silu(o)  # [bs, L, C]
-            nw_idx = (torch.arange(spec_len, device=x_cat.device).unsqueeze(1)
-                      + 1 + torch.arange(width - 1, device=x_cat.device).unsqueeze(0)).reshape(-1)
-            new_wins = stream.index_select(1, nw_idx).reshape(
-                bs_rows, spec_len, width - 1, win.shape[2])  # [bs, L, W-1, C]
+            cur_win = win.contiguous()  # [bs, W-1, C]
+            outs, new_wins = [], []
+            try:
+                for j in range(spec_len):
+                    full = torch.cat([cur_win, x_cat[:, j].unsqueeze(1)], dim=1).contiguous()  # [bs, W, C]
+                    w_exp = w_t.reshape(1, width, C).expand(bs_rows, width, C)
+                    o = (full * w_exp).sum(dim=1) + (bias_c.view(1, -1) if bias_c is not None else 0)
+                    outs.append(torch.nn.functional.silu(o))
+                    cur_win = full[:, 1:].contiguous()  # window after token j
+                    new_wins.append(cur_win)
+            except RuntimeError:
+                logger.warning(
+                    "GLM KDA conv-chain failure: win=%s x_cat=%s w_t=%s b_cat=%s bs=%s L=%s C=%s",
+                    tuple(win.shape), tuple(x_cat.shape), tuple(w_t.shape),
+                    tuple(b_cat.shape) if b_cat is not None else None, bs_rows, spec_len, C,
+                )
+                raise
             out_chain = torch.stack(outs, dim=1)  # [bs, L, C]
-            new_win = new_wins  # [bs, L, W-1, C] (already stacked by the closed form)
+            new_win = torch.stack(new_wins, dim=1)  # [bs, L, W-1, C]
             tgt = torch.cat([store_cols[:bs_rows, 0:1], store_cols[:bs_rows, 1 : 1 + spec_len]], dim=1).reshape(-1)
             rows = torch.cat([win.unsqueeze(1), new_win], dim=1).reshape(
                 bs_rows * (spec_len + 1), win.shape[1], win.shape[2])
