@@ -2654,3 +2654,13 @@ identical (38 s); PASS tools 8/8 (17 s); the decode 400 is the known
 max_model_len 32768 limit on the 128K target. The current boot is
 correctness-verified end-to-end: the production is fit for users at the
 record band (bs1 51.4, @8 280.8, TTFT@4K 1.34 s).
+
+## WARM BAND COMPLETE - THE @16 RECORD 276.6 TOK/S (2026-11-22 04:02)
+The third bench point (22 min post-restore): bs1 50.6/50.2, @8 282.7,
+@16 276.6 aggregate (the ramp complete: 129.1 -> 169.9 -> 276.6), TTFT@4K
+1.28 s, TTFT@32K 5.35 s. The @16 276.6 is the new session record (the
+prior 258.8); @8 282.7 also a new high. The restored adopted config is the
+fastest verified state of this session across every measured lane. Toward
+the 200/800 gate: bs1 51.4/200 (26%), @16 276.6/800 (35%) - the progress
+is real; the remaining levers are documented (the D16 block-list rewrite,
+the RA-038-A node collapse via the D15 characterization).
