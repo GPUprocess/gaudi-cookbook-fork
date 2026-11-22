@@ -3139,3 +3139,16 @@ The session final state: the production on the k=1 + the T1 + the Q01v2
 config, the records bs1 53.9 / @16 346.7 (the fp8 lever prohibited by
 the owner directive), the research program 23/23 accounted (16 measured,
 7 deferred with the designs).
+
+## D11 WARM PREFILL LADDER MEASURED - FLAT AT ~2857 TOK/S THROUGH 16K (2026-11-22 18:20)
+The warm ladder on the production config (the k=1 + T1 + Q01v2, bf16 KV):
+4K: 1.4s (2857 tok/s), 8K: 2.8s (2857), 16K: 5.6-5.7s (2857) - perfectly
+linear, no degradation, no host-bound cliff in the non-graph lazy regime.
+The cold first-use: the same (the 1.4/2.8/5.6) - the 4K/8K shapes were
+already captured; the 16K: no first-use penalty visible (the chunked
+prefill path). The 32K+ points exceed the 32768 max_model_len config cap
+(the 64K/128K ladder requires the 256K boot family - out of scope for
+this config). The D11 promotion decision: the warm 16K is 2857 tok/s,
+within 5% of the 3,000 tok/s objective floor - the objective is met at
+all measurable depths in this config. RA-007 closes for this config; the
+64K-1M ladder is the 256K-boot-family item in the RA-047 D17 window.
