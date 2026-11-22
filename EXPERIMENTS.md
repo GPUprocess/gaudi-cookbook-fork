@@ -3408,3 +3408,16 @@ prompt-class-aware draft routing lever stands: the chain on for
 code/math long-form (+19-21%), neutral for essay. The k=1 remains the
 production config; the routing switch is the staged next-session item.
 Production restoration follows this measurement.
+
+## FINAL PRODUCTION RESTORED - SMOKE 391 VERIFIED (2026-11-22 23:58)
+After the decisive chain-vs-k1 long-form A/B (commit e12b8f1), the
+restore boot failed again with synStatus 8 device-acquire; the
+wedge-recovery procedure was applied a second time (the per-device AIP
+reset, all 8 cards, 174 s) and the production boot succeeded: HEALTH-UP
+at 23:58:13, the smoke 391 correct at 23:58:44. Production is the k=1
+config (k=1 + T1 + Q01v2, bf16 KV per the owner directive). The
+procedure's repeatability is now 2-for-2: every synStatus-8 wedge was
+cleared by the per-device reset. Session state: the production serving,
+the fork complete at e12b8f1 with the routing lever staged (the chain
+on for code/math long-form: +19-21 pct), the bs1 draft-shape A/B and
+the routing switch recorded as the next-session agenda.
