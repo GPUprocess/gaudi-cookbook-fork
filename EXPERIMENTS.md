@@ -3116,3 +3116,17 @@ validation: the next boot (the block-list outputs feed the paged-attn
 buffers on every decode step; the R003 probe + the bench on the boot).
 Note: the file lives in the deployed vllm-gaudi tree (/opt/glm53), not
 the fork repo - the change rides the deployed tree.
+
+## D16 NUMPY REWRITE REFUTED ON-DEVICE (2026-11-22 18:30)
+The numpy block-list rewrite: the CPU parity exact (the plain/swa/ragged/
+single cases), the bs1 on-device green (the smoke 391, the R003 5/5), but
+the BATCHED path crashed the engine (the ValueError: the shape mismatch at
+the _usage[_np.arange(_n), _bt_lens-1] = _lbu assign: the slot_mapping
+tensor indexing differs at the batched shapes vs the single-request test
+assumption). REVERTED (the git checkout restored the loop); the
+production re-booting on the clean config. The lesson: the numpy rewrite
+needs the ragged-block-tables handling verified against the REAL batched
+slot_mapping format (the per-request tensors, not the flat scalars the
+CPU test assumed) - the rewrite is feasible but the test must model the
+batched input shapes exactly. Queued behind the correct batched-shape
+CPU test.
