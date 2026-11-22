@@ -2957,3 +2957,16 @@ k=1 fp8 run (346.0) - meaning the k=4 chain costs nothing measurable at
 the batched shapes either. The AL(4) acceptance measurement (the accepted
 tokens per step) is the remaining piece to quantify the latency win at
 bs1 and to decide whether k=4 becomes the production default.
+
+## AL(4) MEASUREMENT NOTE (2026-11-22 12:10)
+The Prometheus spec-decode counters on this vLLM build do not expose the
+accepted-tokens breakdown for the chain path (the drafts counter shows
+8360 = the draft_tokens counter: the chain bypasses the per-step draft
+accounting by design). The AL(4) acceptance therefore needs the
+instrumented measurement (the D17-style boot window or the logprob
+diff probe) rather than the live counters. The practical signal we DO
+have: the bs1 52.1 with 4-deep speculation equals the k=1 51.4-53.9, so
+the chain draft cost (4 passes) is fully absorbed; whatever acceptance
+the head delivers at depth 4, the net is non-negative at bs1 and
+non-negative at @16 (the 346.7 record holds). The instrumented AL
+measurement is queued with the D17 window.
