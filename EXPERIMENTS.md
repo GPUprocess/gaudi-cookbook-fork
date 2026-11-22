@@ -2600,3 +2600,20 @@ gate (platform.py l.277: async AND spec-is-None) makes async scheduling and
 MTP mutually exclusive on HPU; patching it contradicts a documented vendor
 incompatibility. Reverting to the adopted config (k=1 + RA-011, async-off
 at the scheduler level) now; the production band is unchanged.
+
+## RA-039 PROGRAM SESSION CLOSE (2026-11-22 03:25)
+Completed this session: the round-6 repos survey read (the 10 proposals);
+D14 answered to the end (the flip: the HPU platform vendor gate async AND
+spec-is-None, platform.py l.277; the silent in every boot); the async-on
+experiment executed with the owner-approved reboots (the DEBUG boot; the
+bypass boot gated golden 12/12 identical); the verdict: the async lever
+REFUTED for the MTP path by vendor policy - the mutually exclusive gate
+stands, the production reverts to the adopted config (k=1 + RA-011).
+Side findings banked: D16 the Python-loop block-list hot path confirmed
+(O(total_blocks)/step; the fastmeta-style numpy block list = the concrete
+bs=1 long-context host lever, RA-046-adjacent); D18 calc pass (the KDA
+state bytes source-derived; the measured read at the next characterization
+boot); D20 the OOT MLA accepts fp8_inc KV (the RA-042 has a first-class
+alternative before any custom LatentInt8Cache port); D15s tool identified
+(DUMP_POST_GRAPHS per-node engine field; boot_char.sh staged with mkdir -p
+/data/glm53/graphs). RA-048: the owner picked (b) in-tree only.
