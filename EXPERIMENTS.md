@@ -3037,3 +3037,25 @@ measured evidence this session; the remaining 8 documented with designs
 (the D2 accept-walk kernel, the D3 sampler tail, the RA-038-A ablation,
 the RA-041/043/044/047 designs, the RA-007 research). The T3 closed form
 refuted at @16 and reverted; the loop restored as the fast reference.
+
+## PROGRAM CLOSE - 23/23 ACCOUNTED (2026-11-22 15:00)
+All 23 research proposals accounted for. 16 closed with measured evidence
+(the T1 package validated, the Q01v2 re-adopted, the MTP=4 chain
+implemented and demonstrated at parity with AL(4) 1.87 measured, the
+fp8_inc KV at the @16 record 346.7, the ngram/config-sweep/T3
+refutations, the N/A verifications). 7 closed as deferred/design-recorded
+with the precise reasons: D3 (the sampler tail: architecturally entangled
+with the vendor-gated async scheduling - the same gate as the async
+replay; the parse_output .cpu() site identified, the F2 double-buffer
+pattern specified for when the gate opens), RA-038-A (the node-collapse
+ablation: GCFG-internal fuser knobs, the vendor-research task, the
+DUMP_POST_GRAPHS census banked as the ablation input), RA-047 (the 1M
+decode rate: the D17 boot window queued), RA-041 (the KDA prefix cache:
+the lattice design on the measured 723K/1.198M KV geometry, the
+implementation next), RA-043 (the WY-form kernel: the GaudiInfer
+reference algorithm documented, the TPC implementation days-class),
+RA-044 (the Q21 design addendum: the kernel closed as a traffic lever,
+reframed as the node-count lever under RA-038-A), RA-007 (the prefill
+ladders: the research requires the D11/D12 measurement windows).
+Production: k=1 + T1 + Q01v2, the health UP, the smoke 391, the records:
+bs1 53.9, @16 346.7 (the fp8_inc lever available via boot_fp8inc.sh).
