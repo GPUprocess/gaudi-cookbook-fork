@@ -3165,3 +3165,10 @@ implementation is in place for the structured path; the production
 latency is unaffected by this site (the D3 closure: the site is
 dead for the unstructured serving; the proposal closes as
 implemented-but-inert for our configs).
+
+## OWNER DIRECTIVE: KV CACHE STAYS AT BF16 (2026-11-22 18:30)
+The owner has mandated the KV cache stays at bf16. The fp8 KV lever is
+prohibited by owner directive. All current and future boots (the
+production k=1 + T1 + Q01v2 and the k=4 MTP chain) run bf16 KV; the
+acceptance program evaluates acceptance levers under the bf16-KV
+constraint. Any proposal requiring non-bf16 KV is rejected at intake.
