@@ -3172,3 +3172,22 @@ prohibited by owner directive. All current and future boots (the
 production k=1 + T1 + Q01v2 and the k=4 MTP chain) run bf16 KV; the
 acceptance program evaluates acceptance levers under the bf16-KV
 constraint. Any proposal requiring non-bf16 KV is rejected at intake.
+
+## T2 NODE-COLLAPSE CENSUS MEASURED - PHILOX SAMPLER KERNEL DOMINATES (2026-11-22 18:32)
+The RA-038-A T2 census over the banked DUMP_POST_GRAPHS dumps (900
+files, avg 5.8 nodes/file) identifies the collapse candidates:
+1. philox_random_uniform_bf16: 1,984 occurrences (the sampler's random
+   uniform kernel - the dominant TPC node)
+2. memcpy_dma: 892 (one per graph - the D3-adjacent D2H/DMA tail)
+3. logical_strided_insert: 848 (the logical node class)
+4. constant_bf16: 824 (the constant materialization)
+5. static_reshape: 488 (the logical reshape class)
+The T2 ablation verdict: the sampler-side philox kernel is the collapse
+candidate of record (it appears in the graphs because the sampling
+randomness is materialized inside the graph rather than being elided).
+The DMA + logical-node classes (memcpy/strided_insert/reshape) are the
+graph-construction overhead, not device compute. The D3 closure (the
+structured-only site) and the T2 census together confirm: the graph
+overhead is dominated by the sampler randomness materialization and the
+logical node plumbing - neither is addressable by node-collapse without
+touching the sampler's graph integration.
