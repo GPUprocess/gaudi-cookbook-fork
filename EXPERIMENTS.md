@@ -2923,3 +2923,13 @@ captured field names. The remaining implementation: the buffer setup +
 the kernel wiring in _DraftChainGraphCore.forward + the proposer-loop
 integration (the k passes as ONE call), then the k=4 boot with the AL +
 bench. This is the next session first item with the design complete.
+
+## MTP=4 CHAIN BOOT STARTING (2026-11-22 11:20)
+The D1 wiring is complete and committed (4421468): the chain core
+(kernel-wired metadata advance), the dispatch, the proposer fast path
+(VLLM_GLM_MTP_CHAIN=1), and the passing CPU contract test. Now firing
+boot_chain.sh: the T1 package + the draft graph in CHAIN mode with k=4.
+The validation on this boot: the R003 probe, the parity, the smoke, then
+the AL(4) acceptance measurement and the bench vs the k=1 eager baseline
+(bs1 51.4-53.9). The win condition: p_{k+1}/AL(4) > the chain draft cost
+(~0.8 ms/pass device). Any gate failure reverts to the adopted config.
