@@ -2548,3 +2548,11 @@ rimb05 fastmeta block-list removes (their claim: up to ~8 ms/step).
 The fastmeta-style numpy block list is a concrete, source-verified lever for
 the bs=1 long-context host term. RA-046-adjacent; candidate for the next
 optimization round after RA-039 async.
+
+## D20 ANSWERED - OOT MLA ACCEPTS fp8_inc KV (2026-11-22 02:29)
+Source: vllm_gaudi/attention/oot_mla.py l.39-52. enable_fp8_attn gates on
+kv_cache_dtype == "fp8_inc" + a QUANT_CONFIG env; the fp8 path swaps the
+Matmul/B2BMatmul/VLLMKVCache for fp8 variants. So the OOT MLA backend takes
+non-bf16 KV via fp8_inc today (code-verified). RA-042 (the INT8 latent KV)
+has a first-class alternative: --kv-cache-dtype fp8_inc (the Habana
+documented option, V-2) before any custom LatentInt8Cache port.
