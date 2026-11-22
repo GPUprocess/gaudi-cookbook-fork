@@ -2998,3 +2998,18 @@ the block-drafter acceptance route (the W7 ceiling: the AL(4) 1.87 =
 the k=1 band). The session closed 11 of the 23 research proposals with
 measured evidence; the remaining 12 are documented with complete designs
 in the fork.
+
+## T7 TIE-AWARE GATE POLICY - DESIGN RECORDED, OWNER DECISION ITEM (2026-11-22 13:00)
+The RA-018 T7 policy theory, now validated by this sessions evidence: the
+0.5 pp suite gate auto-rejected three banked optimizations and would have
+blocked T1 itself, all on ONE knife-edge item (R003) that T1 then showed
+to be a 1-ULP near-tie flip (the measured top-2 gap 0.0000 at the answer
+token). The proposed gate rules, per the research design: (1) keep the
+0.5 pp bar for non-knife-edge items; (2) knife-edge flips are excused and
+reported separately with per-flip top-2-gap attribution (the mechanism
+asserted, not assumed); (3) MTP comparisons are MTP-aware (the k=4 parity
+compared against the k=1 reference, not the non-MTP golden); (4) dilute
+the knife-edge class (the suite v2: 80+ items). The risk: a real
+regression hiding in the near-tie class - mitigated by rule 2s
+attribution requirement. This is an owner decision item: adopting the
+policy changes the projects regression contract. Recorded, not enacted.
