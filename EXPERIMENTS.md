@@ -2702,3 +2702,11 @@ KiB/token across 11 layers), RA-041s lattice spacing and RA-042s capacity
 arithmetic now rest on measured numbers: the hybrid block bytes and the
 per-token store ratio are derivable from 723,155 tokens and the 22.07x
 concurrency figure. D18 CLOSED (measured + calc).
+
+## D15 WINDOW CLOSE - REVERTING TO PRODUCTION (2026-11-22 05:00)
+The census: 2008 post-graph JSONs across 259 captured shapes (1_1 through
+the batch buckets) - full coverage of the serving shape space. D15 CLOSED
+(the census banked in the JSONs; the philox finding recorded). D18 CLOSED
+(the measured KV geometry). Reverting to the adopted production config now
+(k=1 + RA-011, the graphs env unchanged); the warm band re-establishes in
+~20-30 min of serving.
