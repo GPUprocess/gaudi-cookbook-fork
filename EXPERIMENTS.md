@@ -3130,3 +3130,12 @@ slot_mapping format (the per-request tensors, not the flat scalars the
 CPU test assumed) - the rewrite is feasible but the test must model the
 batched input shapes exactly. Queued behind the correct batched-shape
 CPU test.
+
+## POST-D16 PRODUCTION RESTORED (2026-11-22 17:59)
+The clean production boot (the pid 2222369, the loop block-list restored):
+the health UP 17:58:37, the smoke 391. The D16 numpy rewrite: reverted
+(the batched-path shape mismatch); the loop restored as the reference.
+The session final state: the production on the k=1 + the T1 + the Q01v2
+config, the records bs1 53.9 / @16 346.7 (the fp8 lever prohibited by
+the owner directive), the research program 23/23 accounted (16 measured,
+7 deferred with the designs).
