@@ -2664,3 +2664,11 @@ fastest verified state of this session across every measured lane. Toward
 the 200/800 gate: bs1 51.4/200 (26%), @16 276.6/800 (35%) - the progress
 is real; the remaining levers are documented (the D16 block-list rewrite,
 the RA-038-A node collapse via the D15 characterization).
+
+## D15 CHARACTERIZATION BOOT APPROVED AND STARTED (2026-11-22 04:05)
+The owner approved the third reboot for the graph census. Firing
+boot_char.sh (the adopted config + DUMP_POST_GRAPHS=/data/glm53/graphs +
+LOG_LEVEL_ALL=2): the census lands in the per-graph JSONs (the per-node
+engine field: TPC/MME/DMA), serving the RA-038-A node-collapse
+characterization and D18s measured allocation read in one window.
+The production reverts to the identical adopted config afterward.
