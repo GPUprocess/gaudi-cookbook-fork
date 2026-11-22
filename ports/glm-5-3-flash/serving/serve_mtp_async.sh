@@ -51,7 +51,8 @@ exec vllm serve "$GLM53_MODEL_PATH" \
   --enable-chunked-prefill \
   --gpu-memory-utilization 0.82 \
   --no-enable-prefix-caching --limit-mm-per-prompt "{\"image\": 4}" \
-  --reasoning-parser glm47 --tool-call-parser glm47 --async-scheduling --enable-auto-tool-choice \
+  --reasoning-parser glm47 --tool-call-parser glm47 --enable-auto-tool-choice \
   --trust-remote-code \
   --speculative-config "{\"method\": \"mtp\", \"num_speculative_tokens\": 1}" \
+  --async-scheduling \
   --host 0.0.0.0 --port 8000

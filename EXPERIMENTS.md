@@ -2508,3 +2508,14 @@ the async-on boot against the gates + the bench.
   stays on the vLLM port; the lever stack RA-038/039/040/043/044 continues.
 - D14 follow-up: **approved — DEBUG boot first, then async-on** with the full
   gate + bench pass. The production reboot authorized for this program.
+
+## D15 PREREQUISITE SOLVED - THE GRAPH-DUMP TOOL IDENTIFIED (2026-11-22 02:25)
+GaudiGrimoire (docs 01-basics §1.11, Tier B): DUMP_POST_GRAPHS=<dir> emits one
+JSON per compiled graph with a literal per-node "engine" field plus guid,
+type, exec_order_idx, bundle_index and the cost fields - the RA-038-A node
+collapse characterization data. LOG_LEVEL_ALL=2 names the engines per arc job
+as the cheap cross-check. Gotchas: the dir must pre-exist (mkdir -p first;
+else the compiler treats the path as a file and concurrent writers race with
+synStatus 26); dumps land in a dot-directory (glob with dotglob).
+Next boot for the characterization: mkdir -p /data/glm53/graphs &&
+DUMP_POST_GRAPHS=/data/glm53/graphs in the boot env.
