@@ -2824,3 +2824,15 @@ are paid in full. The MTP head (the learned drafter, the AL 1.65-1.95 at
 k=1) dominates the ngram on this workload exactly as the settled physics
 predicted. RA-010 CLOSED as refuted; the config-only probe cost: one boot.
 Reverting to the MTP+T1+Q01v2 production configuration now.
+
+## RA-046 CONFIG SWEEP N/A ON OUR TREE (2026-11-22 09:45)
+The five rimb05 config items checked against the deployed trees: (1)
+GLM_FAST_META - absent (their custom block-list numpy path, not portable
+to our fork without the D16 rewrite); (2) VLLM_GRAPH_RESERVED_MEM - absent
+from our vLLM version; (3) PT_HPU_SDPA_QKV_SLICE_MODE_FWD - present but
+commented out (dead code) in hpu_model_runner.py; (4) the FSDPA softmax
+mode - not exposed; (5) the curated bucket files - our bucket strategy is
+the hand-tuned file, and RA-006-B refuted pad-bucketing. No A/B possible
+without porting code; the sweep is N/A. The actionable residue: the D16
+numpy block-list rewrite (the fastmeta mechanism, our code) remains the
+real lever from this round.
