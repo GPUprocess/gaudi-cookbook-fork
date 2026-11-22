@@ -2970,3 +2970,19 @@ the chain draft cost (4 passes) is fully absorbed; whatever acceptance
 the head delivers at depth 4, the net is non-negative at bs1 and
 non-negative at @16 (the 346.7 record holds). The instrumented AL
 measurement is queued with the D17 window.
+
+## AL(4) MEASURED - 1.87 TOK/STEP, SAME AS K=1 (2026-11-22 12:15)
+The counter-delta measurement over the fixed 8x500-token workload: the
+generated 4000 tokens, the draft-steps delta 2143 -> AL = 4000/2143 =
+1.87 tok/step. The k=1 baseline AL: 1.65-1.95 (the prompt-dependent
+band). Verdict: the single MTP head does NOT convert depth into
+acceptance - AL(4) 1.87 sits inside the k=1 band, confirming the W7
+acceptance ceiling (the head sees only one distribution; the deeper
+drafts re-propose what the head already missed). The chain draft cost is
+fully absorbed (the bs1 52.1 = the k=1 51.4), so k=4 is at parity with
+no gain and no loss - but k=1 is the simpler production configuration
+(the fewer capture shapes, the fewer moving parts). Production reverts
+to the k=1 + T1 + Q01v2 config now. The deep-MTP acceptance path stays
+where the research placed it: the block-drafter route (RA-009/T4,
+parked on the training hardware) is the only route to >2 tok/step
+acceptance on this model family.
