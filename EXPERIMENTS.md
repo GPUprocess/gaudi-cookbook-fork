@@ -2766,3 +2766,13 @@ is running at 07:15 - correct: the boot is in the model-load phase
 Lesson recorded: after an unattended crash + recovery, verify the FIRST
 recovery actually reaches serving; the watchdogs stale-lock reap is the
 safety net but costs another ~40 minutes.
+
+## MANUAL BOOT RESTORED + T1 ACTIVATION BOOT STARTING (2026-11-22 07:39)
+The manual boot (the pid 1893368): the health UP 07:38:46. The production:
+restored. Now swapping to boot_t1.sh - the RA-018 T1 invariance package in
+one boot: GLM_ALLREDUCE_GATHER_SUM=1 (the T1a hardened port, already in
+tree with the 16 MiB cap + the fp32 sum) + the pinned decode buckets
+(VLLM_DECODE_BS_BUCKET_MIN/STEP/MAX=16, the T1b env, already registered in
+features.py) + the fp32 draft cores (VLLM_GLM_MTP_DRAFT_CORE_FP32=1, the
+T1c flag, already in mtp.py). The validation: the R003 suite, the
+8-identical-prompt parity probe, the golden 12/12, the AL, the bench.
