@@ -2791,3 +2791,11 @@ needs re-capture under the T1 config (the new baseline is the
 order-invariant one). The banked trio (the graph-captured draft +20%, the
 async replay +29%, the mHC row cap +19%) rejected ONLY on R003 is now
 unblocked for re-adoption under the T1 numerics.
+
+## Q01V2 RE-ADOPTION BOOT STARTING (2026-11-22 08:10)
+With the T1 numerics package validated (the parity 1/8, the R003 5/5
+correct-side), the graph-captured draft (the Q01v2, +20% banked, rejected
+only on R003) is unblocked for re-adoption. boot_t1q.sh = the T1 package +
+VLLM_GLM_MTP_DRAFT_GRAPH=1 (the split mode). Validation: the R003 probe,
+the parity probe, the tools, the golden re-baseline capture, then the bs=1
+bench vs the 50.6/51.4 eager baseline.
