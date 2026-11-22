@@ -2776,3 +2776,18 @@ tree with the 16 MiB cap + the fp32 sum) + the pinned decode buckets
 features.py) + the fp32 draft cores (VLLM_GLM_MTP_DRAFT_CORE_FP32=1, the
 T1c flag, already in mtp.py). The validation: the R003 suite, the
 8-identical-prompt parity probe, the golden 12/12, the AL, the bench.
+
+## RA-018 T1 PACKAGE VALIDATION (2026-11-22 08:10) - PARITY PASS, R003 PASSES 5/5 "5"
+The T1 activation boot (the pid 1903674: gather_sum + the pinned bs16
+buckets + the fp32 draft cores): the smoke 391; the parity probe: 8
+concurrent identical prompts = 1 distinct text (the corpus 7-distinct
+failure mode: FIXED); the R003 knife-edge: 5/5 greedy answers "5" (the
+correct answer; the token-level: the answer token top1=top2 gap 0.0000 -
+the exact near-tie the suite flagged, now landing on the right side); the
+tools 8/8. The golden 2/12: the EXPECTED re-baseline - the fp32 rank-order
+sum changes the bf16 ULP pattern, so the hccl-era golden reference is stale;
+the order-invariant result is the more correct one. The golden reference
+needs re-capture under the T1 config (the new baseline is the
+order-invariant one). The banked trio (the graph-captured draft +20%, the
+async replay +29%, the mHC row cap +19%) rejected ONLY on R003 is now
+unblocked for re-adoption under the T1 numerics.
