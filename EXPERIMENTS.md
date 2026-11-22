@@ -3386,3 +3386,25 @@ chain A/B on long-form prompts (the chain is projected net-positive
 there), (2) the draft-shape A/B for the bs1 gap. The prompt-class-aware
 draft routing (the chain on for long-form, off for short-form) is the
 concrete product lever this measurement defines.
+
+## DECISIVE A/B: CHAIN (k=4) vs K=1 ON LONG-FORM AT BS1 - IDENTICAL AL, CHAIN SLOWER (2026-11-22 23:00)
+The apples-to-apples test on the CURRENT (post-reset) stack: the
+al_longform.py probe ran on the chain boot (CHAIN_K=4 verified in the
+server env) and on the k=1 production, same prompts, temp 0, bs1:
+CHAIN k=4:  essay 1.896 AL / 37.0 t/s; code 1.869 / 48.6; math 1.984 / 51.8
+K=1:        essay 1.882 AL / 38.0 t/s; code 1.869 / 40.8; math 1.969 / 42.8
+THE VERDICT: the chain's tokens-per-engine-step on long-form is
+IDENTICAL to k=1 (AL 1.87-1.98 both boots - the chain k=4 draft adds no
+accepted tokens beyond what the single draft already yields on
+long-form). On throughput the chain wins on 2 of 3 prompts (code +19%,
+math +21%) but loses on essay (-3%); the aggregate is roughly flat
+(chain 45.8 avg vs k1 40.5 avg: +13%). The honest reading: the earlier
+projection (the chain net-positive ~10% on long-form) is CONFIRMED at
++13% average - but the mechanism is NOT higher acceptance (the AL is
+identical); it is the chain's lower per-step cost amortized across the
+same accepted tokens (the chain graph replays the 4 drafts in ~the same
+wall time as the k=1 single draft on long-form shapes). The
+prompt-class-aware draft routing lever stands: the chain on for
+code/math long-form (+19-21%), neutral for essay. The k=1 remains the
+production config; the routing switch is the staged next-session item.
+Production restoration follows this measurement.
