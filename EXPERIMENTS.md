@@ -3095,3 +3095,12 @@ The effort: the FX pass skeleton ~1 day, the native grouped op the
 open feasibility question (the vendor grouped form vs the custom TPC
 kernel - the corpus has both precedents). Queued behind the T2
 ablation which selects the corner.
+
+## OWNER DIRECTIVE - FP8 KV CACHE PROHIBITED (2026-11-22 16:15)
+The owner directive: do not use FP8 KV cache ever. The RA-042 verdict
+(the @16 record 346.7, the capacity +66%, the numerics green on the run
+checks) is SUPERSEDED: the fp8_inc KV is prohibited regardless of the
+measured performance. The staged fp8 scripts (serve_fp8inc.sh,
+boot_fp8inc.sh) are removed; the KV cache stays bf16 (the 723,155-token
+pool) in every configuration, production and experimental. The RA-042
+A/B evidence remains in the record as the reference data only.
