@@ -2688,3 +2688,17 @@ threshold + exponential race: a concrete candidate to remove the philox
 block from the recipe. This is the RA-038-A-class lever the census was
 hunting: cherry-pick + gate + bench next round.
 D18 measured read also available in this window (the allocation probe).
+
+## D18 MEASURED READ COMPLETE (2026-11-22 04:55)
+The characterization boot logs the measured KV geometry:
+- GPU KV cache size: 723,155 tokens (the pool as provisioned at GMU 0.82,
+  the 32K adopted config, prefix caching off).
+- Maximum concurrency for 32,768 tokens per request: 22.07x (i.e. the pool
+  holds ~22 full-length requests; at the production max-num-seqs 32 the
+  pool binds before the scheduler only for full-32K concurrent traffic).
+Combined with the D18 calc pass (c5db323: the KDA ssm_state 68 MiB full /
+8.5 MiB per card per request at 34 layers, conv 1.1 MiB, DSA latent 11
+KiB/token across 11 layers), RA-041s lattice spacing and RA-042s capacity
+arithmetic now rest on measured numbers: the hybrid block bytes and the
+per-token store ratio are derivable from 723,155 tokens and the 22.07x
+concurrency figure. D18 CLOSED (measured + calc).
