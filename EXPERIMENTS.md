@@ -2862,3 +2862,19 @@ separate the noise from the cost. NOT adopted yet: the fp8 KV numerics on
 the 256K needles and the tools/decode gates must pass before marking this
 production-ready; the golden reference does not apply (the numerics
 change).
+
+## RA-042 FP8_INC KV A/B RESULT - THE @16 RECORD 346 TOK/S, MIXED VERDICT (2026-11-22 10:40)
+The fp8_inc KV boot (the pid 2022833): the capacity 1,198,xxx tokens (+66%
+over the bf16 723K; the claimed 2x is the DSA-latent share only - the KDA
+state stays bf16 so the hybrid pool gains 1.66x). The warm bench: @16 346.0
+aggregate (the NEW SESSION RECORD, +25% over the T1 276.6; the fp8 KV reads
+are cheaper at the batched shapes), the bs1 47.5-49.1 (~flat, within
+noise), the @8 254.8 (-9%), the TTFT@4K 1.21 s, the TTFT@32K 4.9 s (-8%).
+The numerics: the R003 5/5 "5" correct-side, the parity 1/8, the smoke 391,
+the 304-word story 0 triple-reps with a coherent head and tail.
+The verdict: MIXED-PROMISING. The @16 record and the capacity gain are
+real and large; the @8 dip and the bs1 flatness need a second warm run to
+separate the noise from the cost. NOT adopted yet: the fp8 KV numerics on
+the 256K needles and the tools/decode gates must pass before marking this
+production-ready; the golden reference does not apply (the numerics
+change).
