@@ -2617,3 +2617,12 @@ boot); D20 the OOT MLA accepts fp8_inc KV (the RA-042 has a first-class
 alternative before any custom LatentInt8Cache port); D15s tool identified
 (DUMP_POST_GRAPHS per-node engine field; boot_char.sh staged with mkdir -p
 /data/glm53/graphs). RA-048: the owner picked (b) in-tree only.
+
+## PRODUCTION RESTORED AFTER THE RA-039 PROGRAM (2026-11-22 03:42)
+The adopted config boot (the pid 1770189): the health UP 03:40:29, the
+smoke 391 correct. The production: k=1 + RA-011 async replay, the
+scheduler-level async OFF per the vendor gate. The RA-039 program: closed
+(the async refuted by the vendor policy); the banked levers (D16 the
+block-list hot path, D18 the calc, D20 the fp8_inc, D15s tool) documented
+for the next rounds. The boot_char.sh staged for the D15 + D18-measured
+characterization at the next approved window.
