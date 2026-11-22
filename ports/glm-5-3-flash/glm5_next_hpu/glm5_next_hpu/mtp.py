@@ -568,20 +568,66 @@ class _DraftChainGraphCore(nn.Module):
     captured tensors shifted by a constant - no fresh host tensors, no D2H.
     """
 
-    def __init__(self, attn_core: "_DraftAttnGraphCore", k: int):
+    def __init__(self, attn_core: "_DraftAttnGraphCore", k: int, block_size: int = 128, max_model_len: int = 32768):
         super().__init__()
         self.attn_core = attn_core
         self.k = int(k)
+        self.block_size = int(block_size)
+        self.max_model_len = int(max_model_len)
 
     def forward(self, input_ids, positions, hidden_states, *md_tensors):
+        """k draft passes as one captured region.
+
+        Per pass: the eagle_step kernel advances seq_lens in place and writes
+        the clamped positions + slot mapping to pre-allocated buffers; the
+        attn core consumes those buffers via its positional md contract. The
+        drafted token (in-graph argmax over the shared head) feeds the next
+        pass as internal dataflow. No host round-trips between passes."""
+        from vllm.v1.spec_decode.utils import eagle_step_update_slot_mapping_and_metadata
+
+        core = self.attn_core
+        names = core._md_fields
+        def _find(*keys):
+            for i, n in enumerate(names):
+                if any(k in n.lower() for k in keys):
+                    return i
+            return None
+        i_pos, i_seq, i_slot = _find("position"), _find("seq_lens"), _find("slot_mapping")
+        i_block = _find("block_table")
+
+        bs = hidden_states.reshape(-1, hidden_states.shape[-1]).shape[0]
+        dev = hidden_states.device
+        out_pos = torch.empty(bs, dtype=torch.long, device=dev)
+        out_slots = torch.empty(bs, dtype=torch.long, device=dev)
+
         ids = input_ids
-        pos = positions
         hidden = hidden_states
         hiddens = []
         for j in range(self.k):
-            h = self.attn_core(ids, pos + j, hidden, *md_tensors)
+            cur_pos = out_pos if j > 0 else positions.reshape(-1)[:bs]
+            # build the advanced md tensor tuple: field-specific
+            adv = []
+            for i, t in enumerate(md_tensors):
+                if i == i_pos:
+                    adv.append(out_pos)
+                elif i == i_seq:
+                    adv.append(md_tensors[i_seq])  # updated in place by the kernel
+                elif i == i_slot:
+                    adv.append(out_slots)
+                else:
+                    adv.append(t)
+            h = core(ids, out_pos, hidden, *adv)
             hiddens.append(h)
-            logits = self.attn_core.logits_processor(self.attn_core.lm_head, h, None)
+            if i_seq is not None and i_block is not None:
+                eagle_step_update_slot_mapping_and_metadata(
+                    cur_pos, md_tensors[i_block], md_tensors[i_seq],
+                    self.block_size, self.max_model_len,
+                    out_pos, out_slots, bs)
+            else:
+                out_pos.copy_(cur_pos + 1)
+                out_slots.copy_(md_tensors[i_slot] + 1 if i_slot is not None else cur_pos + 1)
+
+            logits = core.logits_processor(core.lm_head, h, None)
             ids = logits.argmax(dim=-1).reshape(-1)
             hidden = h
         return hiddens

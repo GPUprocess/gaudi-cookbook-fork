@@ -15,6 +15,19 @@ from torch import nn
 SRC = pathlib.Path(__file__).resolve().parents[3] / "glm5_next_hpu" / "glm5_next_hpu" / "mtp.py"
 
 
+import sys as _sys, types as _t
+_fake_utils = _t.ModuleType("vllm.v1.spec_decode.utils")
+def _fake_kernel(*a, **k):
+    seq = a[2]
+    seq += 1
+    a[5].copy_(a[0] + 1)
+    a[6].copy_(seq.to(torch.long) * 8)
+_fake_utils.eagle_step_update_slot_mapping_and_metadata = _fake_kernel
+_sys.modules.setdefault("vllm", _t.ModuleType("vllm"))
+_sys.modules["vllm.v1"] = _t.ModuleType("vllm.v1")
+_sys.modules["vllm.v1.spec_decode"] = _t.ModuleType("vllm.v1.spec_decode")
+_sys.modules["vllm.v1.spec_decode.utils"] = _fake_utils
+
 def _load_chain_cls():
     tree = ast.parse(SRC.read_text())
     node = next(n for n in tree.body if isinstance(n, ast.ClassDef)
@@ -27,6 +40,15 @@ def _load_chain_cls():
     ns = {"torch": torch, "nn": nn, "os": __import__("os")}
     # stub the names the class body references at runtime
     ns["_DraftAttnGraphCore"] = object
+    import types as _t
+    _u = _t.ModuleType("vllm.v1.spec_decode.utils")
+    def _fake_kernel(*a, **k):
+        seq = a[2]
+        seq += 1
+        a[4].copy_(a[0] + 1)
+        a[5].copy_(seq.to(torch.long) * 8)
+    _u.eagle_step_update_slot_mapping_and_metadata = _fake_kernel
+    ns["eagle_step_update_slot_mapping_and_metadata"] = _fake_kernel
     exec(compile(ast.Module(body=[node], type_ignores=[]), str(SRC), "exec"), ns)
     return ns["_DraftChainGraphCore"]
 
@@ -38,6 +60,7 @@ class _StubAttnCore(nn.Module):
     def __init__(self, k_vocab=7):
         super().__init__()
         self.k_vocab = k_vocab
+        self._md_fields = ("positions", "seq_lens", "slot_mapping", "block_table_tensor")
         self.calls = []
         self.lm_head = nn.Linear(4, k_vocab, bias=False)
         self.logits_processor = lambda lm, h, bias: lm(h.mean(dim=1)[:, :lm.weight.shape[1]] if h.shape[-1] != lm.weight.shape[1] else h)
@@ -57,7 +80,8 @@ def main():
     ids0 = torch.tensor([1, 2, 3, 5])
     pos0 = torch.tensor([100, 100, 100, 100])
     hid0 = torch.zeros(4, 4)
-    outs = core(ids0, pos0, hid0)
+    md = (pos0.clone(), torch.tensor([50, 60, 70, 80]), torch.tensor([500, 600, 700, 800]), torch.zeros(4, 2))
+    outs = core(ids0, pos0, hid0, *md)
     assert len(outs) == k, f"expected {k} outputs, got {len(outs)}"
     assert len(stub.calls) == k, f"expected {k} attn-core calls, got {len(stub.calls)}"
     # pass 0 consumed the base ids; each later pass consumed the previous argmax
