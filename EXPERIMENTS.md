@@ -2878,3 +2878,16 @@ separate the noise from the cost. NOT adopted yet: the fp8 KV numerics on
 the 256K needles and the tools/decode gates must pass before marking this
 production-ready; the golden reference does not apply (the numerics
 change).
+
+## SESSION STATE CHECKPOINT (2026-11-22 10:40)
+Serving: the fp8_inc boot (the pid 2022833, the @16 record 346) - NOT
+marked production-final: the 256K needles and the tools/decode gates on
+the fp8 numerics are pending; the revert path is boot_t1q.sh (the MTP+T1+
+Q01v2 config, the validated baseline).
+The todo: 9/23 proposals closed this stretch (the T1 package validated,
+the Q01v2 re-adopted, the RA-010 refuted, the RA-046 N/A, the RA-042
+mixed-promising at the @16 record, the RA-045 deferred on the D19 gate).
+The remaining 14: all deep items (the D1 wiring, the T2 chain capture,
+the D2 kernel, the D3 sampler, the D5 policy, the RA-038-A ablation, the
+RA-041/043/044/047 kernels and designs, the RA-007 research). The D1
+chain core class is staged (ebfe7f6); the runner wiring is next.
