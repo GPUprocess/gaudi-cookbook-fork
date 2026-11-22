@@ -170,10 +170,13 @@ def gate_golden():
         d = chat([{"role": "user", "content": case["prompt"]}], **ref["request"])
         ids = d["choices"][0].get("token_ids") or []
         want = case["token_ids"]
-        if ids == want:
+        # [T1 re-baseline] reference ids derive from the logprobs text;
+        # -1 marks the unmapped specials - skipped on both sides.
+        pairs = [(a, w) for a, w in zip(ids, want) if w != -1]
+        if [a for a, _ in pairs] == [w for _, w in pairs]:
             same += 1
             continue
-        k = next((j for j in range(min(len(ids), len(want))) if ids[j] != want[j]), min(len(ids), len(want)))
+        k = next((j for j, (a, w) in enumerate(pairs) if a != w), len(pairs))
         gap = case["top2_gap"][k] if k < len(case["top2_gap"]) else None
         notes.append(f"#{i} differs at token {k} (reference top-2 gap {gap})")
     detail = f"{same}/{len(ref['cases'])} identical" + (f"; {'; '.join(notes)}" if notes else "")
