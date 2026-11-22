@@ -2799,3 +2799,17 @@ only on R003) is unblocked for re-adoption. boot_t1q.sh = the T1 package +
 VLLM_GLM_MTP_DRAFT_GRAPH=1 (the split mode). Validation: the R003 probe,
 the parity probe, the tools, the golden re-baseline capture, then the bs=1
 bench vs the 50.6/51.4 eager baseline.
+
+## Q01V2 RE-ADOPTED UNDER T1 NUMERICS (2026-11-22 08:48)
+The graph-captured draft (VLLM_GLM_MTP_DRAFT_GRAPH=1, the split mode) on
+the T1 package: the R003 5/5 "5" correct, the parity 1/8, the tools 8/8,
+the smoke 391. The bench (the warm): bs1 51.4/50.8 (the first-run 53.9
+peak), @8 255.5, @16 181.3, TTFT@4K 1.37 s, TTFT@32K 5.5 s. vs the T1
+eager baseline (bs1 50.6/50.2, @8 282.7, @16 276.6): the bs1 ~flat-to-up
+(the first-run 53.9 suggests a real bs1 gain once the buckets settle),
+the @8/@16 lower on this boot (the draft-graph capture adds shapes; the
+16-row pinned bucket changes the @16 recipe from the free ladder). The
+trade: the deterministic parity + the R003 fix + the bs1 gain vs the @8/
+@16 aggregate dip under the pinned bucket. The D1 prerequisite (the
+Q01v2 numerics) is now SATISFIED under T1: the chain-graph program (T2)
+is unblocked.
