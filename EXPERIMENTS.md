@@ -3242,3 +3242,27 @@ head-reuse route is the remaining lever: reusing the target head's
 last-layer KV for the draft (the no-draft-forward route) is the
 head-reuse candidate; the two-drafter route needs a second head -
 prohibited by the checkpoint (the single head published).
+
+## RA-047 WINDOW-BOOT VERDICT: RECIPE COMPILE CEILING AT MAX_MODEL_LEN 32768 (2026-11-22 19:26)
+The RA-047 / D17 window boot was attempted with four recipes; ALL failed
+at Synapse graph compile with synStatus 26 (generic failure):
+1. max_model_len 1048576 + 8192 KV blocks - FAIL
+2. max_model_len 524288 + 4096 KV blocks - FAIL
+3. max_model_len 262144 + 2048 KV blocks - FAIL
+4. max_model_len 1048576 + 1280 KV blocks (the proven production block
+   count) - FAIL
+The ceiling is on max_model_len itself (the 1M-class sequence shapes),
+not the KV block count: even the production 1280-block recipe fails when
+max_model_len is raised above the production 32768. The production
+config (max_model_len 32768, 1280 blocks) compiles and serves; any
+longer-window boot fails recipe compilation on this stack (the v0.26.0
+compiler cannot build the 1M/524K/262K-class graphs for the hybrid KDA
+model). The honest RA-047 verdict: the 1M-context decode-rate
+measurement is BLOCKED by the recipe-compile ceiling on this stack; the
+longer-window measurement requires a compiler fix (the upstream 1M
+graph support) that is outside this session's reach. The production
+server was restored after the attempts (the user observed the server
+idle during the failed boots). The RA-047 closes as BLOCKED-WITH-EVIDENCE:
+the 4 failing recipes are recorded, the ceiling is characterized
+(max_model_len, not blocks), and the unblock path is the upstream
+compiler 1M-graph support.
