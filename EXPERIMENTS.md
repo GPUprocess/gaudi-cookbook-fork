@@ -3028,3 +3028,12 @@ restored. The T3 remaining option: the TPC kernel (option 2) or the
 vendor multi-token GDN decode (option 3) - both days-class, queued behind
 the node-collapse program. The CPU parity test remains valid as the
 reference for any future kernel work.
+
+## SESSION CLOSED - PRODUCTION FINAL (2026-11-22 14:29)
+The final production boot (the pid 2165682): the health UP 14:27:41, the
+smoke 391. The configuration: k=1 MTP + the T1 invariance package + the
+Q01v2 graph-captured draft. 15 of the 23 research proposals closed with
+measured evidence this session; the remaining 8 documented with designs
+(the D2 accept-walk kernel, the D3 sampler tail, the RA-038-A ablation,
+the RA-041/043/044/047 designs, the RA-007 research). The T3 closed form
+refuted at @16 and reverted; the loop restored as the fast reference.
