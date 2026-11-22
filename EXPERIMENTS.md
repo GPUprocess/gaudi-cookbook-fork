@@ -2907,3 +2907,19 @@ eagerly; the chain-graph version needs the same field-specific math
 traced in-graph. That is the precise next-session first task, followed by
 the proposer-loop integration (the k passes as ONE call replacing the
 llm_base_proposer loop) and the k=4 boot.
+
+## D1 METADATA-ADVANCE DESIGN COMPLETE (2026-11-22 11:05)
+The kernel for the chain core in-graph metadata advance is confirmed:
+eagle_step_update_slot_mapping_and_metadata (vllm/v1/spec_decode/utils.py
+l.88) - a Triton kernel, capture-safe, that updates seq_lens IN PLACE
+(+1 per call, so k sequential in-graph calls accumulate base+k exactly),
+and writes out_clamped_positions + out_slot_mapping to pre-allocated
+buffers (handling block crossings and padding that a blind +1 cannot).
+The chain-core integration design: pre-allocate the out buffers at
+capture, call the kernel once per pass inside the captured region (the
+seq_lens in-place accumulation gives the correct per-pass state for
+free), and feed the out buffers to the attn core via _md_replace on the
+captured field names. The remaining implementation: the buffer setup +
+the kernel wiring in _DraftChainGraphCore.forward + the proposer-loop
+integration (the k passes as ONE call), then the k=4 boot with the AL +
+bench. This is the next session first item with the design complete.
