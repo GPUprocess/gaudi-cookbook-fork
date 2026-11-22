@@ -554,3 +554,34 @@ class Glm5NextMTPModel(nn.Module):
     def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
         # Nothing to load: every parameter is the target's, already populated.
         return set()
+
+
+class _DraftChainGraphCore(nn.Module):
+    """RA-018 T2 / RA-038-B D1: the whole k-step draft chain as ONE captured
+    HPU graph per pinned decode bucket.
+
+    Built on the proven attn-mode core: each of the k passes is the same
+    whole-step core, chained so pass j+1 consumes pass j's argmaxed token and
+    hidden state as INTERNAL graph dataflow (no host round-trip, no per-step
+    seam sync). The per-step metadata advance (positions/slot-mapping/seq-lens)
+    is modeled as base tensors plus the pass index j, so every pass reads
+    captured tensors shifted by a constant - no fresh host tensors, no D2H.
+    """
+
+    def __init__(self, attn_core: "_DraftAttnGraphCore", k: int):
+        super().__init__()
+        self.attn_core = attn_core
+        self.k = int(k)
+
+    def forward(self, input_ids, positions, hidden_states, *md_tensors):
+        ids = input_ids
+        pos = positions
+        hidden = hidden_states
+        hiddens = []
+        for j in range(self.k):
+            h = self.attn_core(ids, pos + j, hidden, *md_tensors)
+            hiddens.append(h)
+            logits = self.attn_core.logits_processor(self.attn_core.lm_head, h, None)
+            ids = logits.argmax(dim=-1).reshape(-1)
+            hidden = h
+        return hiddens
