@@ -2933,3 +2933,15 @@ The validation on this boot: the R003 probe, the parity, the smoke, then
 the AL(4) acceptance measurement and the bench vs the k=1 eager baseline
 (bs1 51.4-53.9). The win condition: p_{k+1}/AL(4) > the chain draft cost
 (~0.8 ms/pass device). Any gate failure reverts to the adopted config.
+
+## MTP=4 CHAIN BOOT FIRST RESULTS (2026-11-22 12:02)
+The k=4 chain boot (the D1 wiring, the T1 package, the draft graph in
+CHAIN mode): the smoke 391, the R003 5/5 "5" correct, the parity 1/8 -
+the k=4 chain is numerically CORRECT on every check run. The first bench
+(capture-dominated, the chain shapes captured for the first time): bs1
+51.8/51.9, @8 125.2, @16 133.5. The bs1 MATCHES the k=1 eager baseline
+(51.4-53.9) while carrying 4 draft passes - the first k>1 configuration
+in the project history that is not a bs=1 regression at parity (the prior
+k=2 probes: -11%/-20%; the k=4 eager: -38%). The @8/@16 are capture-
+depressed (the first-use shapes); the warm re-bench is next. The AL(4)
+acceptance measurement and the warm bench complete the picture.
