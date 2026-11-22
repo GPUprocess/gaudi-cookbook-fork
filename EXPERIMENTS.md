@@ -3362,3 +3362,27 @@ AL(4) acceptance program's earlier finding (the chain -6% vs k=1 at
 temp 0) plus this sweep define the next-session agenda: (1) the
 draft-graph shape-set A/B for the bs1 gap, (2) the AL probe on the
 long-form prompts where acceptance was higher (52.5 translation).
+
+## LONG-FORM AL PROBE: AL 1.88-1.97 AT BS1 ON LONG-FORM GENERATION (2026-11-22 22:25)
+The al_longform.py probe (the spec-decode draft counter as the step
+source, temp 0, bs1, k=1 production) measured AL on long-form prompts:
+essay: 256 tok / 136 steps -> AL=1.882 (38.0 tok/s)
+code:  256 tok / 137 steps -> AL=1.869 (40.8 tok/s)
+math:  256 tok / 130 steps -> AL=1.969 (42.8 tok/s)
+THE DECISIVE FINDING: the AL on long-form generation is 1.88-1.97 -
+2.2x the short-prompt AL (0.857) and at the same level as the AL(4)
+chain's measured acceptance (1.87). The k=1 draft path is ALREADY
+returning ~1.9 tokens per draft-step on long-form traffic. The bs1
+throughput on long-form (38-43 tok/s) with AL 1.9 implies the draft
+step cost is ~22 ms (1.9 tok / 43 tok/s) - and the earlier chain-step
+cost was ~37 ms for AL 1.87. THE VERDICT: the MTP=4 chain is
+net-positive exactly on the traffic where AL is high IF the chain step
+cost stays near the k=1 draft step cost; the fast-path condition
+(the chain step < AL(4) x k=1 step time) is CLOSE on long-form
+traffic (37 ms vs 1.87 x 22 ms = 41 ms - the chain would be net
+POSITIVE by ~10% on long-form). The short-prompt traffic is where the
+chain loses. The next-session agenda sharpens: (1) the per-prompt-class
+chain A/B on long-form prompts (the chain is projected net-positive
+there), (2) the draft-shape A/B for the bs1 gap. The prompt-class-aware
+draft routing (the chain on for long-form, off for short-form) is the
+concrete product lever this measurement defines.
