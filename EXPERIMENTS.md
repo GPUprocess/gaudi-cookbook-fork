@@ -3339,3 +3339,26 @@ next session: capture-time env comparison (GLM_PHASE_TS dump diff of
 the draft graphs) or the boot-time warmup pass re-enabled for the bs1
 shape. Production remains HEALTH-UP; the aggregate paths remain above
 the pre-reset baseline.
+
+## AL VS BATCH-SIZE SWEEP V2 (METRIC-BASED) - ACCEPTANCE COLLAPSES WITH CONCURRENCY (2026-11-22 22:20)
+The al_sweep_v2.py (the vllm:spec_decode_num_drafts_total counter as
+the step counter - the F4TS stamp source no longer exists in the fork
+tree) measured AL per batch size on the live production (k=1):
+streams=1:  agg 36.0 t/s, 156 tok, 182 steps, AL=0.857, 23.8 ms/step
+streams=2:  agg 55.0, 234 tok, 274 steps, AL=0.427, 15.5 ms/step
+streams=4:  agg 98.2, 742 tok, 819 steps, AL=0.226, 9.2 ms/step
+streams=8:  agg 157.7, 1296 tok, 1432 steps, AL=0.113, 5.7 ms/step
+streams=16: agg 250.4, 2506 tok, 2760 steps, AL=0.057, 3.6 ms/step
+NOTE: the AL here is the spec-draft acceptance-length proxy under the
+k=1 config and this bench's prompt mix - the bench's short prompts
+("Count from 1 to 200. Request N") accept poorly (AL 0.86 at bs1 is
+below 1.0 because rejected drafts still consume draft-tokens budget
+without producing tokens). The collapse with streams tracks the
+per-step draft overhead being shared, not an acceptance-quality change.
+The throughput profile at bs1 (36-45 tok/s vs the pre-reset 51.4) and
+the AL 0.857 at bs1 both point the same direction: the k=1 draft path
+is currently costing more than it returns on these short prompts. The
+AL(4) acceptance program's earlier finding (the chain -6% vs k=1 at
+temp 0) plus this sweep define the next-session agenda: (1) the
+draft-graph shape-set A/B for the bs1 gap, (2) the AL probe on the
+long-form prompts where acceptance was higher (52.5 translation).
