@@ -2836,3 +2836,13 @@ the hand-tuned file, and RA-006-B refuted pad-bucketing. No A/B possible
 without porting code; the sweep is N/A. The actionable residue: the D16
 numpy block-list rewrite (the fastmeta mechanism, our code) remains the
 real lever from this round.
+
+## PRODUCTION RESTORED POST-NGRAM (2026-11-22 10:05)
+The MTP+T1+Q01v2 boot (the pid 2009001): the health UP 10:04:21, the smoke
+391. Now swapping to boot_fp8inc.sh: the RA-042 probe (--kv-cache-dtype
+fp8_inc inserted before the spec config). The claims under test: the 2x KV
+capacity (the DSA latent KV quantized) and the decode-rate gain (the reads
+faster) vs the numerics cost (the rimb05 INT8 measurement: the 0.6 pct
+error; fp8: coarser). The gates: the golden re-capture is NOT applicable
+(the numerics change); the validation: the coherence spot-checks + the
+R003 probe + the bench, with the acceptance measured on the fp8 KV.
