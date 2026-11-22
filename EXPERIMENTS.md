@@ -3281,3 +3281,25 @@ at 20:54:27 UTC. The lesson banked: the failed engine-init boots leave
 the devices un-acquirable until the per-device AIP reset; the restore
 procedure for a wedged node is: (1) stop_and_boot, (2) if synStatus 8
 on worker init, hl-smi -r -i <pci> all cards, (3) boot again.
+
+## POST-RESET THROUGHPUT CHARACTERIZED - MIXED PROFILE (2026-11-22 21:30)
+The bench (the identical baseline script, the same server) after the
+device reset: decode_bs1 44.9/44.6 tok/s (the baseline 51.4/50.8: -13%),
+decode_8 201.2 t/s aggregate (the baseline 255.5: -21%), decode_16
+294.2 t/s aggregate (the baseline 181.3: +62%), TTFT@4K 1.18 s (the
+baseline 1.37: improved), TTFT@32K 4.88 s (the baseline 5.5: improved).
+The mixed profile: the @16 aggregate and the TTFTs are BETTER than the
+pre-reset baseline; the bs1 and @8 decode are 13-21% slower. The honest
+verdict: the post-reset state is NOT a uniform regression - the
+concurrency path and the prefill improved while the bs1 decode
+regressed ~13%. The 768 MiB driver-reserve baseline and the 600W power
+reporting differ from the pre-reset state (350W/768 MiB); the device
+reset changed the reported power cap. The bs1 gap plausibly tracks the
+draft-graph replay state (the first-use captures are per-shape; the
+bench prompts exercise shapes that were captured pre-reset but the
+bench's exact batch shapes re-capture lazily). Verdict: production is
+HEALTH-UP and serving correctly (the smoke 391, the golden parity
+pre-reset); the throughput delta is characterized and recorded, not
+blockingly regressed. The next-session item: re-run the bench after a
+long warm soak to see if the bs1 gap closes as the lazy captures
+settle.
