@@ -3303,3 +3303,24 @@ pre-reset); the throughput delta is characterized and recorded, not
 blockingly regressed. The next-session item: re-run the bench after a
 long warm soak to see if the bs1 gap closes as the lazy captures
 settle.
+
+## WARM-SOAK RECHECK: @8 RECOVERED TO 300.8 T/S (+18% VS PRE-RESET BASELINE) (2026-11-22 21:47)
+The 15-minute warm soak then the identical bench: decode_bs1 43.6 tok/s
+(the pre-reset 51.4/50.8: -14%; unchanged from the immediate post-reset
+44.9 - the bs1 gap does NOT close with the soak), decode_8 300.8 t/s
+aggregate (the pre-reset 255.5: +18% - RECOVERED and now above the
+baseline), decode_16 299.2 (the post-reset 294.2, the pre-reset 181.3:
++65%). Final post-reset profile: bs1 -14%, @8 +18%, @16 +65%, the TTFTs
+improved. The honest reading: the reset state is not a uniform
+regression - the concurrent decode paths are now FASTER than the
+pre-reset baseline while bs1 single-stream decode runs -14%. The bs1
+gap is stable (44.9 -> 43.6 across the 20-minute soak), so it is not
+lazy-capture settling; it is a persistent state difference in the
+single-stream path after the reset (the power-cap reporting changed
+350W -> 600W; the draft-graph shape set may have re-captured without
+the pre-reset tuning). Verdict: production remains HEALTH-UP and
+serving; the aggregate throughput (@8+@16) is above the pre-reset
+baseline; the bs1 -14% gap is the recorded open item with the
+power-cap/draft-shape hypotheses. Next-session item: A/B the power cap
+(hl-smi -p 350) and the draft-graph shape re-capture against the bs1
+decode.
