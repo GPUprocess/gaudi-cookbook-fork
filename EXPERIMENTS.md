@@ -3728,3 +3728,19 @@ band), so the boot's information value is the confirmation only -
 the draft-shape A/B (the staged next-session item) is the
 higher-value experiment. T1 closes the feasibility half MEASURED-BY-
 ARITHMETIC; the AL(8) pin is explicitly deferred with the reason.
+
+## T3 AT16 K=2 DECOMPOSITION GATED OUT BY THE W7 FINDING (2026-11-23 10:20)
+The T3 proposal (the @16 k=2 per-row decomposition of the 36 ms/pass:
+the draft host x16 / the verify-row device / the MoE union / the
+accept-sampler - one boot window) is GATED OUT by the session's own
+measurement: the W7 finding (the AL(k4) = the AL(k1) = ~1.9 at bs1,
+the temperature- and prompt-invariant) establishes that the chain
+depth does not convert into acceptance on this drafter. The T3 win
+condition (AL(2) > AL(1) x the step ratio) fails by the W7
+extrapolation: AL(2) = AL(1) -> the k=2 step pays 2x the draft cost
+for the same accepted tokens. The boot window the T3 asked for is
+better spent on the RA-051 arms (the attribution with a real +40-52%
+@16 payoff) once the stability settles. THE T3 VERDICT: GATED OUT
+(the W7 extrapolation: AL(2) = AL(1) -> the condition fails; the
+boot window re-allocated to the RA-051 arms). The doc status:
+GATED-OUT-BY-W7.
