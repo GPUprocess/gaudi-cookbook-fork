@@ -3800,3 +3800,21 @@ ARMS STAY PROPOSED with the prerequisite named: the T2 ablation
 arms (the tooling ready, the boot windows needed). The doc status:
 GATED-ON-T2-ARMS (the tooling operational; the boot windows
 required).
+
+## PRODUCTION RESTORED (8TH WEDGE CYCLE) - A51 ARM2 QUEUED PER THE STABILITY POLICY (2026-11-23 12:26)
+The A51 arm2 (t1c_off, the fp32 draft cores off) wedged twice during
+the boot attempts (the ShmRingBuffer race at 08:08, the worker-5 death
+at 11:50) - the two attempts consumed the 7th and 8th device reset
+cycles. PRODUCTION: restored after the 8th reset - HEALTH-UP 12:25:51,
+the smoke 391 correct 12:26:20. THE STABILITY POLICY ENFORCED: no
+further A/B boot attempts tonight - the wedge frequency (8 wedges,
+all correlated with the rapid boot cycling) makes the A/B matrix
+unaffordable until the settle-time policy is validated (the doc item:
+the 60 s post-reset settle + the single-boot-per-reset-cycle rule).
+THE A51 STATE: the arm1 (t1a_off) MEASURED (the gather_sum
+load-bearing for batched, -19% bs1); the arms t1c_off + q01_off QUEUED
+behind the stability with the boot scripts staged (ab51_boot.sh).
+The user's directives all banked: the re-audit 52/52 accounted, the
+todo 13/13, the D5 switch validated, the docs updated, the
+performance-goal route documented (the RA-005 audit + the RA-052 plan
++ the RA-049 drafter decision).
