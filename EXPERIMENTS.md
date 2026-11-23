@@ -3574,3 +3574,24 @@ region - WHICH NEEDS THE VERIFY-PASS SOURCE CHECK). The D2 stays
 PROPOSED with the corrected premise: the next-session item is the
 verify-pass source check (do the 8 ops run inside the captured graph
 or eager?), then the TPC kernel decision.
+
+## D2 VERDICT COMPLETE: THE DEVICE ACCEPT-WALK IS ALREADY OUR PRODUCTION PATH (2026-11-23 03:50)
+The D2 audit completed the loop: the decode_lean.py module
+(glm5_next_hpu, our fork) ALREADY implements the accept/reject walk on
+the device - the _accept_grid function (the prefix-logic walk over
+[n_req, k]: the cumsum-reject mask, the write mask, the bonus
+placement - ~6 eager device ops as the graph-captured region) patched
+into rejection_sampler.rejection_sample via make_device_reject when
+GLM_SPEC_DEVICE_REJECT=1 - WHICH THE PRODUCTION BOOT SETS (the env
+line in boot_restored.sh). THE D2 VERDICT: the accept-walk fusion the
+proposal asked for is ALREADY DONE in our production path - the walk
+runs on the device inside our captured graph region, not as the 25-30
+eager host ops the proposal counted. The residual gap vs the proposal
+(1 TPC kernel vs our ~6 fused graph ops): the TPC kernel would save
+~5 graph nodes - a node-count optimization, not the latency lever the
+proposal priced (the proposal's 25-30 eager ops premise was the
+upstream path we bypassed months ago). THE D2 CLOSES AS
+ALREADY-IMPLEMENTED (the device walk in production; the residual TPC
+fusion is the node-count item folded into RA-038-A's adoption arms if
+the ablation proves the class matters). The D2 todo closes; the
+adoption-arms item inherits the TPC-walk candidate.
