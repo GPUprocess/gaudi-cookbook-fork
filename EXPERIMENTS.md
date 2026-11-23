@@ -3894,3 +3894,27 @@ chain adoption needs the per-request k routing (the RA-052 work) or
 the BS_MAX=0 (the chain off) for the mixed traffic. The bench logs:
 bench_d5_prod.log (v1), bench_d5v3.log (v3), bench_d5.log (the k1
 baseline).
+
+## THE CHAIN FAST PATH NEVER ENGAGED IN SERVING - THE GRAPH-MODE TRAP; WHOLE-MODE BOOT FIRED (2026-11-23 17:10)
+The D5 v4 gate (the actual batch_size only) still measured the SAME
+numbers as v3 (the bs1 52.2, the @8 77.1, the @16 131.9). THE TRACE:
+the gate code was correct, but _chain_fast_path returns None at its
+FIRST check: chain_graph_core is None. WHY: the chain core is only
+created when _DRAFT_GRAPH_MODE == "whole" (the mtp.py line 381: the
+chain core wraps the attn core k times into ONE captured region -
+created under the whole mode); the chain boot exported
+DRAFT_GRAPH_MODE=split, which builds the pre_attention/attention
+split cores but NEVER the chain core. THE VERDICT: every serving
+"chain" bench (the sweeps, the v1, the v3, the v4) ran the STANDARD
+K=4 spec path - the chain fast path has NEVER executed in a serving
+bench. The bs1 "+20%" (the 52.2-52.5 vs the k1 43.6-61.1) is the
+standard k4 spec gain, not the chain. The unit tests exercised the
+chain logic directly with the mocked cores - they were valid, but the
+serving-level engagement was never proven. THE FIX: the boot now
+exports DRAFT_GRAPH_MODE=whole (the chain boot line). The whole-mode
+boot is fired (pid 2998697). THE NEXT: the engagement verification
+(the AL signature: the chain k4 at bs1 should show the AL ~3+ vs the
+k4 standard ~1.9 if the chain path differs; or the direct timing), the
+bench, the honest record. The measurement-honesty lesson: the unit
+test + the serving bench are different universes; the engagement must
+be verified at the serving layer before any "chain" number is quoted.
