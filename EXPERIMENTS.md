@@ -3501,3 +3501,30 @@ the D5 gate. The production restore with the D5-gated chain config is
 the next step - the owner should confirm whether to adopt the D5
 chain config as the production default tonight or keep the k=1
 production and adopt the switch in the next session.
+
+## D5 V2 (CALLSITE SHORT-CIRCUIT) VALIDATED - BS>=8 LOSS IS NOISE-BAND (2026-11-23 03:35)
+The D5 v2 fix (the call-site short-circuit: _GLM_CHAIN_ENABLED and
+input_batch_size <= _GLM_CHAIN_BS_MAX before the _chain_fast_path call;
+the per-call env reads and the stale bs_max check removed) validated
+end-to-end on the fresh chain boot (HEALTH-UP 03:24):
+streams | D5v2 | ungated chain | k=1
+1  | 45.9 | 43.4 | 36.0  (+28% vs k1)
+2  | 69.0 | 68.0 | 55.0  (+25% vs k1)
+4  | 109.2 | 108.7 | 98.2 (+11% vs k1)
+8  | 152.5 | 152.1 | 157.7 (-3%, the noise band)
+16 | 231.9 | 190.3 | 250.4 (-7%, the noise band: the k1 sweeps ranged
+     229.7-250.4 across four boots)
+The microbenchmark (the motivation): the per-call env.get was 451
+microseconds and even the hoisted gate check was 85.7 microseconds per
+call - at the bs16 3.9 ms step that is up to 2.2 pct of the step. The
+v2 call-site short-circuit removes the function call entirely for the
+bs>=8 path (the batch check is two module-constant loads in the
+caller). The remaining -7% at bs16: the measurement noise of this
+stack (the k=1 aggregate ranged 229.7-250.4 across the four k=1
+boots) - no further fix is justified until a tighter benchmark shows a
+real gap. THE D5 ROUTING SWITCH IS COMPLETE: +28/+25/+11% at bs1-4,
+noise-band at bs8-16. The user's directive (the bs>=8 loss) is
+addressed: the remaining delta is inside the stack's noise band, not a
+fixable regression. NEXT: the production restore (the D5 v2 chain
+config is the adoption candidate pending the owner's go), then the
+next todo item (the D2 accept-walk fusion).
