@@ -3709,3 +3709,22 @@ RA-038-A adoption arms if the dead branch can be elided at capture,
 but the executed-path cost is zero). The doc status:
 INERT-FOR-THE-GREEDY-PATH (the audit: the gumbel knob intentionally
 unused; the assert all_greedy).
+
+## T1 K=8 FEASIBILITY ARITHMETIC COMPLETE - THE BOOT IS QUEUED BEHIND THE STABILITY (2026-11-23 10:15)
+The CPU-only feasibility half of the T1 item (the D4 arithmetic from
+the proposal, verified): the KDA candidate slots 1+k+1 per request at
+k=8/ns32 = 278 MB - fits; the verify rows 1+k = 9/request with the
+1.5-2x bucket population (the boot 40-60 min); the MoE union at bs1
+k=8 ~9.8 GB/rank (the 8-HPU fit OK), @16 k=8 saturates all 36
+experts (the 4-HPU fit tight at GMU 0.95 - moot per the RA-005
+audit). THE REMAINING HALF (the AL(8) pin) requires the k=8 boot
+(CHAIN_K=8, the 40-60 min window) - QUEUED BEHIND THE STABILITY: the
+device-wedge frequency (the 6 wedges tonight, the rapid boot cycling
+correlated) makes the extra boot unaffordable until the settle-time
+policy is validated. THE HONEST EXPECTATION: the AL(8) will land in
+the same ~1.9 band as the AL(4) (the W7 finding: the single head
+cannot convert the depth into acceptance; the AL(4) = the AL(1)
+band), so the boot's information value is the confirmation only -
+the draft-shape A/B (the staged next-session item) is the
+higher-value experiment. T1 closes the feasibility half MEASURED-BY-
+ARITHMETIC; the AL(8) pin is explicitly deferred with the reason.
