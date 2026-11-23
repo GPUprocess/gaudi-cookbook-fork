@@ -3613,3 +3613,28 @@ moe_multiplexer 652, logical_slice_fwd 481, reshape 417, expand_dims
 static_reshape 65 - the MoE multiplexer + the logical reshape/slice
 classes are the ablation candidates (the logical class is the
 graph-construction overhead; the multiplexer is the routing logic).
+
+## RA-051 A/B ARM 1 (t1a_off): GATHER_SUM IS LOAD-BEARING FOR BATCHED SHAPES (2026-11-23 04:40)
+The t1a_off arm (GLM_ALLREDUCE_GATHER_SUM=0, all the other T1 levers
+on) benched vs the production config:
+          | t1a_off | production | delta
+bs1       | 51.7    | 43.6       | +19% (!)
+@8        | 98.9    | 300.8      | -67% (!!)
+@16       | 124.7   | 299.2      | -58% (!!)
+THE ATTRIBUTION: the order-invariant gather_sum (T1a) costs ~19% at
+bs1 (the [world,...] gather + the fixed-rank-order sum materializes
+the extra tensor traffic at the single-row shapes) but IS THE LOAD
+BEARING lever for the batched shapes (without it @8 collapses -67%,
+@16 -58%: the default all-reduce path at the batched shapes is
+catastrophically slower on this stack - the pre-T1 276.6 @16 number
+vs the 346.0 fp8 measurement is EXPLAINED: the pre-T1 config ran
+without the gather_sum, and the fp8 boot that hit 346 had it on).
+THE RA-051 VERDICT SO FAR: T1a is NOT the @16 gap culprit - removing
+it makes @16 worse, not better. The @16 gap attribution continues
+with the T1c (the fp32 draft cores) and the Q01v2 (the draft graph)
+arms - the remaining candidates for the batched-shape cost. The bs1
++19% side-finding: the gather_sum costs bs1 - the batch-conditional
+AR mode (the gather_sum off at bs1, on at bs>=4) is a NEW lever the
+matrix just surfaced (the D5 pattern applied to the AR: the
+batch-conditional gather_sum - implementable in the same
+hpu_communicator gate).
