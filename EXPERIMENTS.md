@@ -3829,3 +3829,26 @@ call-site short-circuit (the bs check before the _chain_fast_path
 call), and the removal of the per-call env reads from the function
 body. The patch survives any vllm tree rebuild; the apply order: the
 chain patches after the D1 chain wiring.
+
+## A51 ARM2 (t1c_off) WEDGED 3X - THE ARM PERMANENTLY QUEUED; PRODUCTION RESTORED (2026-11-23 14:41)
+The A51 arm2 (t1c_off, the fp32 draft cores off) wedged on all three
+attempted boots (08:08, 11:50, 14:10 - the worker deaths, the
+ShmRingBuffer race, the Executor failed), across three separate reset
+cycles (the 7th, 8th, 9th) with the settle policy applied (the 60 s
+post-reset settle before each attempt). The arm2 correlation is now
+suspicious on its own: the arm1 (t1a_off) booted cleanly on the first
+attempt; the arm2 (the fp32 draft cores OFF) wedged 3/3. THE
+HYPOTHESIS WORTH RECORDING: the fp32 draft cores OFF changes the
+draft-graph capture path (the bf16 core vs the fp32 core) - the
+arm2's boot may be hitting a capture-time instability specific to
+the bf16 draft-core path (the T1c lever was adopted for a REASON -
+possibly the numerics-drift fix Q01v2 depends on the fp32 core; the
+Q01v2 + the bf16 core = the known-bad combination from the D1
+prerequisite note). THE VERDICT: the arm2 is NOT RUNNABLE on this
+stack without the Q01v2 interaction analysis - the T1c lever is
+load-bearing for the boot stability itself. THE PRODUCTION: restored
+after the 9th reset - HEALTH-UP 14:41:07, the smoke 391 correct
+14:41:36. The wedge-recovery procedure: 9-for-9. THE ARM QUEUE
+CLOSED: the A/B matrix pauses at the arm1 attribution; the arms
+t1c_off + q01_off are marked NOT-RUNNABLE-WITHOUT-ANALYSIS (the
+T1c-Q01v2 interaction hypothesis recorded).
