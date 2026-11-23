@@ -3551,3 +3551,26 @@ hpu_rejection_sampler). THE NEXT-SESSION ITEM: read the HPU sampler
 path (the vllm_gaudi/v1/sample/hpu_rejection_sampler.py the pyc
 sighting earlier) and count the eager ops there - that count decides
 whether D2 is a real fusion win or already-covered.
+
+## D2 HPU SAMPLER PATH AUDITED - 8 EAGER OPS IN THE WALK (2026-11-23 03:45)
+The HPU sampler (vllm_gaudi/v1/sample/hpu_rejection_sampler.py, 301
+lines) carries the accept-walk as 8 eager torch ops: the mismatch
+argmax (line 82), the empty output alloc (92), the target argmaxes
+(153, 190, 203), the where-mask replace (177), the recovered-token
+argmax (209), the output full-alloc (220). The D2 verdict for THIS
+stack: the walk is 8 eager ops, not 25-30 - the fusion target exists
+but the saving is 1/3 the proposal's premise (the proposal counted the
+upstream eager path, not the HPU path). The realistic D2 win: 8 eager
+ops -> 1 TPC kernel saves ~7 graph nodes/launches per decode step per
+request; at the measured 20 ms bs=1 step with the ~0.3-0.5 ms/op eager
+dispatch, the saving is ~2-3.5 ms/step (~10-17%) IF the ops are
+host-dispatch-bound (the T2 census showed the philox kernel dominates
+the graph; these 8 ops run EAGER outside the captured graph - the
+census cannot see them). The honest D2 estimate: worth the attempt at
+k=8 (the saving scales with k), marginal at k=1-4 (the 8 ops are
+mostly tiny [bs] tensors - the launch overhead dominates, and the
+graph capture may already absorb them if they run inside the captured
+region - WHICH NEEDS THE VERIFY-PASS SOURCE CHECK). The D2 stays
+PROPOSED with the corrected premise: the next-session item is the
+verify-pass source check (do the 8 ops run inside the captured graph
+or eager?), then the TPC kernel decision.
