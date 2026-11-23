@@ -3918,3 +3918,41 @@ k4 standard ~1.9 if the chain path differs; or the direct timing), the
 bench, the honest record. The measurement-honesty lesson: the unit
 test + the serving bench are different universes; the engagement must
 be verified at the serving layer before any "chain" number is quoted.
+
+## THE CHAIN MODE PRODUCTION CRASH - THE HPU GRAPH CAPTURE CONFLICT; ROOT CAUSE RECORDED (2026-11-23 21:25)
+The four-layer trap, fully excavated:
+1. The v1-v3 gates read the PADDED bucket (16) - dead code.
+2. The live plugin tree (/opt/glm53/gaudi-cookbook via the editable
+   install) was an OLD version with NO chain support at all - every
+   serving "chain" bench measured the standard k4 path regardless of
+   gate logic.
+3. The mode validation ("split"|"attn") coerced chain->split silently.
+4. The cron watchdog (health_watchdog.sh, every 5 min) killed the
+   slow-warmup chain boots and substituted its own k1 boot
+   (boot_f4ts.sh) - the 18:43 and 19:14 HEALTH-UPs were the watchdogs
+## THE CHAIN MODE PRODUCTION CRASH - THE HPU GRAPH CAPTURE CONFLICT; ROOT CAUSE RECORDED (2026-11-23 21:25)
+The four-layer trap, fully excavated:
+1. The v1-v3 gates read the PADDED bucket (16) - dead code.
+2. The live plugin tree (/opt/glm53/gaudi-cookbook via the editable
+   install) was an OLD version with NO chain support at all - every
+   serving "chain" bench measured the standard k4 path regardless of
+   gate logic.
+3. The mode validation (split or attn) coerced chain back to split
+   silently.
+4. The cron watchdog (health_watchdog.sh, every 5 min) killed the
+   slow-warmup chain boots and substituted its own k1 boot
+   (boot_f4ts.sh) - the 18:43 and 19:14 HEALTH-UPs were the watchdog
+   k1 boots, not the chain.
+With all four fixed (the v4 gate, the sync, the mode validation, the
+watchdog paused): the mode=chain boot boots, serves the smoke (391
+verified), the INIT prints mode=chain - and then CRASHES at the first
+decode-shaped capture: "Expected m_captured_hpu_graph == nullptr or
+hpu_graph == nullptr" - the HPU graph runtime refuses TWO capture
+regions of the same stream while the target model graphs are live.
+The chain core wraps the attn core k times into ONE region - the
+nested capture inside the live target-graph context is the crash.
+THE VERDICT: the chain fast path requires the capture-order
+restructuring (the chain core captured BEFORE the target graphs, or a
+separate capture stream) - the Q01-family engineering, not a boot
+flag. The production stays k1. The engagement chain is now fully
+understood and every link verified by direct evidence.

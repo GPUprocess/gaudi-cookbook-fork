@@ -87,7 +87,7 @@ _DRAFT_CORE_FP32 = _env_flag("VLLM_GLM_MTP_DRAFT_CORE_FP32")
 # count pays a one-time graph capture, so production needs runner-side bucket
 # padding (phase 2) - default OFF.
 _DRAFT_PREFILL_GRAPH = _env_flag("VLLM_GLM_MTP_DRAFT_PREFILL_GRAPH")
-if _DRAFT_GRAPH_MODE not in ("split", "attn"):
+if _DRAFT_GRAPH_MODE not in ("split", "attn", "chain"):
     _DRAFT_GRAPH_MODE = "split"
 
 
@@ -350,6 +350,9 @@ class Glm5NextMTPModel(nn.Module):
         self.post_attention_graph_core = None
         self.attn_graph_core = None
         self.chain_graph_core = None
+        import sys as _sys
+        print(f"[GLM-MTP-INIT] graph={_DRAFT_GRAPH} mode={_DRAFT_GRAPH_MODE} "
+              f"chain_k={getattr(self, 'k_chain', None)}", flush=True)
         self.k_chain = int(os.environ.get("VLLM_GLM_MTP_CHAIN_K", "4"))
         if _DRAFT_GRAPH and _DRAFT_GRAPH_MODE == "attn":
             import habana_frameworks.torch as htorch

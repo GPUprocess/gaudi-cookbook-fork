@@ -23,6 +23,11 @@ import os
 from collections.abc import Iterable
 
 import torch
+
+try:
+    from . import layer_diagnostics as _layer_diag
+except ImportError:
+    _layer_diag = None
 from torch import nn
 from vllm.config import VllmConfig
 from vllm.distributed import get_pp_group, get_tensor_model_parallel_world_size
