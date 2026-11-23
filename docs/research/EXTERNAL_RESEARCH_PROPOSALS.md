@@ -5153,3 +5153,69 @@ g2-opt-manual (no license): facts + short attributed phrases only (the standing 
 The cookbook fixes (Apache-2.0, our upstream): importable with attribution retained
 (RA-041 `gdn-prefix-cache`, RA-039(c) `topk-subset-sampler`). No weights; the incoai
 checkpoint remains excluded.
+
+---
+
+## STATUS UPDATE — 2026-11-23 (the D5/D2/D3/T2/RA-010/RA-047 session closures)
+
+The following statuses changed during the 2026-11-22/23 session (the
+owner directive: the untested proposals tried, then the MTP=4 fast
+program). Every item below has the measured evidence in
+EXPERIMENTS.md (the commit range f4b1332..e2ef071 plus
+88a9b3a/a2e2d1d/2429b77/4695443/fe72310/2224290):
+
+- **RA-038-B D5 (the batch-conditional k*): IMPLEMENTED + VALIDATED.**
+  The gate is in `llm_base_proposer.py` (the module-level constants +
+  the call-site short-circuit; the env reads hoisted to import). The
+  measured routing table: the chain engages at bs<=4
+  (+28/+25/+11% vs k=1), falls through at bs>=8 (the noise band: the
+  k=1 sweeps ranged 229.7-250.4 across four boots; the D5 bs16 231.9
+  is inside it). Commits 88a9b3a, a2e2d1d. The adoption decision
+  (the D5 chain config as production) is staged for the owner.
+- **RA-038-B D2 (the accept-walk fusion): ALREADY-IMPLEMENTED —
+  CLOSED.** The proposal's 25-30 eager sampler ops premise was the
+  upstream path; our production runs the device-side walk
+  (decode_lean._accept_grid, ~6 graph ops) via the
+  GLM_SPEC_DEVICE_REJECT=1 patch. The residual 1-TPC-kernel fusion is
+  a node-count item folded into RA-038-A's adoption arms. Commits
+  4695443, fe72310, 2429b77.
+- **RA-038-B D3 (the sampler D2H tail): IMPLEMENTED-BUT-INERT —
+  CLOSED.** The pinned double-buffer is in place; the D2H site is
+  structured-output-only and dead for our configs (no grammar bitmask
+  in the boot configs). Commit 24d7065.
+- **RA-038-A T2 (the node-collapse ablation, the census half):
+  MEASURED — the census banked.** The banked DUMP_POST_GRAPHS census
+  (900 files, avg 5.8 nodes/file): philox_random_uniform_bf16 1,984
+  (the sampler's gumbel draw), memcpy_dma 892,
+  logical_strided_insert 848, constant_bf16 824, static_reshape 488.
+  The sampler randomness materialization + the logical plumbing
+  dominate; the device-compute collapse is not addressable without
+  the sampler graph integration. Commit f2c24e6. (The ablation's
+  graph_editor arms remain PROPOSED.)
+- **RA-010 (the ngram/suffix probe): was already REFUTED** (−39/−72/−35%
+  vs MTP, the prior round) — re-confirmed in the audit, no new work.
+- **RA-047 (the 1M decode): BLOCKED-WITH-EVIDENCE.** The four window
+  recipes (1M/524K/262K × the 8192/4096/2048/1280-block variants) all
+  fail the Synapse graph compile with synStatus 26; the ceiling is on
+  max_model_len itself (the production 32768 compiles, 262144+ does
+  not), not the KV block count. The unblock path: the upstream 1M
+  graph support. Commit 2224290.
+- **RA-007 (the prefill ladder): CLOSED (measured).** The warm
+  prefill is flat ~2,857 tok/s 4K→16K (the linear ladder, no host
+  cliff); the 32K+ points exceed the config cap and belong to the
+  blocked 1M family. Commit f4b1332.
+- **The AL measurement program (the W7/RA-049 evidence): COMPLETE.**
+  AL(bs) 0.857→0.057 on short prompts (the metric-based sweep,
+  1e72e4d); the long-form AL 1.88-1.97 at bs1 (ed6e1c2); the
+  chain-vs-k1 A/B: the AL identical, the chain +19/+24% on long-form
+  code/math, -3% essay (e12b8f1); the fresh-boot control confirms
+  the chain advantage is real (e26335b); the short-prompt chain sweep
+  completes the routing table (+20/+24/+11% at bs1-4, -4/-24% at
+  bs8-16) (6cc2d7a).
+
+The remaining PROPOSED items (unchanged): RA-038-A adoption arms (the
+fuser sweep + the norm fusion + the TPC walk candidate), RA-038-B T1
+(the k=8 boot), RA-038-B T3 (the @16 k=2 decomposition), RA-052 (the
+MoE FX-pass), RA-050 (the gumbel sampler), RA-045 (the shared-expert
+overlap), RA-006 (the graph-shape consolidation), RA-005 (the 4-HPU
+audit).
