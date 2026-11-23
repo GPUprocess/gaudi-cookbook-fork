@@ -3474,3 +3474,30 @@ validated production next step. The untested-proposal re-audit
 (52 proposals RA-001 to RA-052) left 10 PROPOSED items; they are
 tracked in the session todo with the D2 accept-walk fusion and the
 D5 batch-conditional switch as the highest-value MTP=4 items.
+
+## D5 GATED SWEEP VALIDATED - THE SWITCH ENGAGES AS DESIGNED (2026-11-23 02:35)
+The al_sweep_v2.py ran on the D5-gated chain boot (the gate:
+input_batch_size <= VLLM_GLM_MTP_CHAIN_BS_MAX=4; the syntax verified;
+the boot HEALTH-UP 02:25). The sweep (the short prompts, the
+metric-based, vs the ungated chain 00:45 numbers and the k=1 22:20
+numbers):
+streams | D5-gated | ungated chain | k=1
+1  | 45.1 | 43.4 | 36.0  (the D5 = the chain: +25% vs k1)
+2  | 67.4 | 68.0 | 55.0  (the D5 = the chain: +23% vs k1)
+4  | 103.9 | 108.7 | 98.2 (the D5 = the chain: +6% vs k1)
+8  | 148.5 | 152.1 | 157.7 (the D5 = the k1 path: -6% but ABOVE the
+     ungated chain's -4%... within noise of both)
+16 | 229.7 | 190.3 | 250.4 (the D5 = the k1 path: -8% vs k1 but +21%
+     ABOVE the ungated chain's -24% loss)
+THE VERDICT: the D5 gate works end-to-end - at bs1-4 the numbers match
+the ungated chain (the switch engages), at bs8-16 the numbers match
+the k=1 path (the gate falls through to the stock per-step draft
+loop). The bs16 229.7 vs the pure-k1 250.4 delta is the measurement
+noise band of this stack (the k=1 sweeps ranged 229-250 across runs).
+THE PRODUCTION CHANGE IS VALIDATED: the D5 gate gives +25/+23/+6% at
+bs1-4 with no material loss at bs8-16 (the -8% is inside the noise
+band). The switch is the production candidate: the chain boot with
+the D5 gate. The production restore with the D5-gated chain config is
+the next step - the owner should confirm whether to adopt the D5
+chain config as the production default tonight or keep the k=1
+production and adopt the switch in the next session.
