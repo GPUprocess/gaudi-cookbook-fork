@@ -3595,3 +3595,21 @@ ALREADY-IMPLEMENTED (the device walk in production; the residual TPC
 fusion is the node-count item folded into RA-038-A's adoption arms if
 the ablation proves the class matters). The D2 todo closes; the
 adoption-arms item inherits the TPC-walk candidate.
+
+## T2 GRAPH_EDITOR ABLATION TOOLCHAIN OPERATIONAL (2026-11-23 03:58)
+The graph_editor tooling is now operational on g2: the
+SOFTWARE_LFS_DATA=/tmp/lfs_data env unblocks the /opt/habanalabs/bin
+tool (the syn_infra import requires the env; any writable path works
+for the logger). The tool was run against the banked census dump
+HabanaFusedOpLazy_340_350 (3,352 nodes, the biggest post-graph): the
+guid ablation (--guids moe_multiplexer) produced the single-node
+sub-graphs for all 652 moe_multiplexer occurrences
+(sngs-20261123-035725.json). The tool works; the ablation ARMS (the
+per-class node removal + the [LAUNCH]-stamp measurement) are the
+remaining T2 work - the tool output (the sngs json) is the per-class
+sub-graph isolation the arms need. The census of the biggest dump:
+moe_multiplexer 652, logical_slice_fwd 481, reshape 417, expand_dims
+336, MME gemm 351, memcpy_dma 198, the fused TPC kernels 163x3, the
+static_reshape 65 - the MoE multiplexer + the logical reshape/slice
+classes are the ablation candidates (the logical class is the
+graph-construction overhead; the multiplexer is the routing logic).
