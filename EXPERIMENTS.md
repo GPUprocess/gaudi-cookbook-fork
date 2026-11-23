@@ -3956,3 +3956,26 @@ restructuring (the chain core captured BEFORE the target graphs, or a
 separate capture stream) - the Q01-family engineering, not a boot
 flag. The production stays k1. The engagement chain is now fully
 understood and every link verified by direct evidence.
+
+## A51 ARM3 (q01_off) MEASURED - THE @16 GAP ATTRIBUTED TO THE DRAFT GRAPHS (2026-11-23 22:45)
+The arm3 (the draft graphs off, Q01=0) booted first-try (the settle-
+policy deviation noted: no device reset before the boot - the cards
+carried the k1 production's graphs; the boot succeeded anyway), the
+smoke 391 verified, the bench:
+  bs1  46.6 tok/s  (the k1 61.1: -24 pct; the k4 52.2: -11 pct)
+  @8   81.3 tok/s  (the k1 103.0: -21 pct; the k4 77.1: +5 pct)
+  @16 155.2 tok/s  (the k1 128.3: +21 pct; the k4 131.9: +18 pct)
+THE FINDING: the @16 concurrency gap is ATTRIBUTED - the draft graphs
+(Q01) cost ~21 pct of the @16 aggregate throughput (the graph replay
+syncs serialize the 16-stream decode; the eager draft path overlaps
+better at high batch). The flip side: the same graphs BUY the bs1 and
+@8 decode (+24/+21 pct vs the eager draft). THE ROUTING TABLE NOW
+COMPLETE: the graphs win at bs1-8, the eager draft wins at bs16+.
+The RA-051 matrix closes: arm1 (t1a_off) - the 8-wedge instability,
+the gather_sum is load-bearing; arm2 (t1c_off) - the 3-wedge boot
+instability, the fp32 cores are load-bearing for the boot itself; arm3
+(q01_off) - boots clean, the @16 +21 pct / the bs1-8 -21-24 pct (the
+batch-conditional draft-graph routing is the RA-052 follow-up). The
+production stays k1 (the mixed-traffic aggregate optimum). The settle
+policy: validated again (the single boot per cycle, the measure, the
+restore).
