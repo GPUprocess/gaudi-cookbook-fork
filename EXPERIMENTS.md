@@ -3459,3 +3459,18 @@ accepted token. The production k=1 remains tonight's config; the
 routing switch (the chain on at bs<=4, off at bs>=8) is the validated
 production change for the next session - it requires the per-step
 batch-size read in the draft path (the staged design item).
+
+## PRODUCTION RESTORED (4TH WEDGE CYCLE) - SMOKE 391 VERIFIED (2026-11-23 01:58)
+The routing-table session (the chain short-prompt sweep, 6cc2d7a) was
+followed by the restore: the first boot wedged on the shm-broadcast
+timeout (the workers hanging in the compile), the retry wedged with
+synStatus 8, the per-device AIP reset was applied (the 3rd successful
+application, 173 s) and the production boot succeeded: HEALTH-UP at
+01:57:48, the smoke 391 correct at 01:58:15. The wedge-recovery
+procedure is now 3-for-3. The routing table from 6cc2d7a stands: the
+chain (k=4) wins at bs<=4 (+11-24%, both prompt classes), loses at
+bs>=8 (-4/-24%); the batch-conditional k* switch (RA-038-B D5) is the
+validated production next step. The untested-proposal re-audit
+(52 proposals RA-001 to RA-052) left 10 PROPOSED items; they are
+tracked in the session todo with the D2 accept-walk fusion and the
+D5 batch-conditional switch as the highest-value MTP=4 items.
