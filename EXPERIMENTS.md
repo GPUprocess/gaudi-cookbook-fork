@@ -3868,3 +3868,29 @@ counter semantics are uniform and the conclusions stand. The chain
 path uses the same counters (the _chain_fast_path returns the stacked
 drafts; the verify path counts identically). The measurement suite is
 closed with the validity proof.
+
+## D5 ADOPTION ATTEMPT ON PRODUCTION - THE CHAIN BOOT GLOBAL-ENV TRAP; REVERTED TO K1 (2026-11-23 15:15-16:00)
+The D5 fast-path adoption attempt (the directive: get it running
+fast): boot_chain.sh (the CHAIN=1 + K=4) + the D5 v1 gate. THE
+FAILURE: the @8/@16 collapsed -74%/-56% (the 74.2/120.3 vs the k1
+300.8/299.2). THE ROOT CAUSE 1 (v1): the gate read input_batch_size
+(the PADDED decode bucket = 16 under VLLM_DECODE_BS_BUCKET_MIN=16), so
+the chain engaged at EVERY batch including bs8/16 (the gate was
+useless). THE FIX (v3): the gate reads the actual batch_size
+(common_attn_metadata.batch_size()) AND the padded input_batch_size
+(the chain needs both small). Rebooted: the bs1 52.5 (+20% vs the k1
+43.6 - the chain fast path now engages correctly), the @8 74.2, the
+@16 120.3. THE ROOT CAUSE 2 (the structural one): with CHAIN=1 the
+FALL-THROUGH path (bs > BS_MAX=4) drafts K=4 tokens through the
+STANDARD spec path (4x the draft overhead) - the k1 production's
+@8/@16 (300.8/299.2) was the no-spec path. The chain boot env is
+GLOBAL: the K=4 applies to the fall-through too. THE CORRECT PROD
+CONFIG FOR THE MIXED LOAD: the K=1 + CHAIN=0 (the k1 boot) - the
+@8/@16 fast, the bs1 43.6 (the chain's bs1 win is 52.5 but the @8 loss
+is -75%; the aggregate for the mixed traffic loses). THE DECISION:
+revert production to boot_restored.sh (k1). THE D5 V3 GATE IS
+CORRECT and is captured in the deployed vllm + this record: the future
+chain adoption needs the per-request k routing (the RA-052 work) or
+the BS_MAX=0 (the chain off) for the mixed traffic. The bench logs:
+bench_d5_prod.log (v1), bench_d5v3.log (v3), bench_d5.log (the k1
+baseline).
