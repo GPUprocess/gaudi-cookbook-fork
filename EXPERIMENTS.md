@@ -3777,3 +3777,26 @@ weeks, the RA-002 rev-10 core exists). Every pass gated by the R003
 parity suite + the [LAUNCH] measurement (the T2 tool operational).
 The pass-1-only win lands in the first week. The plan is the
 execution-ready record for the next-session kernel work.
+
+## RA-038-A ADOPTION ARMS AUDITED - THE ARMS ARE ABLATION-GATED; THE TOOLING IS READY (2026-11-23 10:45)
+The RA-038-A adoption arms (the fuser sweep + the norm fusion + the
+TPC walk candidate) are BY DESIGN gated on the T2 ablation-proven
+classes (the arms apply only to the classes the ablation proves
+matter). THE SESSION'S STATE: (1) the T2 toolchain is OPERATIONAL
+(c36fe60: the graph_editor runs, the per-class sub-graph isolation
+works); (2) the ablation ARMS themselves (the node-class removal +
+the [LAUNCH]-stamp measurement on-device) are the missing 2-3-day
+measurement - the tool produces the modified graphs, the measurement
+needs the modified-recipe boot per class; (3) the fuser sweep's
+config knobs are NOT exposed in our tree (the grep: no FUSE env
+vars in the vllm-gaudi features or the habana etc) - the fuser
+configuration lever the corpus cites (88a6a74) lives at the Synapse
+recipe level, not the env level - the arm needs the recipe-level
+edit path (the graph_editor output feeds it). THE VERDICT: the
+adoption arms are CORRECTLY GATED - the prerequisite (the T2
+ablation arms on-device) is the blocking item, and it needs the
+boot windows that tonight's wedge frequency makes unaffordable. THE
+ARMS STAY PROPOSED with the prerequisite named: the T2 ablation
+arms (the tooling ready, the boot windows needed). The doc status:
+GATED-ON-T2-ARMS (the tooling operational; the boot windows
+required).
