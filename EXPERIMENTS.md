@@ -3764,3 +3764,16 @@ A/B) is QUEUED behind the stability; the deep arms (the verify-graph
 rework, the recipe cache adoption) remain PROPOSED with the code-read
 done. The doc status: THE CHEAP ARM CONFIG-READY, THE DEEP ARMS
 CODE-READ-DONE.
+
+## RA-052 IMPLEMENTATION PLAN WRITTEN - CENSUS-SEQUENCED 3-PASS PROGRAM (2026-11-23 10:35)
+The plan (docs/research/RA052_plan.md) sequences the MoE node
+collapse into 3 passes on the banked census (the biggest dump:
+moe_multiplexer 652, the logical classes 1234, the MME gemm 351):
+pass 1 the logical-class elision (37 pct of the biggest graph, the
+recipe 26.4k to ~17k, the floor 16-29 ms, 2-3 days), pass 2 the
+multiplexer fusion (the router-gather fused op, to ~12k, 3-5 days),
+pass 3 the Q21 batch_gemm fusion (to 6-10k, the floor 8-15 ms, 1-2
+weeks, the RA-002 rev-10 core exists). Every pass gated by the R003
+parity suite + the [LAUNCH] measurement (the T2 tool operational).
+The pass-1-only win lands in the first week. The plan is the
+execution-ready record for the next-session kernel work.
