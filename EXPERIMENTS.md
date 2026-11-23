@@ -3638,3 +3638,23 @@ AR mode (the gather_sum off at bs1, on at bs>=4) is a NEW lever the
 matrix just surfaced (the D5 pattern applied to the AR: the
 batch-conditional gather_sum - implementable in the same
 hpu_communicator gate).
+
+## RA-051 SESSION STATE + PRODUCTION RESTORED (2026-11-23 09:55)
+The A/B matrix completed 1 of 3 arms before the device-wedge cycles
+interrupted: t1a_off (the gather_sum off) benched bs1 51.7 (+19%),
+@8 98.9 (-67%), @16 124.7 (-58%) - the gather_sum is load-bearing for
+the batched shapes and costs bs1 -19%: the BATCH-CONDITIONAL AR MODE
+(gather_sum off at bs1, on at bs>=4) is the new lever the matrix
+surfaced (the same pattern as the D5 batch-conditional k*). The
+remaining arms (t1c_off the fp32 draft cores, q01_off the draft
+graph) are QUEUED behind the production stability - the repeated
+synStatus-8 wedges (the 5th and 6th resets tonight) make further A/B
+boots unaffordable until the wedge root cause is understood (the
+rapid boot cycles between the resets appear to leave the devices in
+the partial state; the 60+ s settle after the reset may be required).
+PRODUCTION: restored after the 6th reset cycle - HEALTH-UP 09:55:14,
+the smoke 391 correct 09:55:41. The wedge-recovery procedure is now
+6-for-6, but the FREQUENCY (the 6 wedges tonight vs 3 total prior)
+correlates with the rapid boot cycling - the next session should
+establish the settle-time policy (the 60 s post-reset settle before
+the boot attempt).
