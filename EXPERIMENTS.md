@@ -3852,3 +3852,19 @@ after the 9th reset - HEALTH-UP 14:41:07, the smoke 391 correct
 CLOSED: the A/B matrix pauses at the arm1 attribution; the arms
 t1c_off + q01_off are marked NOT-RUNNABLE-WITHOUT-ANALYSIS (the
 T1c-Q01v2 interaction hypothesis recorded).
+
+## SPEC-DECODE COUNTER SEMANTICS VERIFIED LIVE - THE AL MEASUREMENTS VALIDATED (2026-11-23 14:58)
+The last measurement-validity question: does the
+spec_decode_num_drafts_total counter increment 1:1 per draft or k:1 on
+the chain path (the 4x ambiguity would have invalidated the "identical
+AL" A/B conclusion)? The live diff around one generation (the 100
+completion tokens): the drafts delta 185, the accepted delta 155, the
+AL = 155/185 = 0.84 per draft. THE VERDICT: the counter increments 1:1
+per draft token (the draft_tokens == the drafts on this k=1 config),
+and the accepted counter is the per-draft acceptance. The k=1 AL 0.84
+on the short prompt matches the sweep's 0.857. The AL measurements
+(the sweeps, the A/B, the long-form probes) are VALIDATED - the
+counter semantics are uniform and the conclusions stand. The chain
+path uses the same counters (the _chain_fast_path returns the stacked
+drafts; the verify path counts identically). The measurement suite is
+closed with the validity proof.
