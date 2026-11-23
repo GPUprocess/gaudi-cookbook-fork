@@ -3435,3 +3435,27 @@ effect on long-form shapes, not a boot-state artifact - the routing
 lever (the chain for code/math long-form) is validated as the
 production next step. The k=1 stays as tonight's production; the
 routing switch implementation is staged for the next session.
+
+## CHAIN SHORT-PROMPT SWEEP: THE FULL ROUTING PICTURE COMPLETE (2026-11-23 00:45)
+The al_sweep_v2.py ran on the chain boot (CHAIN_K=4, HEALTH-UP 00:33),
+short prompts, metric-based, vs the k=1 sweep (22:20 numbers):
+streams | chain agg | k1 agg | delta | chain step_ms | k1 step_ms
+1  |  43.4 |  36.0 | +20% | 20.6 | 23.8
+2  |  68.0 |  55.0 | +24% | 13.1 | 15.5
+4  | 108.7 |  98.2 | +11% |  8.4 |  9.2
+8  | 152.1 | 157.7 |  -4% |  5.9 |  5.7
+16 | 190.3 | 250.4 | -24% |  4.7 |  3.6
+THE COMPLETE VERDICT: the chain (k=4) wins at bs1-4 on BOTH prompt
+classes (+20/+24/+11% short, +19/+24% long-form code/math) and loses
+at bs8-16 (-4/-24% short). The routing table for the switch:
+- bs <= 4: the chain ON (all prompt classes; +11-24%)
+- bs 8-16: the chain OFF (-4 to -24%)
+- long-form code/math at bs1: the chain ON (+19/+24%)
+The AL on short prompts is also slightly higher on the chain (0.893 vs
+0.857 at bs1). The mechanism consistent across both prompt classes:
+the chain's draft graph replays amortize the verify pass better at low
+batch, where the k=1 single-draft step pays the full verify cost per
+accepted token. The production k=1 remains tonight's config; the
+routing switch (the chain on at bs<=4, off at bs>=8) is the validated
+production change for the next session - it requires the per-step
+batch-size read in the draft path (the staged design item).
