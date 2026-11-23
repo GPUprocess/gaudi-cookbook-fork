@@ -3979,3 +3979,28 @@ batch-conditional draft-graph routing is the RA-052 follow-up). The
 production stays k1 (the mixed-traffic aggregate optimum). The settle
 policy: validated again (the single boot per cycle, the measure, the
 restore).
+
+## A51 ARM4 (t1b_off) MEASURED - THE PIGGYBACK IS PERF-NEUTRAL; THE RA-051 MATRIX COMPLETE (2026-11-23 23:50)
+The arm4 (the draft piggyback off, T1b=0) booted first-try, the smoke
+391 verified, the bench:
+  bs1  60.5 tok/s  (the k1 61.1: -1 pct - the noise band)
+  @8  104.3 tok/s  (the k1 103.0: +1 pct - the noise band)
+  @16 129.5 tok/s  (the k1 128.3: +1 pct - the noise band)
+THE FINDING: the draft piggyback (T1b) is PERF-NEUTRAL on this stack -
+its removal changes nothing measurable (all three batch sizes within
+the noise band). Combined with arm2's finding (the T1c fp32 cores are
+load-bearing for the BOOT itself), the T1 family splits: the T1c (the
+fp32 draft cores) is the stability lever, the T1b (the piggyback) is
+the perf-neutral legacy. THE RA-051 MATRIX COMPLETE:
+  arm1 t1a_off: the 8-wedge instability (the gather_sum load-bearing)
+  arm2 t1c_off: the 3-wedge boot instability (the fp32 cores
+  load-bearing for the boot)
+  arm3 q01_off: clean; the @16 +21 pct / the bs1-8 -21-24 pct (the
+  draft graphs are the @16 cost)
+  arm4 t1b_off: clean; PERF-NEUTRAL (the piggyback is removable)
+THE ROUTING TABLE FINAL: the production k1 keeps all four levers (the
+stability first); the RA-052 follow-ups: the batch-conditional
+draft-graph routing (from arm3) and the piggyback removal as the
+code-hygiene item (from arm4, zero perf risk). The settle policy
+validated on all four arms (the single boot per cycle, the measure,
+the restore).
