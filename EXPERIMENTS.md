@@ -3658,3 +3658,17 @@ the smoke 391 correct 09:55:41. The wedge-recovery procedure is now
 correlates with the rapid boot cycling - the next session should
 establish the settle-time policy (the 60 s post-reset settle before
 the boot attempt).
+
+## RA-045 GATED OUT BY ARITHMETIC - SHARED-EXPERT SHARE BELOW THE 3 PCT GATE (2026-11-23 10:00)
+The D19 gate (the shared-expert time share >= 3%) computed from the
+measured byte model (CPU-only, no boot): the shared expert
+(n_shared_experts=1 x 42 MoE layers, ~1.7 GB/step read at the doc's
+figure) takes 0.53 ms/step at the 3.2 TB/s HBM stream. The measured
+steps: bs1 ~20 ms (the 43 tok/s post-reset) -> the share 2.7%; @16
+~28 ms -> 1.9%. BOTH BELOW the 3% gate - and the multi-stream overlap
+would recover only the non-overlapped fraction of that share. THE
+RA-045 VERDICT: GATED OUT - the probe is not worth a boot window; the
+multi-stream-in-captured-graph question it would answer is likewise
+moot for a sub-3% lever. The honest prior (1-3%) is confirmed at the
+lower edge. The doc status: GATED-OUT (D19 arithmetic: 2.7% bs1,
+1.9% @16, both < 3%).
