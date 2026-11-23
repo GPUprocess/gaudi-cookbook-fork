@@ -3686,3 +3686,26 @@ the 1M-capacity play (the ECF8 fit), NOT the throughput play; the
 throughput targets route through the 8-HPU node + the drafter decision
 + the RA-052 node collapse; the partial-offload stays REJECTED on the
 PCIe wall. The RA-005 closes as the decision document.
+
+## RA-050 AUDITED - THE GUMBEL DRAW IS DEAD ON THE HPU GREEDY PATH (2026-11-23 10:10)
+The RA-050 proposal (the top_p-nucleus-bounded gumbel sampler: bound
+the full-vocab Exp(1) gumbel draw by the top_p nucleus to cut the
+dominant philox TPC node class) targeted the random-sampling path.
+The code audit: the HPU sampler (hpu_rejection_sampler.py line 144)
+accepts the use_fp64_gumbel knob for signature parity but
+INTENTIONALLY does not use it - the comment: "HPU spec decode only
+supports greedy sampling... the gumbel recovery path upstream is
+accepted but intentionally unused here" + the assert all_greedy. THE
+VERDICT: the philox_random_uniform_bf16 nodes in the banked census
+(the 16 sampler graphs) are the UPSTREAM random-path graphs; OUR
+production path (the greedy spec decode) does not take the gumbel
+draw at all - the philox class in our dumps comes from the
+lazy-graph capture of the sampler module code (the dead branch
+captured by the Synapse lazy tracer), not from the executed path.
+THE RA-050 CLOSES AS INERT-FOR-OUR-PATH: the nucleus bound has no
+work to do on the greedy path; the philox census nodes are the dead
+branch artifacts (the candidate for the graph pruning via the
+RA-038-A adoption arms if the dead branch can be elided at capture,
+but the executed-path cost is zero). The doc status:
+INERT-FOR-THE-GREEDY-PATH (the audit: the gumbel knob intentionally
+unused; the assert all_greedy).
