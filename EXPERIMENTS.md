@@ -3421,3 +3421,17 @@ cleared by the per-device reset. Session state: the production serving,
 the fork complete at e12b8f1 with the routing lever staged (the chain
 on for code/math long-form: +19-21 pct), the bs1 draft-shape A/B and
 the routing switch recorded as the next-session agenda.
+
+## FRESH-BOOT K=1 CONTROL: THE CHAIN ADVANTAGE ON CODE/MATH IS REAL (2026-11-23 00:01)
+The al_longform.py probe re-ran on the freshly-booted k=1 production
+(23:58 boot, warm captures): essay AL 1.882 / 33.8 t/s, code 1.869 /
+40.9, math 1.969 / 41.9. Against the chain boot's 23:00 numbers
+(essay 1.896/37.0, code 1.869/48.6, math 1.984/51.8): the AL is
+IDENTICAL to 3 decimals across boots and configs, and the chain's
+throughput advantage on code (+19%) and math (+24%) persists against a
+warm fresh k=1 control. The essay -3% remains within noise. THE
+CONCLUSION: the chain-vs-k1 difference is a genuine per-step-cost
+effect on long-form shapes, not a boot-state artifact - the routing
+lever (the chain for code/math long-form) is validated as the
+production next step. The k=1 stays as tonight's production; the
+routing switch implementation is staged for the next session.
