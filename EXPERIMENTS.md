@@ -3744,3 +3744,23 @@ better spent on the RA-051 arms (the attribution with a real +40-52%
 (the W7 extrapolation: AL(2) = AL(1) -> the condition fails; the
 boot window re-allocated to the RA-051 arms). The doc status:
 GATED-OUT-BY-W7.
+
+## RA-006 AUDITED - THE PAD BUCKETING IS CONFIG-ONLY AVAILABLE (2026-11-23 10:30)
+The RA-006 proposal (the graph-shape consolidation: the pad-and-mask
+verify graph + the padding-aware prefill buckets + the recipe cache)
+audited against the deployed tree: (1) the padding-aware bucketing IS
+implemented and reachable config-only - the
+PaddingAwareBucketingStrategy (the extension/bucketing/padding_aware.py)
+is selected by VLLM_BUCKETING_STRATEGY=pad (the features.py choice
+exp/lin/pad; the default exp); (2) the recipe cache
+(PT_HPU_RECIPE_CACHE_CONFIG) is present in the tree; (3) the
+pad-and-mask verify graph is the deeper code change (the verify-pass
+shape rework). THE CHEAP ARM: VLLM_BUCKETING_STRATEGY=pad is a
+config-only A/B (the boot + the bench) - the candidate for the next
+boot window (queued behind the stability with the RA-051 arms; the
+pad strategy may reduce the bucket population = the boot time AND the
+graph count). THE VERDICT: the RA-006 cheap arm (the pad bucketing
+A/B) is QUEUED behind the stability; the deep arms (the verify-graph
+rework, the recipe cache adoption) remain PROPOSED with the code-read
+done. The doc status: THE CHEAP ARM CONFIG-READY, THE DEEP ARMS
+CODE-READ-DONE.
