@@ -3818,3 +3818,14 @@ The user's directives all banked: the re-audit 52/52 accounted, the
 todo 13/13, the D5 switch validated, the docs updated, the
 performance-goal route documented (the RA-005 audit + the RA-052 plan
 + the RA-049 drafter decision).
+
+## D5 GATE CAPTURED AS A FORK PATCH (2026-11-23 13:10)
+The D5 batch-conditional k* gate (implemented directly in the deployed
+/opt/glm53/vllm tree) is now captured as
+ports/glm-5-3-flash/patches/d5_batch_conditional_chain.patch - the
+fork pattern the gather_sum patch established. The patch carries: the
+module-level gate constants (the env reads hoisted to import), the
+call-site short-circuit (the bs check before the _chain_fast_path
+call), and the removal of the per-call env reads from the function
+body. The patch survives any vllm tree rebuild; the apply order: the
+chain patches after the D1 chain wiring.

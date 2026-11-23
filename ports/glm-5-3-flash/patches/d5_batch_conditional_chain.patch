@@ -1,0 +1,31 @@
+--- a/vllm/v1/spec_decode/llm_base_proposer.py
++++ b/vllm/v1/spec_decode/llm_base_proposer.py
+@@ -66,6 +66,11 @@
++# RA-038-B D5: the module-level chain gate state (the env reads are
++# hoisted here so the per-call fast path does not pay the environ lookup).
++import os as _os
++_GLM_CHAIN_ENABLED = _os.environ.get("VLLM_GLM_MTP_CHAIN", "0") == "1"
++_GLM_CHAIN_BS_MAX = int(_os.environ.get("VLLM_GLM_MTP_CHAIN_BS_MAX", "4"))
++
+ 
+ class SpecDecodeBaseProposer:
+@@ -686,8 +691,10 @@
+-        _fast = self._chain_fast_path(common_attn_metadata, batch_size,
+-                                      input_batch_size, sampling_metadata,
+-                                      draft_token_ids_list, draft_probs_list)
++        _fast = (_GLM_CHAIN_ENABLED and input_batch_size <= _GLM_CHAIN_BS_MAX
++                 and self._chain_fast_path(common_attn_metadata, batch_size,
++                                           input_batch_size, sampling_metadata,
++                                           draft_token_ids_list, draft_probs_list))
+         if _fast is not None:
+             return _fast
+@@ -783,11 +790,6 @@
+-        import os
+-        if os.environ.get("VLLM_GLM_MTP_CHAIN", "0") != "1":
+-            return None
+-        bs_max = int(os.environ.get("VLLM_GLM_MTP_CHAIN_BS_MAX", "4"))
+-        if input_batch_size > bs_max:
+-            return None
+         chain_core = getattr(self.model, "chain_graph_core", None)
+         if chain_core is None or getattr(self.model, "attn_graph_core", None) is None:
+             return None
