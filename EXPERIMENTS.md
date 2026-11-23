@@ -3528,3 +3528,26 @@ addressed: the remaining delta is inside the stack's noise band, not a
 fixable regression. NEXT: the production restore (the D5 v2 chain
 config is the adoption candidate pending the owner's go), then the
 next todo item (the D2 accept-walk fusion).
+
+## D2 RE-AUDIT FINDING: THE ACCEPT-WALK IS ALREADY TRITON-FUSED (2026-11-23 03:40)
+The RA-038-B D2 proposal (the 25-30 sampler ops to 1 TPC kernel; the
+saving scales with k - ~3x more at k=8; bit-exact by construction)
+targeted an eager op chain. The code inspection (the v1/sample/
+rejection_sampler.py, 963 lines) shows the accept-walk on this stack
+is ALREADY Triton-kernel-fused: 8 @triton.jit kernels
+(rejection_sample -> the triton walk kernels at lines 724/783/859/882,
+the flatten kernel, the replace kernel, the vocab-mask kernel), with
+only 10 eager torch ops (the full/empty allocations, the argmax, the
+softmax) outside the kernels. The D2 premise (the 25-30 eager sampler
+ops) is STALE on this stack: the upstream v1 rejection sampler already
+runs the walk as the fused Triton kernels. The HPU question (the
+proposal's actual ask): the Triton kernels do NOT run on HPU (the
+Triton driver is disabled at boot: "Triton is installed but 0 active
+drivers found"); the HPU path uses the eager fallback or the gaudi
+kernel equivalents - WHICH MEANS the D2 ask survives in the HPU form:
+port the Triton walk kernels to TPC (the 1Cat pattern) OR check which
+kernel path the HPU sampler actually takes (the vllm_gaudi
+hpu_rejection_sampler). THE NEXT-SESSION ITEM: read the HPU sampler
+path (the vllm_gaudi/v1/sample/hpu_rejection_sampler.py the pyc
+sighting earlier) and count the eager ops there - that count decides
+whether D2 is a real fusion win or already-covered.
