@@ -3672,3 +3672,17 @@ multi-stream-in-captured-graph question it would answer is likewise
 moot for a sub-3% lever. The honest prior (1-3%) is confirmed at the
 lower edge. The doc status: GATED-OUT (D19 arithmetic: 2.7% bs1,
 1.9% @16, both < 3%).
+
+## RA-005 4-HPU AUDIT COMPLETE - BOTH TARGETS NOT REACHABLE ON 4 CARDS (2026-11-23 10:05)
+The decision document (docs/research/RA005_4hpu_audit.md) audits the
+owners targets against the measured 4-HPU anchors (the Q14v2 boot:
+bs1 41.7, @16 180.8) and the corpus physics. THE VERDICT: (1) the
+200-bs1 target is drafter-gated (the AL >= 4.5-4.8 required; the
+single MTP head cannot per W7) - the card count is not the binding
+constraint; (2) the 800-@16 target is structurally behind on 4 cards
+(the routed-union read doubles per-card at TP4+EP4; the host floor
+hides the node-collapse win at @16). The decisions: the 4-HPU node is
+the 1M-capacity play (the ECF8 fit), NOT the throughput play; the
+throughput targets route through the 8-HPU node + the drafter decision
++ the RA-052 node collapse; the partial-offload stays REJECTED on the
+PCIe wall. The RA-005 closes as the decision document.
