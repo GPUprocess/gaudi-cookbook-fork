@@ -4031,3 +4031,34 @@ piggyback-neutral claim stands; the graphs-neutral claim is
 UNVERIFIED. The follow-up (one boot): the graphs ON + the INIT marker
 capture + the bench - distinguishes (a) from (b). Until then, quote
 only the piggyback-neutral finding.
+
+## GRAPHS-ON VERIFICATION BOOT - THE DECISIVE RESULT OVERTURNS THE ARM3 ATTRIBUTION (2026-11-24 01:30)
+The engagement-verified graphs-on boot (the watchdog paused, the INIT
+markers graph=True captured in serve_ab51_t1b_off.log, the env
+DRAFT_GRAPH=1 verified in the process):
+  bs1  54.1 tok/s  (the production graphs-off 61.1: -11 pct)
+  @8   75.6 tok/s  (the production 103.0: -27 pct)
+  @16 147.5 tok/s  (the production 128.3: +15 pct)
+THE VERDICT: the split-mode draft graphs ENGAGE and are NOT
+perf-neutral: they cost -11/-27 pct at bs1/@8 and GAIN +15 pct at @16
+on this boot. The arm3 "the @16 gap attributed to the draft graphs"
+record is PARTIALLY WRONG: the graphs-on @16 (147.5) is BETWEEN the
+graphs-off boots (128.3 production, 155.2 arm3) - the @16 spread
+(128-155) across the graphs-off boots shows a BOOT-TO-BOOT VARIANCE of
+~20 pct at @16 that dominates the graph effect. The honest @16
+attribution: UNRESOLVED - the single-boot @16 numbers cannot
+attribute the gap with this variance; the arm3's +21 pct was within
+the boot variance band. THE bs1/@8 graph costs (-11/-27) are LARGER
+than the boot variance at those sizes (the bs1 band 46-61, the @8 band
+75-104 overlaps...) - hmm, the honest statement: the bs1/@8 graph
+effects are also within/near the observed boot variance bands. THE
+CONCLUSION: the boot-to-boot variance (the acceptance-rate drift, the
+graph-capture order) is the DOMINANT unknown at every batch size; the
+single-boot A/B attributions (the arm3's, and possibly the arm1/2/4's
+bench deltas) carry this variance unquantified. The multi-boot
+medians are the only trustworthy comparison. THE RA-051 matrix's
+QUALITATIVE findings stand (the wedge counts: the stability
+attributions - those are countable, not variance-bound); the QUANTITATIVE
+bench deltas need the multi-boot medians before quoting.
+THE PRODUCTION: stays graphs-off k1 (the current config is fine; the
+graphs' bs1/@8 cost is not wanted).
