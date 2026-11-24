@@ -4004,3 +4004,30 @@ draft-graph routing (from arm3) and the piggyback removal as the
 code-hygiene item (from arm4, zero perf risk). The settle policy
 validated on all four arms (the single boot per cycle, the measure,
 the restore).
+
+## ARM4 ENGAGEMENT AMENDMENT - THE HONEST CAVEAT (2026-11-24 00:15)
+The arm4 record above claims "the piggyback is perf-neutral". That
+claim is VERIFIED (the numbers match the production within the noise).
+But the arm4 boot also set VLLM_GLM_MTP_DRAFT_GRAPH=1 (the arm
+script's t1b_off case), and the arm4 numbers EQUAL the production
+numbers (the production runs the graphs OFF). Two readings: (a) the
+split-mode draft graphs are now genuinely perf-neutral on the
+current stack (a change from EXP-Q19's -7% @16 finding), or (b) the
+graphs did not engage in the arm4 boot (the capture fallback to the
+eager - the same failure class as the chain mode). The arm4 boots
+## ARM4 ENGAGEMENT AMENDMENT - THE HONEST CAVEAT (2026-11-24 00:15)
+The arm4 record above claims "the piggyback is perf-neutral". That
+claim is VERIFIED (the numbers match the production within the noise).
+But the arm4 boot also set VLLM_GLM_MTP_DRAFT_GRAPH=1 (the arm
+script's t1b_off case), and the arm4 numbers EQUAL the production
+numbers (the production runs the graphs OFF). Two readings: (a) the
+split-mode draft graphs are now genuinely perf-neutral on the current
+stack (a change from EXP-Q19's -7% @16 finding), or (b) the graphs did
+not engage in the arm4 boot (the capture fallback to the eager - the
+same failure class as the chain mode). The arm4 boot's INIT markers
+were overwritten by the subsequent production restore (the
+serve_restored.log is single-slot). THE HONEST STATE: the
+piggyback-neutral claim stands; the graphs-neutral claim is
+UNVERIFIED. The follow-up (one boot): the graphs ON + the INIT marker
+capture + the bench - distinguishes (a) from (b). Until then, quote
+only the piggyback-neutral finding.
