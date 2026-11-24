@@ -4062,3 +4062,27 @@ attributions - those are countable, not variance-bound); the QUANTITATIVE
 bench deltas need the multi-boot medians before quoting.
 THE PRODUCTION: stays graphs-off k1 (the current config is fine; the
 graphs' bs1/@8 cost is not wanted).
+
+## THE FRESH-BOOT BENCH CONFIRMS THE VARIANCE FINDING DECISIVELY (2026-11-24 03:10)
+The post-reset production boot (the k1 config, the clean cards, the
+smoke 391 verified) fresh bench:
+  bs1  47.9 tok/s  (the prior boot 61.1: -22 pct)
+  @8   72.0 tok/s  (the prior boot 103.0: -30 pct)
+  @16 144.2 tok/s  (the prior boot 128.3: +12 pct)
+THE SAME CONFIG, THE TWO CONSECUTIVE BOOTS: the -22/-30/+12 pct swing.
+THE BOOT-TO-BOOT VARIANCE IS THE DOMINANT TERM at every batch size -
+larger than every config effect measured this session (the graphs
+-11/-27/+15, the k4 spec, the piggyback ~0). THE IMPLICATION: every
+single-boot A/B number quoted this session (and in the prior
+records) carries this variance unquantified; ONLY the multi-boot
+medians (3+ boots per config) are trustworthy for the quantitative
+claims. The qualitative findings (the wedge counts, the boot
+stability, the crash signatures) are variance-free and stand. THE
+KNOWN VARIANCE SOURCES (the hypotheses, unverified): the acceptance
+rate drift (the bs1 36-44 band documented earlier), the graph-capture
+order, the HBM state, the card thermal state. THE NEXT SESSION'S
+METHOD: the 3-boot medians per config before any perf claim. THE
+PRODUCTION: serving (the smoke 391 v at 03:01, the fresh bench
+recorded). The performance reporting to the user: the RANGE, not the
+point: the bs1 48-61, the @8 72-104, the @16 128-155 tok/s (the k1
+config, the observed boot band).
